@@ -2,7 +2,7 @@
 
 **Repository:** https://github.com/BrianNguyen29/vts-edu.git
 
-MVP demo scaffold for a cost-efficient LMS with online assessments.
+Product-ready core for a cost-efficient LMS with online assessments.
 
 ## Stack
 
@@ -43,10 +43,12 @@ See `docs/backend/backend-technical-spec/adr/0005-deployment-topology.md` for th
 
 ## Status
 
-Core MVP features implemented incrementally:
+Core product features implemented incrementally:
 
-- Backend auth flow (`/auth/login`, `/auth/refresh`, `/auth/logout`, `/me`) with JWT + rotating refresh cookie + CSRF.
-- Attempt runtime endpoints (`GET /attempts/{id}`, `PUT /attempts/{id}/answers/{item_id}`, `POST /attempts/{id}/submit`) with tenant ownership and request-time expiration.
-- Frontend dashboard demo link and exam runner wired to a fixed demo attempt UUID.
+- Backend auth (`/auth/login`, `/auth/refresh`, `/auth/logout`, `/auth/change-password`, `/me`) with JWT + rotating refresh cookie + CSRF, persisted multi-role memberships, and forced password change.
+- Attempt runtime endpoints (`GET /attempts/{id}`, `PUT /attempts/{id}/answers/{item_id}`, `POST /attempts/{id}/submit`) with tenant ownership, request-time expiration, real question prompt/choices snapshots, and synchronous MCQ grading.
+- Teacher assessment list (`GET /assessments`) role-gated to teacher/admin.
+- Admin organization/user management (`GET/POST /users`, `PUT /users/{id}/roles`, `POST /users/{id}/reset-password`, `GET/PATCH /organizations/current`).
+- E2E smoke covering auth roles, change password, attempt grading, teacher assessment list, and admin user/org flow.
 
-Other features (academics, question bank, full assessment builder, advanced grading, resources, gradebook) remain spec-only and will be built in later phases.
+Remaining work (academics, full assessment builder, resources, gradebook, advanced grading, OpenAPI client generation, sqlc/Huma migration) is documented in the roadmap and will be built in later phases.

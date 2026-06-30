@@ -47,9 +47,12 @@ func (h *Handler) Login(w http.ResponseWriter, r *http.Request) {
 
 	setRefreshCookie(w, result.RefreshToken, result.RefreshExpires)
 	writeData(w, http.StatusOK, LoginResponse{
-		AccessToken: result.AccessToken,
-		ExpiresIn:   result.ExpiresIn,
-		User:        result.User,
+		AccessToken:        result.AccessToken,
+		ExpiresIn:          result.ExpiresIn,
+		User:               result.User,
+		Roles:              result.Roles,
+		Permissions:        result.Permissions,
+		MustChangePassword: result.MustChangePassword,
 	})
 }
 
@@ -73,11 +76,12 @@ func (h *Handler) Me(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeData(w, http.StatusOK, MeResponse{
-		ID:             result.ID,
-		OrganizationID: result.OrganizationID,
-		DisplayName:    result.DisplayName,
-		Roles:          result.Roles,
-		Permissions:    result.Permissions,
+		ID:                 result.ID,
+		OrganizationID:     result.OrganizationID,
+		DisplayName:        result.DisplayName,
+		Roles:              result.Roles,
+		Permissions:        result.Permissions,
+		MustChangePassword: result.MustChangePassword,
 	})
 }
 
@@ -106,9 +110,12 @@ func (h *Handler) Refresh(w http.ResponseWriter, r *http.Request) {
 
 	setRefreshCookie(w, result.RefreshToken, result.RefreshExpires)
 	writeData(w, http.StatusOK, LoginResponse{
-		AccessToken: result.AccessToken,
-		ExpiresIn:   result.ExpiresIn,
-		User:        result.User,
+		AccessToken:        result.AccessToken,
+		ExpiresIn:          result.ExpiresIn,
+		User:               result.User,
+		Roles:              result.Roles,
+		Permissions:        result.Permissions,
+		MustChangePassword: result.MustChangePassword,
 	})
 }
 
@@ -131,4 +138,40 @@ func (h *Handler) Logout(w http.ResponseWriter, r *http.Request) {
 
 	clearRefreshCookie(w)
 	writeData(w, http.StatusOK, LogoutResponse{Success: true})
+}
+
+// ChangePassword handles POST /api/v1/auth/change-password.
+func (h *Handler) ChangePassword(w http.ResponseWriter, r *http.Request) {
+	if !csrf.Validate(r) {
+		writeError(w, http.StatusForbidden, "invalid_csrf", "invalid csrf token")
+		return
+	}
+
+	header := r.Header.Get("Authorization")
+	if header == "" || !strings.HasPrefix(header, "Bearer ") {
+		writeError(w, http.StatusUnauthorized, "unauthorized", "missing or invalid authorization header")
+		return
+	}
+	token := strings.TrimPrefix(header, "Bearer ")
+
+	var req ChangePasswordRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "bad_request", "invalid request body")
+		return
+	}
+
+	if err := h.svc.ChangePassword(r.Context(), token, req); err != nil {
+		if errors.Is(err, ErrInvalidCredentials) {
+			writeError(w, http.StatusUnauthorized, "invalid_credentials", "current password is incorrect")
+			return
+		}
+		if errors.Is(err, ErrUnauthorized) {
+			writeError(w, http.StatusUnauthorized, "unauthorized", "invalid or expired token")
+			return
+		}
+		writeError(w, http.StatusInternalServerError, "internal_error", "change password failed")
+		return
+	}
+
+	writeData(w, http.StatusOK, ChangePasswordResponse{Success: true})
 }

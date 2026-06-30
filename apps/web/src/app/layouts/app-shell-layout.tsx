@@ -12,6 +12,7 @@ export function AppShellLayout() {
   };
 
   const displayName = auth.actor?.displayName ?? 'Người dùng';
+  const isRestricted = auth.status === 'restricted';
   const isHomeActive =
     location.pathname === '/app' || location.pathname.startsWith('/app/');
 
@@ -23,25 +24,27 @@ export function AppShellLayout() {
             VTS EDU
           </Link>
         </div>
-        <nav className="app-shell-nav" aria-label="Main">
-          <Link to="/app" className={isHomeActive ? 'active' : ''}>
-            Trang làm việc
-          </Link>
-          <Link
-            to="/diagnostics"
-            className={location.pathname === '/diagnostics' ? 'active' : ''}
-          >
-            Chẩn đoán
-          </Link>
-          <Link
-            to="/exam/attempts/demo"
-            className={
-              location.pathname.startsWith('/exam/attempts') ? 'active' : ''
-            }
-          >
-            Thi thử
-          </Link>
-        </nav>
+        {!isRestricted && (
+          <nav className="app-shell-nav" aria-label="Main">
+            <Link to="/app" className={isHomeActive ? 'active' : ''}>
+              Trang làm việc
+            </Link>
+            <Link
+              to="/diagnostics"
+              className={location.pathname === '/diagnostics' ? 'active' : ''}
+            >
+              Chẩn đoán
+            </Link>
+            <Link
+              to="/exam/attempts/demo"
+              className={
+                location.pathname.startsWith('/exam/attempts') ? 'active' : ''
+              }
+            >
+              Thi thử
+            </Link>
+          </nav>
+        )}
         <div className="app-shell-user">
           <span className="user-name">{displayName}</span>
           <button type="button" onClick={handleLogout}>

@@ -79,15 +79,15 @@ The SPA is served on `http://localhost:5173`.
 pnpm e2e:smoke
 ```
 
-This starts the Postgres container, applies migrations, runs the Go API, and exercises `/readyz` → login → `/me` → get attempt → save answer → submit. Cleanup is handled automatically.
+This starts the Postgres container, applies migrations, runs the Go API, and exercises `/readyz` → login → `/me` → get attempt → save answer → submit → role seeds → forced password change → teacher assessment list → admin user/org management. Cleanup is handled automatically.
 
 ### Manual browser smoke
 
 1. Open `http://localhost:5173`.
-2. Log in with the seeded demo credentials:
-   - Organization code: `school-a`
-   - Username: `hs001`
-   - Password: `Password123!`
+2. Log in with one of the seeded demo credentials:
+   - Student: organization `school-a`, username `hs001`, password `Password123!`.
+   - Teacher: organization `school-a`, username `gv001`, password `Password123!` (forced password change on first login).
+   - Admin: organization `school-a`, username `admin001`, password `Password123!` (forced password change on first login).
 3. From the dashboard, click **Thi thử demo**.
 4. The exam runner loads attempt `00000000-0000-4000-8000-000000000001`.
 5. Save answers and submit.

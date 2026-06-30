@@ -6,12 +6,13 @@ Repo-wide implementation tracking. Append-only; do not delete historical entries
 
 | Phase | Theme | Owner | Status |
 |---|---|---|---|
-| S0 | Backend foundation (config, DB pool, TxManager, CORS, readyz) | fixer | Foundation complete; sqlc/Huma remaining |
-| S1 | Auth + users (JWT, refresh cookie, sessions, CSRF, /me) | fixer | Implemented |
-| S2 | Attempt runtime POC (get/save/submit, ownership, request-time expiry) + frontend demo wiring | fixer | Implemented |
-| S3 | Academics + question bank (classes, resources, question versions) | fixer/designer | Not started |
-| S4 | Assessment builder + full attempt runtime | fixer/designer | Not started |
-| S5 | Grading, resources, assignments, gradebook | fixer/designer | Not started |
+| S0 | Backend foundation (config, DB pool, TxManager, CORS, readyz) | fixer | Foundation complete; sqlc/Huma staged |
+| S1 | Auth + users (JWT, refresh cookie, sessions, CSRF, /me, persisted roles, forced password change) | fixer | Implemented |
+| S2 | Attempt runtime + question snapshots + grading (get/save/submit, ownership, request-time expiry, MCQ grading) | fixer | Implemented |
+| S2.5 | Teacher assessment list | fixer | Implemented |
+| S3 | Admin user/org management | fixer | Implemented |
+| S4 | Academics + full question bank + assessment builder | fixer/designer | Not started |
+| S5 | Resources, assignments, gradebook | fixer/designer | Not started |
 
 ## S0 Backend foundation
 
@@ -25,10 +26,10 @@ Repo-wide implementation tracking. Append-only; do not delete historical entries
 - [x] Preserve CSRF behavior (`GET /api/v1/auth/csrf-token`, validation on cookie-backed unsafe endpoints).
 - [x] Add `DB_SKIP` option for local dev without Postgres (documented below).
 
-### Remaining S0
+### Remaining S0 (staged)
 
-- [ ] Add `sqlc` baseline and first generated queries for identity/attempt tables.
-- [ ] Add Huma/OpenAPI skeleton endpoint definitions (auth, attempts, CSRF).
+- [ ] Add `sqlc` baseline and first generated queries for identity/attempt tables. Existing `Repository` interfaces are the migration seam; do not rewrite runtime code.
+- [ ] Add Huma/OpenAPI skeleton endpoint definitions. The hand-maintained OpenAPI skeleton in `docs/backend/backend-technical-spec/openapi/openapi-skeleton.yaml` now covers the current API surface; Huma adoption is deferred until a staged migration is planned.
 
 ### Decisions / notes
 
@@ -54,9 +55,9 @@ Repo-wide implementation tracking. Append-only; do not delete historical entries
 
 ### Pending / next steps
 
-- [x] Backend S1 auth endpoints (`/auth/login`, `/auth/refresh`, `/auth/logout`, `/me`, `/auth/csrf-token`) so the login flow can return real tokens.
+- [x] Backend S1 auth endpoints (`/auth/login`, `/auth/refresh`, `/auth/logout`, `/me`, `/auth/csrf-token`, `/auth/change-password`) so the login flow can return real tokens.
 - [x] Connect login response actor parsing; currently fetches `/me` after login.
-- [ ] Implement forced password change (`/change-password`) and restricted session guard.
+- [x] Backend forced password change (`/auth/change-password`) and `must_change_password` claim are implemented; frontend guard pending.
 - [ ] Add role/workspace redirects (`/app/student`, `/app/teacher`, `/app/admin`).
 - [ ] Add real 403/404/maintenance error pages with request ID display.
 - [ ] Implement TanStack Query integration and generated OpenAPI client once backend OpenAPI is available.
@@ -109,6 +110,33 @@ Repo-wide implementation tracking. Append-only; do not delete historical entries
 - Root lint script and ESLint dependency setup.
 - sqlc/Huma/River wiring.
 
+## 2026-06-30 — Product slices S1–S3 backend (product-slices-backend-001)
+
+### Done
+
+- [x] Persisted multi-role memberships (`membership_roles`) replacing hardcoded `student` role.
+- [x] Forced password change backend: `must_change_password` user flag, `pwd_change_required` JWT claim, and `POST /api/v1/auth/change-password`.
+- [x] Minimal question bank schema (`question_banks`, `questions`, `question_versions`) and snapshot of prompt/choices/answer key into `attempt_items`.
+- [x] Synchronous MCQ grading on attempt submit returning `score`, `max_score`, `grading_status`.
+- [x] Teacher assessment list `GET /api/v1/assessments` role-gated to teacher/admin and tenant scoped.
+- [x] Admin user/org management: `GET/POST /api/v1/users`, `PUT /api/v1/users/{id}/roles`, `POST /api/v1/users/{id}/reset-password`, `GET/PATCH /api/v1/organizations/current`.
+- [x] E2E smoke extended to cover role seeds, forced password change, teacher assessment list, and admin user/org flow.
+- [x] Backend OpenAPI skeleton updated to the current API surface.
+- [x] ADR-0010 documenting staged Huma/sqlc groundwork behind existing Repository interfaces.
+
+### Deferred / not in scope
+
+- sqlc/Huma runtime wiring and generated client.
+- Frontend role redirects, change-password guard, and generated API client.
+- Pagination/search, audit logs, password policy.
+- Full assessment builder, academics, resources, gradebook.
+
+### Decisions / notes
+
+- Existing `Repository` interfaces in each feature package are the stable seam for future sqlc migration; no runtime code should be rewritten for sqlc alone.
+- OpenAPI skeleton is hand-maintained until Huma is adopted; it covers current endpoints sufficiently for frontend client generation planning.
+- All admin endpoints require `admin` role; teacher endpoints require `teacher` or `admin`.
+
 ## Change log
 
 | Date | Task | Files changed | Verification |
@@ -117,3 +145,4 @@ Repo-wide implementation tracking. Append-only; do not delete historical entries
 | 2026-06-30 | S1 auth + S2 attempt runtime + frontend demo wiring | `apps/api/internal/features/auth/*`, `apps/api/internal/features/attempts/*`, `apps/api/cmd/server/main.go`, `apps/web/src/shared/config/demo-attempt.ts`, `apps/web/src/pages/dashboard/dashboard-page.tsx`, `supabase/migrations/000004_*`, `supabase/migrations/000005_*`, `supabase/migrations/000006_*` | Go tests/vet/gofmt pass; `pnpm web:typecheck` and `pnpm web:build` pass; migrations validated on temporary Postgres container. |
 | 2026-06-30 | Docs/DX batch | `.github/workflows/ci.yml`, `apps/api/koyeb.yaml` (deleted), `config/koyeb.env.example` (deleted), `config/README.md`, `README.md`, `docs/e2e-local-run.md`, `docs/deployment-cli.md`, `docs/implementation-audit.md` | Go checks, `pnpm web:typecheck`, `pnpm web:build` pass. |
 | 2026-06-30 | DX hardening | `package.json`, `apps/web/package.json`, `.github/workflows/ci.yml`, `scripts/e2e_*.sh`, `scripts/e2e_smoke_api.mjs`, `docs/e2e-local-run.md`, `docs/implementation-audit.md`, `AGENTS.md` | `pnpm check` passes; `pnpm e2e:smoke` passes against local Postgres container; CI includes migration validation. |
+| 2026-06-30 | Product slices S1–S3 backend | `apps/api/internal/features/auth/*`, `apps/api/internal/features/attempts/*`, `apps/api/internal/features/assessments/*`, `apps/api/internal/features/admin/*`, `apps/api/cmd/server/main.go`, `supabase/migrations/000008_*` to `000012_*`, `docs/backend/backend-technical-spec/openapi/openapi-skeleton.yaml`, `docs/backend/backend-technical-spec/adr/0010-huma-sqlc-staged-groundwork.md`, `docs/e2e-local-run.md`, `docs/implementation-audit.md`, `README.md`, `AGENTS.md` | `pnpm check` passes; `pnpm e2e:smoke` passes covering roles, change password, attempt grading, assessment list, and admin user/org flow. |

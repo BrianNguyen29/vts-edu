@@ -7,9 +7,10 @@ import (
 
 // Actor holds the authenticated actor extracted from a valid access token.
 type Actor struct {
-	UserID string
-	OrgID  string
-	Roles  []string
+	UserID             string
+	OrgID              string
+	Roles              []string
+	MustChangePassword bool
 }
 
 // ActorFromRequest validates the Bearer token in r and returns the actor.
@@ -27,8 +28,9 @@ func ActorFromRequest(r *http.Request, issuer *TokenIssuer) (Actor, error) {
 	}
 
 	return Actor{
-		UserID: claims.Subject,
-		OrgID:  claims.OrgID,
-		Roles:  claims.Roles,
+		UserID:             claims.Subject,
+		OrgID:              claims.OrgID,
+		Roles:              claims.Roles,
+		MustChangePassword: claims.MustChangePassword,
 	}, nil
 }

@@ -42,7 +42,7 @@ func TestVerifyPassword_DemoSeedHash(t *testing.T) {
 func TestTokenIssuer(t *testing.T) {
 	issuer := NewTokenIssuer("test-signing-key-minimum-32-bytes-long", "test-issuer", "test-audience", 15*time.Minute)
 
-	token, exp, err := issuer.IssueAccessToken("user-id", "org-id", "session-id", []string{"student"}, 1)
+	token, exp, err := issuer.IssueAccessToken("user-id", "org-id", "session-id", []string{"student"}, 1, false)
 	if err != nil {
 		t.Fatalf("IssueAccessToken failed: %v", err)
 	}
@@ -84,7 +84,7 @@ func TestTokenIssuer_InvalidToken(t *testing.T) {
 
 func TestTokenIssuer_WrongSigningKey(t *testing.T) {
 	issuer := NewTokenIssuer("test-signing-key-minimum-32-bytes-long", "test-issuer", "test-audience", 15*time.Minute)
-	token, _, err := issuer.IssueAccessToken("user-id", "org-id", "session-id", nil, 1)
+	token, _, err := issuer.IssueAccessToken("user-id", "org-id", "session-id", nil, 1, false)
 	if err != nil {
 		t.Fatalf("IssueAccessToken failed: %v", err)
 	}

@@ -7,6 +7,7 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
+	"sort"
 	"strings"
 	"time"
 
@@ -31,6 +32,7 @@ type Service interface {
 	Refresh(ctx context.Context, rawRefreshToken string) (*RefreshResult, error)
 	Logout(ctx context.Context, rawRefreshToken string) (*LogoutResult, error)
 	Me(ctx context.Context, token string) (*MeResult, error)
+	ChangePassword(ctx context.Context, token string, req ChangePasswordRequest) error
 }
 
 type service struct {
@@ -102,27 +104,27 @@ func (s *service) Login(ctx context.Context, req LoginRequest) (*LoginResult, er
 		return nil, fmt.Errorf("create refresh session: %w", err)
 	}
 
-	roles := []string{"student"}
 	accessToken, _, err := s.issuer.IssueAccessToken(
 		identity.UserID,
 		identity.OrgID,
 		sessionID,
-		roles,
+		identity.Roles,
 		identity.AuthVersion,
+		identity.MustChangePassword,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("issue access token: %w", err)
 	}
 
 	return &LoginResult{
-		AccessToken:    accessToken,
-		ExpiresIn:      int(s.issuer.ttl.Seconds()),
-		RefreshToken:   rawRefresh,
-		RefreshExpires: refreshExpires,
-		User: UserInfo{
-			ID:          identity.UserID,
-			DisplayName: identity.Username,
-		},
+		AccessToken:        accessToken,
+		ExpiresIn:          int(s.issuer.ttl.Seconds()),
+		RefreshToken:       rawRefresh,
+		RefreshExpires:     refreshExpires,
+		User:               UserInfo{ID: identity.UserID, DisplayName: identity.Username},
+		Roles:              identity.Roles,
+		Permissions:        permissionsForRoles(identity.Roles),
+		MustChangePassword: identity.MustChangePassword,
 	}, nil
 }
 
@@ -176,27 +178,32 @@ func (s *service) Refresh(ctx context.Context, rawRefreshToken string) (*Refresh
 			return err
 		}
 
-		roles := []string{"student"}
+		roles, err := s.repo.GetRolesByMembershipID(ctx, tx, sess.MembershipID)
+		if err != nil {
+			return err
+		}
+
 		accessToken, _, err := s.issuer.IssueAccessToken(
 			sess.UserID,
 			sess.OrgID,
 			newSessionID,
 			roles,
 			sess.AuthVersion,
+			actor.MustChangePassword,
 		)
 		if err != nil {
 			return fmt.Errorf("issue access token: %w", err)
 		}
 
 		result = &RefreshResult{
-			AccessToken:    accessToken,
-			ExpiresIn:      int(s.issuer.ttl.Seconds()),
-			RefreshToken:   newRaw,
-			RefreshExpires: refreshExpires,
-			User: UserInfo{
-				ID:          sess.UserID,
-				DisplayName: actor.Username,
-			},
+			AccessToken:        accessToken,
+			ExpiresIn:          int(s.issuer.ttl.Seconds()),
+			RefreshToken:       newRaw,
+			RefreshExpires:     refreshExpires,
+			User:               UserInfo{ID: sess.UserID, DisplayName: actor.Username},
+			Roles:              roles,
+			Permissions:        permissionsForRoles(roles),
+			MustChangePassword: actor.MustChangePassword,
 		}
 		return nil
 	}); err != nil {
@@ -242,12 +249,54 @@ func (s *service) Me(ctx context.Context, token string) (*MeResult, error) {
 	}
 
 	return &MeResult{
-		ID:             claims.Subject,
-		OrganizationID: claims.OrgID,
-		DisplayName:    actor.Username,
-		Roles:          claims.Roles,
-		Permissions:    permissionsForRoles(claims.Roles),
+		ID:                 claims.Subject,
+		OrganizationID:     claims.OrgID,
+		DisplayName:        actor.Username,
+		Roles:              claims.Roles,
+		Permissions:        permissionsForRoles(claims.Roles),
+		MustChangePassword: actor.MustChangePassword,
 	}, nil
+}
+
+// ChangePassword verifies the current password and sets a new one for the
+// authenticated actor. It bumps the user's auth_version, clears the forced
+// password-change flag, and revokes all refresh sessions for the user.
+func (s *service) ChangePassword(ctx context.Context, token string, req ChangePasswordRequest) error {
+	if req.CurrentPassword == "" || req.NewPassword == "" {
+		return ErrInvalidCredentials
+	}
+
+	claims, err := s.issuer.ValidateAccessToken(token)
+	if err != nil {
+		return ErrUnauthorized
+	}
+
+	return s.tm.WithinTx(ctx, func(ctx context.Context, tx pgx.Tx) error {
+		identity, err := s.repo.GetLoginByUserID(ctx, tx, claims.Subject, claims.OrgID)
+		if err != nil {
+			return err
+		}
+
+		ok, err := VerifyPassword(identity.PasswordHash, req.CurrentPassword)
+		if err != nil || !ok {
+			return ErrInvalidCredentials
+		}
+
+		newHash, err := HashPassword(req.NewPassword)
+		if err != nil {
+			return fmt.Errorf("hash new password: %w", err)
+		}
+
+		if err := s.repo.UpdatePassword(ctx, tx, identity.UserID, identity.OrgID, newHash); err != nil {
+			return err
+		}
+
+		if err := s.repo.RevokeUserSessions(ctx, tx, identity.UserID); err != nil {
+			return err
+		}
+
+		return nil
+	})
 }
 
 func normalizeIdentifier(s string) string {
@@ -278,7 +327,24 @@ func randomUUID() (string, error) {
 	return fmt.Sprintf("%x-%x-%x-%x-%x", b[0:4], b[4:6], b[6:8], b[8:10], b[10:16]), nil
 }
 
+var rolePermissions = map[string][]string{
+	"student": {"attempt:read", "attempt:write", "self:read"},
+	"teacher": {"assessment:read", "attempt:read"},
+	"admin":   {"user:write", "org:write"},
+}
+
 func permissionsForRoles(roles []string) []string {
-	// MVP placeholder: no role-based permissions are persisted yet.
-	return []string{}
+	seen := make(map[string]struct{})
+	for _, role := range roles {
+		for _, perm := range rolePermissions[role] {
+			seen[perm] = struct{}{}
+		}
+	}
+
+	perms := make([]string, 0, len(seen))
+	for perm := range seen {
+		perms = append(perms, perm)
+	}
+	sort.Strings(perms)
+	return perms
 }

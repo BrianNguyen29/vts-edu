@@ -32,6 +32,8 @@ type AttemptItemRow struct {
 	QuestionVersionID string
 	Position          int
 	Points            string
+	Prompt            json.RawMessage
+	Choices           json.RawMessage
 	AnswerPayload     json.RawMessage
 	AnswerKey         json.RawMessage
 	Revision          *int64
@@ -119,6 +121,8 @@ func (r *repository) GetAttemptItems(ctx context.Context, attemptID, orgID strin
 			ai.question_version_id,
 			ai.position,
 			ai.points::text,
+			ai.prompt_json,
+			ai.choices_json,
 			aa.answer_payload,
 			ai.answer_key_json,
 			aa.revision,
@@ -147,6 +151,8 @@ func (r *repository) GetAttemptItems(ctx context.Context, attemptID, orgID strin
 			&it.QuestionVersionID,
 			&it.Position,
 			&it.Points,
+			&it.Prompt,
+			&it.Choices,
 			&it.AnswerPayload,
 			&it.AnswerKey,
 			&it.Revision,

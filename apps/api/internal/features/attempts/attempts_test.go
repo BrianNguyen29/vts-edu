@@ -66,7 +66,7 @@ func newIssuer() *auth.TokenIssuer {
 }
 
 func addBearer(req *http.Request, issuer *auth.TokenIssuer) {
-	token, _, _ := issuer.IssueAccessToken("user-id", "org-id", "session-id", []string{"student"}, 1)
+	token, _, _ := issuer.IssueAccessToken("user-id", "org-id", "session-id", []string{"student"}, 1, false)
 	req.Header.Set("Authorization", "Bearer "+token)
 }
 
@@ -94,6 +94,8 @@ func TestService_GetAttempt_OK(t *testing.T) {
 					QuestionVersionID: "qv-id",
 					Position:          1,
 					Points:            "1.00",
+					Prompt:            json.RawMessage(`{"text":"Demo prompt"}`),
+					Choices:           json.RawMessage(`[{"id":"A","text":"One"},{"id":"B","text":"Two"}]`),
 					AnswerPayload:     json.RawMessage(`{"choice":"A"}`),
 					Revision:          &rev,
 					AnsweredAt:        &answered,
@@ -118,6 +120,12 @@ func TestService_GetAttempt_OK(t *testing.T) {
 	}
 	if snapshot.Items[0].Answer.Revision != 1 {
 		t.Errorf("revision = %d, want 1", snapshot.Items[0].Answer.Revision)
+	}
+	if len(snapshot.Items[0].Prompt) == 0 {
+		t.Error("expected prompt on item")
+	}
+	if len(snapshot.Items[0].Choices) == 0 {
+		t.Error("expected choices on item")
 	}
 }
 
@@ -324,7 +332,16 @@ func TestHandler_GetAttempt_OK(t *testing.T) {
 			return &attempts.Attempt{ID: id, OrganizationID: orgID, AssessmentID: "a", Status: "IN_PROGRESS"}, nil
 		},
 		getItems: func(ctx context.Context, id, orgID string) ([]attempts.AttemptItemRow, error) {
-			return nil, nil
+			return []attempts.AttemptItemRow{
+				{
+					ID:                "item-id",
+					QuestionVersionID: "qv-id",
+					Position:          1,
+					Points:            "1.00",
+					Prompt:            json.RawMessage(`{"text":"Handler prompt"}`),
+					Choices:           json.RawMessage(`[{"id":"A","text":"Alpha"}]`),
+				},
+			}, nil
 		},
 	}
 
@@ -348,6 +365,15 @@ func TestHandler_GetAttempt_OK(t *testing.T) {
 	}
 	if resp.Data.Status != "IN_PROGRESS" {
 		t.Errorf("status = %q, want IN_PROGRESS", resp.Data.Status)
+	}
+	if len(resp.Data.Items) != 1 {
+		t.Fatalf("items = %d, want 1", len(resp.Data.Items))
+	}
+	if string(resp.Data.Items[0].Prompt) != `{"text":"Handler prompt"}` {
+		t.Errorf("prompt = %s, want handler prompt", resp.Data.Items[0].Prompt)
+	}
+	if len(resp.Data.Items[0].Choices) == 0 {
+		t.Error("expected choices on item")
 	}
 }
 

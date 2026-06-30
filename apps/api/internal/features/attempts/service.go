@@ -62,6 +62,8 @@ func (s *service) GetAttempt(ctx context.Context, actor auth.Actor, attemptID st
 			QuestionVersionID: it.QuestionVersionID,
 			Position:          it.Position,
 			Points:            it.Points,
+			Prompt:            it.Prompt,
+			Choices:           it.Choices,
 		}
 		if it.Revision != nil {
 			item.Answer = &AnswerSnapshot{

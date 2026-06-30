@@ -10,13 +10,6 @@ import {
   type AttemptSubmitted,
 } from '@/shared/api/attempts';
 
-const OPTIONS = [
-  { key: 'A', label: 'Đáp án A' },
-  { key: 'B', label: 'Đáp án B' },
-  { key: 'C', label: 'Đáp án C' },
-  { key: 'D', label: 'Đáp án D' },
-];
-
 type SaveStatus =
   | { type: 'idle' }
   | { type: 'saving' }
@@ -40,6 +33,51 @@ function formatTimeRemaining(ms: number): string {
   const minutes = Math.floor(totalSeconds / 60);
   const seconds = totalSeconds % 60;
   return `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+}
+
+function getPromptText(prompt: unknown): string {
+  if (typeof prompt === 'string' && prompt.trim().length > 0) {
+    return prompt;
+  }
+  if (
+    typeof prompt === 'object' &&
+    prompt !== null &&
+    'text' in prompt &&
+    typeof (prompt as { text: unknown }).text === 'string'
+  ) {
+    const text = (prompt as { text: string }).text;
+    if (text.trim().length > 0) return text;
+  }
+  return '';
+}
+
+interface NormalizedChoice {
+  id: string;
+  label: string;
+}
+
+function getChoices(choices: unknown): NormalizedChoice[] {
+  if (!Array.isArray(choices)) return [];
+
+  return choices
+    .map((choice): NormalizedChoice | null => {
+      if (typeof choice === 'string') {
+        return { id: choice, label: choice };
+      }
+      if (typeof choice === 'object' && choice !== null) {
+        const id =
+          'id' in choice && typeof choice.id === 'string' ? choice.id : '';
+        const text =
+          'text' in choice && typeof choice.text === 'string'
+            ? choice.text
+            : '';
+        if (id) {
+          return { id, label: text || id };
+        }
+      }
+      return null;
+    })
+    .filter((c): c is NormalizedChoice => c !== null);
 }
 
 function formatFriendlyError(err: unknown): string {
@@ -308,33 +346,47 @@ export function ExamPage() {
       </div>
 
       <form className="exam-form" onSubmit={(e) => e.preventDefault()}>
-        {snapshot.items.map((item) => (
-          <fieldset key={item.id} className="exam-question">
-            <legend>Câu {item.position}</legend>
-            <p className="exam-question-prompt">
-              Nội dung câu hỏi chưa được cung cấp (question_version_id:{' '}
-              {item.question_version_id})
-            </p>
+        {snapshot.items.map((item) => {
+          const promptText = getPromptText(item.prompt);
+          const choices = getChoices(item.choices);
+          const hasContent = promptText.length > 0 && choices.length > 0;
 
-            <div className="exam-options">
-              {OPTIONS.map((opt) => (
-                <label key={opt.key} className="exam-option">
-                  <input
-                    type="radio"
-                    name={`answer-${item.id}`}
-                    value={opt.key}
-                    checked={answers[item.id] === opt.key}
-                    onChange={() => handleSelect(item, opt.key)}
-                    disabled={submitting || isExpired}
-                  />
-                  {opt.label}
-                </label>
-              ))}
-            </div>
+          return (
+            <fieldset key={item.id} className="exam-question">
+              <legend>Câu {item.position}</legend>
+              {hasContent ? (
+                <>
+                  <p className="exam-question-prompt">{promptText}</p>
+                  <div className="exam-options">
+                    {choices.map((choice) => (
+                      <label key={choice.id} className="exam-option">
+                        <input
+                          type="radio"
+                          name={`answer-${item.id}`}
+                          value={choice.id}
+                          checked={answers[item.id] === choice.id}
+                          onChange={() => handleSelect(item, choice.id)}
+                          disabled={submitting || isExpired}
+                        />
+                        <span className="exam-option-label">{choice.id}.</span>{' '}
+                        {choice.label}
+                      </label>
+                    ))}
+                  </div>
+                </>
+              ) : (
+                <div className="exam-unsupported" role="alert">
+                  <p>
+                    Câu hỏi này chưa có nội dung đầy đủ (mã phiên bản:{' '}
+                    {item.question_version_id}).
+                  </p>
+                </div>
+              )}
 
-            <SaveStatusMessage status={saveStatuses[item.id]} />
-          </fieldset>
-        ))}
+              <SaveStatusMessage status={saveStatuses[item.id]} />
+            </fieldset>
+          );
+        })}
 
         <div className="exam-actions">
           <button

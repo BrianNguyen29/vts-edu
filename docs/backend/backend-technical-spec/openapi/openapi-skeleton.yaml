@@ -1,14 +1,30 @@
 openapi: 3.1.0
 info:
-  title: LMS Backend API
-  version: 0.1.0
+  title: VTS EDU Backend API
+  version: 0.2.0
+  description: Product-ready core API for LMS and online assessments.
 servers:
   - url: /api/v1
+security:
+  - bearerAuth: []
 paths:
+  /auth/csrf-token:
+    get:
+      operationId: auth.csrfToken
+      tags: [Auth]
+      security: []
+      responses:
+        '200':
+          description: CSRF token returned and set as cookie
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CsrfTokenResponse'
   /auth/login:
     post:
       operationId: auth.login
       tags: [Auth]
+      security: []
       requestBody:
         required: true
         content:
@@ -17,7 +33,7 @@ paths:
               $ref: '#/components/schemas/LoginRequest'
       responses:
         '200':
-          description: Login success
+          description: Login success; refresh cookie set
           content:
             application/json:
               schema:
@@ -29,24 +45,53 @@ paths:
       operationId: auth.refresh
       tags: [Auth]
       security: []
+      description: Requires `vts_refresh` HttpOnly cookie and `X-CSRF-Token` header.
       responses:
         '200':
           description: Access token refreshed
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/RefreshResponse'
+                $ref: '#/components/schemas/LoginResponse'
         '401':
           $ref: '#/components/responses/Unauthorized'
   /auth/logout:
     post:
       operationId: auth.logout
       tags: [Auth]
+      security: []
+      description: Requires `vts_refresh` HttpOnly cookie and `X-CSRF-Token` header.
       responses:
-        '204':
-          description: Logged out
+        '200':
+          description: Logout success; refresh cookie cleared
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessResponse'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+  /auth/change-password:
+    post:
+      operationId: auth.changePassword
+      tags: [Auth]
+      description: Requires Bearer access token and `X-CSRF-Token` header.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ChangePasswordRequest'
+      responses:
+        '200':
+          description: Password changed; all refresh sessions revoked
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessResponse'
         '401':
           $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
   /me:
     get:
       operationId: me.get
@@ -60,10 +105,31 @@ paths:
                 $ref: '#/components/schemas/MeResponse'
         '401':
           $ref: '#/components/responses/Unauthorized'
+  /attempts/{attempt_id}:
+    get:
+      operationId: attempts.get
+      tags: [Attempts]
+      parameters:
+        - name: attempt_id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: Attempt snapshot with item prompts and choices
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AttemptSnapshot'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
   /attempts/{attempt_id}/answers/{attempt_item_id}:
     put:
-      operationId: attempt.saveAnswer
+      operationId: attempts.saveAnswer
       tags: [Attempts]
+      description: Requires Bearer access token and `X-CSRF-Token` header.
       parameters:
         - name: attempt_id
           in: path
@@ -86,18 +152,103 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/SaveAnswerResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
         '409':
-          description: Revision conflict
-          content:
-            application/problem+json:
-              schema:
-                $ref: '#/components/schemas/Problem'
+          $ref: '#/components/responses/Conflict'
   /attempts/{attempt_id}/submit:
     post:
-      operationId: attempt.submit
+      operationId: attempts.submit
       tags: [Attempts]
+      description: Requires Bearer access token and `X-CSRF-Token` header.
       parameters:
         - name: attempt_id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: Submitted and graded (MCQ) or expired
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AttemptSubmitted'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+  /assessments:
+    get:
+      operationId: assessments.list
+      tags: [Assessments]
+      description: Teacher or admin only.
+      responses:
+        '200':
+          description: Published/open assessments for the current organization
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AssessmentList'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+  /users:
+    get:
+      operationId: users.list
+      tags: [Admin]
+      description: Admin only.
+      responses:
+        '200':
+          description: Users in the current organization
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserList'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+    post:
+      operationId: users.create
+      tags: [Admin]
+      description: Admin only. Requires `X-CSRF-Token` header.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateUserRequest'
+      responses:
+        '201':
+          description: User created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/User'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          $ref: '#/components/responses/Conflict'
+  /users/{user_id}/roles:
+    put:
+      operationId: users.updateRoles
+      tags: [Admin]
+      description: Admin only. Requires `X-CSRF-Token` header.
+      parameters:
+        - name: user_id
           in: path
           required: true
           schema: { type: string, format: uuid }
@@ -106,16 +257,92 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/SubmitAttemptRequest'
+              $ref: '#/components/schemas/UpdateRolesRequest'
       responses:
         '200':
-          description: Submitted or expired
+          description: Roles updated
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/SubmitAttemptResponse'
+                $ref: '#/components/schemas/SuccessResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
         '401':
           $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /users/{user_id}/reset-password:
+    post:
+      operationId: users.resetPassword
+      tags: [Admin]
+      description: Admin only. Requires `X-CSRF-Token` header.
+      parameters:
+        - name: user_id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ResetPasswordRequest'
+      responses:
+        '200':
+          description: Password reset
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /organizations/current:
+    get:
+      operationId: organizations.getCurrent
+      tags: [Admin]
+      description: Admin only.
+      responses:
+        '200':
+          description: Current organization
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Organization'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+    patch:
+      operationId: organizations.updateCurrent
+      tags: [Admin]
+      description: Admin only. Requires `X-CSRF-Token` header.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateOrganizationRequest'
+      responses:
+        '200':
+          description: Organization updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Organization'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
 components:
   securitySchemes:
     bearerAuth:
@@ -123,108 +350,251 @@ components:
       scheme: bearer
       bearerFormat: JWT
   schemas:
+    CsrfTokenResponse:
+      type: object
+      required: [data]
+      properties:
+        data:
+          type: object
+          required: [csrf_token]
+          properties:
+            csrf_token: { type: string }
     LoginRequest:
       type: object
       additionalProperties: false
       required: [organization_code, username, password]
       properties:
-        organization_code: {type: string, minLength: 1, maxLength: 64}
-        username: {type: string, minLength: 1, maxLength: 128}
-        password: {type: string, minLength: 1, maxLength: 1024}
+        organization_code: { type: string, minLength: 1, maxLength: 64 }
+        username: { type: string, minLength: 1, maxLength: 128 }
+        password: { type: string, minLength: 1, maxLength: 1024 }
     LoginResponse:
       type: object
       required: [data]
       properties:
         data:
           type: object
-          required: [access_token, expires_in, user]
+          required: [access_token, expires_in, user, roles, permissions, must_change_password]
           properties:
-            access_token: {type: string}
-            expires_in: {type: integer}
-            user: {type: object}
-    RefreshResponse:
+            access_token: { type: string }
+            expires_in: { type: integer }
+            user:
+              type: object
+              required: [id, display_name]
+              properties:
+                id: { type: string, format: uuid }
+                display_name: { type: string }
+            roles: { type: array, items: { type: string } }
+            permissions: { type: array, items: { type: string } }
+            must_change_password: { type: boolean }
+    SuccessResponse:
       type: object
       required: [data]
       properties:
         data:
           type: object
-          required: [access_token, expires_in]
+          required: [success]
           properties:
-            access_token: {type: string}
-            expires_in: {type: integer}
+            success: { type: boolean }
+    ChangePasswordRequest:
+      type: object
+      additionalProperties: false
+      required: [current_password, new_password]
+      properties:
+        current_password: { type: string, minLength: 1 }
+        new_password: { type: string, minLength: 1 }
     MeResponse:
       type: object
       required: [data]
       properties:
         data:
           type: object
-          required: [id, organization_id, roles, permissions]
+          required: [id, organization_id, display_name, roles, permissions, must_change_password]
           properties:
-            id: {type: string, format: uuid}
-            organization_id: {type: string, format: uuid}
-            roles: {type: array, items: {type: string}}
-            permissions: {type: array, items: {type: string}}
+            id: { type: string, format: uuid }
+            organization_id: { type: string, format: uuid }
+            display_name: { type: string }
+            roles: { type: array, items: { type: string } }
+            permissions: { type: array, items: { type: string } }
+            must_change_password: { type: boolean }
+    AttemptSnapshot:
+      type: object
+      required: [data]
+      properties:
+        data:
+          type: object
+          required: [id, organization_id, assessment_id, status, items]
+          properties:
+            id: { type: string, format: uuid }
+            organization_id: { type: string, format: uuid }
+            assessment_id: { type: string, format: uuid }
+            publication_id: { type: string, format: uuid, nullable: true }
+            status: { type: string, enum: [CREATED, IN_PROGRESS, SUBMITTED, EXPIRED, TERMINATED] }
+            started_at: { type: string, format: date-time, nullable: true }
+            expires_at: { type: string, format: date-time, nullable: true }
+            submitted_at: { type: string, format: date-time, nullable: true }
+            items:
+              type: array
+              items:
+                $ref: '#/components/schemas/AttemptItem'
+    AttemptItem:
+      type: object
+      required: [id, question_version_id, position, points, prompt, choices]
+      properties:
+        id: { type: string, format: uuid }
+        question_version_id: { type: string, format: uuid }
+        position: { type: integer, minimum: 1 }
+        points: { type: string }
+        prompt: { type: object }
+        choices: { type: array, items: { type: object } }
+        answer:
+          type: object
+          required: [answer_payload, revision, answered_at]
+          properties:
+            answer_payload: { type: object }
+            revision: { type: integer, minimum: 1 }
+            answered_at: { type: string, format: date-time }
     SaveAnswerRequest:
       type: object
       additionalProperties: false
-      required: [expected_revision, client_mutation_id, answer]
+      required: [answer_payload]
       properties:
-        expected_revision: {type: integer, minimum: 0}
-        client_mutation_id: {type: string, format: uuid}
-        answer:
-          type: object
-          required: [type]
-          properties:
-            type: {type: string, enum: [SINGLE_CHOICE, MULTIPLE_CHOICE, TRUE_FALSE, SHORT_TEXT, NUMERIC, ESSAY]}
-            choice_ids: {type: array, items: {type: string}}
-            text: {type: string}
-            numeric_value: {type: string}
+        answer_payload: { type: object }
     SaveAnswerResponse:
       type: object
       required: [data]
       properties:
         data:
           type: object
-          required: [attempt_item_id, revision, saved_at]
+          required: [attempt_item_id, revision, answer_payload, answered_at]
           properties:
-            attempt_item_id: {type: string, format: uuid}
-            acknowledged_client_mutation_id: {type: string, format: uuid}
-            revision: {type: integer, minimum: 1}
-            saved_at: {type: string, format: date-time}
-    SubmitAttemptRequest:
-      type: object
-      additionalProperties: false
-      required: [final_answer_revisions]
-      properties:
-        final_answer_revisions:
-          type: object
-          additionalProperties: {type: integer}
-          description: Map attempt_item_id -> expected revision
-    SubmitAttemptResponse:
+            attempt_item_id: { type: string, format: uuid }
+            revision: { type: integer, minimum: 1 }
+            answer_payload: { type: object }
+            answered_at: { type: string, format: date-time }
+    AttemptSubmitted:
       type: object
       required: [data]
       properties:
         data:
           type: object
-          required: [status, submitted_at]
+          required: [id, status, submitted_at, score, max_score, grading_status]
           properties:
-            status: {type: string, enum: [SUBMITTED, EXPIRED]}
-            submitted_at: {type: string, format: date-time}
-            grading_status: {type: string, enum: [QUEUED, AUTO_GRADED, MANUAL_REVIEW, FINALIZED]}
+            id: { type: string, format: uuid }
+            status: { type: string, enum: [SUBMITTED, EXPIRED] }
+            submitted_at: { type: string, format: date-time }
+            score: { type: string }
+            max_score: { type: string }
+            grading_status: { type: string, enum: [GRADED] }
+    AssessmentList:
+      type: object
+      required: [data]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/AssessmentListItem'
+    AssessmentListItem:
+      type: object
+      required: [id, title, status, duration_minutes]
+      properties:
+        id: { type: string, format: uuid }
+        title: { type: string }
+        status: { type: string, enum: [OPEN, PUBLISHED] }
+        duration_minutes: { type: integer, minimum: 1 }
+    UserList:
+      type: object
+      required: [data]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/User'
+    User:
+      type: object
+      required: [id, display_name, email, login_name, roles, must_change_password]
+      properties:
+        id: { type: string, format: uuid }
+        display_name: { type: string }
+        email: { type: string, nullable: true }
+        login_name: { type: string }
+        roles: { type: array, items: { type: string } }
+        must_change_password: { type: boolean }
+    CreateUserRequest:
+      type: object
+      additionalProperties: false
+      required: [login_name, display_name, temporary_password, roles]
+      properties:
+        login_name: { type: string, minLength: 1, maxLength: 128 }
+        display_name: { type: string, minLength: 1 }
+        email: { type: string, nullable: true }
+        temporary_password: { type: string, minLength: 1 }
+        roles: { type: array, items: { type: string, enum: [student, teacher, admin] } }
+    UpdateRolesRequest:
+      type: object
+      additionalProperties: false
+      required: [roles]
+      properties:
+        roles: { type: array, items: { type: string, enum: [student, teacher, admin] } }
+    ResetPasswordRequest:
+      type: object
+      additionalProperties: false
+      required: [temporary_password]
+      properties:
+        temporary_password: { type: string, minLength: 1 }
+    Organization:
+      type: object
+      required: [data]
+      properties:
+        data:
+          type: object
+          required: [id, code, name]
+          properties:
+            id: { type: string, format: uuid }
+            code: { type: string }
+            name: { type: string }
+    UpdateOrganizationRequest:
+      type: object
+      additionalProperties: false
+      required: [name]
+      properties:
+        name: { type: string, minLength: 1 }
     Problem:
       type: object
       required: [title, status, code]
       properties:
-        type: {type: string, format: uri-reference}
-        title: {type: string}
-        status: {type: integer}
-        code: {type: string}
-        detail: {type: string}
-        request_id: {type: string}
-        current_revision: {type: integer}
+        type: { type: string, format: uri-reference }
+        title: { type: string }
+        status: { type: integer }
+        code: { type: string }
+        detail: { type: string }
+        request_id: { type: string }
   responses:
     Unauthorized:
       description: Authentication required or invalid
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+    Forbidden:
+      description: Insufficient permissions or invalid CSRF token
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+    BadRequest:
+      description: Invalid request body
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+    NotFound:
+      description: Resource not found
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+    Conflict:
+      description: Resource conflict or attempt not in progress/expired
       content:
         application/problem+json:
           schema:

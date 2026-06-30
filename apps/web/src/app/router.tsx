@@ -7,6 +7,7 @@ import { DiagnosticsPage } from '@/pages/diagnostics/diagnostics-page';
 import { DashboardPage } from '@/pages/dashboard/dashboard-page';
 import { TeacherDashboardPage } from '@/pages/dashboard/teacher-dashboard-page';
 import { AdminDashboardPage } from '@/pages/dashboard/admin-dashboard-page';
+import { ChangePasswordPage } from '@/pages/change-password/change-password-page';
 import { ExamPage } from '@/pages/exam/exam-page';
 import { NotFoundPage } from '@/pages/not-found/not-found-page';
 import { useAuth } from '@/app/providers/auth-provider';
@@ -29,6 +30,13 @@ function ProtectedRoute({ children }: { children: ReactNode }) {
     );
   }
 
+  if (
+    auth.status === 'restricted' &&
+    location.pathname !== '/app/change-password'
+  ) {
+    return <Navigate to="/app/change-password" replace />;
+  }
+
   return children;
 }
 
@@ -39,7 +47,7 @@ function GuestOnly({ children }: { children: ReactNode }) {
     return <div className="loading-full">Đang khởi tạo phiên làm việc…</div>;
   }
 
-  if (auth.status === 'authenticated') {
+  if (auth.status === 'authenticated' || auth.status === 'restricted') {
     return <Navigate to="/app" replace />;
   }
 
@@ -71,6 +79,10 @@ function RoleRedirect() {
 
   if (auth.status === 'bootstrapping') {
     return <div className="loading-full">Đang khởi tạo phiên làm việc…</div>;
+  }
+
+  if (auth.status === 'restricted' && auth.actor) {
+    return <Navigate to="/app/change-password" replace />;
   }
 
   if (auth.status !== 'authenticated' || !auth.actor) {
@@ -126,6 +138,10 @@ export const router = createBrowserRouter([
       {
         path: 'admin',
         element: <AdminDashboardPage />,
+      },
+      {
+        path: 'change-password',
+        element: <ChangePasswordPage />,
       },
     ],
   },

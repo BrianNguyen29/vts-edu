@@ -38,13 +38,13 @@ Không xây dashboard đẹp đầy đủ trước khi luồng thi và điểm h
 - Generated API type không sửa tay.
 - CI chạy typecheck/lint/test/build.
 
-## 3. Phase 1 — Authentication & app shell (Tuần 3–4)
+## 3. Phase 1 — Authentication & app shell (Tuần 3–4) — Backend ready
 
 - Login.
 - Refresh bootstrap.
 - Logout/cross-tab.
-- Change password.
-- Permission route guard.
+- Change password (backend `POST /auth/change-password` ready).
+- Permission route guard (backend returns `roles` + `permissions` + `must_change_password`).
 - Sidebar/header responsive.
 - Profile/session list.
 - Global error mapping.
@@ -55,6 +55,7 @@ Exit:
 - 401 refresh single-flight test.
 - 403/404 states.
 - Mobile shell usable.
+- Forced password change redirect works.
 
 ## 4. Phase 2 — Classes & resources (Tuần 5–7)
 
@@ -94,6 +95,7 @@ Exit:
 - Validation summary.
 - Preview.
 - Publish confirm/conflict.
+- Teacher assessment list (`GET /assessments`) backend ready.
 
 Exit:
 

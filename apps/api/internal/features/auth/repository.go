@@ -12,19 +12,22 @@ import (
 
 // LoginIdentity is the data required to authenticate a login attempt.
 type LoginIdentity struct {
-	UserID       string
-	MembershipID string
-	OrgID        string
-	Username     string
-	PasswordHash string
-	AuthVersion  int64
+	UserID             string
+	MembershipID       string
+	OrgID              string
+	Username           string
+	PasswordHash       string
+	AuthVersion        int64
+	MustChangePassword bool
+	Roles              []string
 }
 
 // ActorInfo is the public actor information returned by GET /api/v1/me.
 type ActorInfo struct {
-	UserID   string
-	OrgID    string
-	Username string
+	UserID             string
+	OrgID              string
+	Username           string
+	MustChangePassword bool
 }
 
 // InsertRefreshSessionParams holds the fields needed to create a refresh session.
@@ -62,6 +65,11 @@ type Repository interface {
 	RevokeSession(ctx context.Context, tx pgx.Tx, sessionID string) error
 	RevokeFamily(ctx context.Context, tx pgx.Tx, familyID string) error
 	FindRefreshSessionByTokenHash(ctx context.Context, tokenHash string) (*RefreshSession, error)
+
+	GetRolesByMembershipID(ctx context.Context, tx pgx.Tx, membershipID string) ([]string, error)
+	GetLoginByUserID(ctx context.Context, tx pgx.Tx, userID, orgID string) (*LoginIdentity, error)
+	UpdatePassword(ctx context.Context, tx pgx.Tx, userID, orgID, passwordHash string) error
+	RevokeUserSessions(ctx context.Context, tx pgx.Tx, userID string) error
 }
 
 type repository struct {
@@ -81,17 +89,21 @@ func (r *repository) FindLoginByCredentials(ctx context.Context, orgCode, userna
 			o.id,
 			ln.username_normalized,
 			ln.password_hash,
-			u.auth_version
+			u.auth_version,
+			u.must_change_password,
+			array_agg(mr.role) FILTER (WHERE mr.role IS NOT NULL)
 		FROM membership_login_names ln
 		JOIN organizations o ON o.id = ln.organization_id
 		JOIN organization_memberships m
 			ON m.organization_id = ln.organization_id AND m.user_id = ln.user_id
 		JOIN users u ON u.id = ln.user_id
+		LEFT JOIN membership_roles mr ON mr.membership_id = m.id
 		WHERE lower(o.code) = $1
 		  AND lower(ln.username_normalized) = $2
 		  AND o.status = 'ACTIVE'
 		  AND m.status = 'ACTIVE'
 		  AND ln.status = 'ACTIVE'
+		GROUP BY u.id, m.id, o.id, ln.username_normalized, ln.password_hash, u.auth_version, u.must_change_password
 		LIMIT 1
 	`
 
@@ -103,12 +115,17 @@ func (r *repository) FindLoginByCredentials(ctx context.Context, orgCode, userna
 		&id.Username,
 		&id.PasswordHash,
 		&id.AuthVersion,
+		&id.MustChangePassword,
+		&id.Roles,
 	)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, ErrInvalidCredentials
 	}
 	if err != nil {
 		return nil, fmt.Errorf("find login: %w", err)
+	}
+	if id.Roles == nil {
+		id.Roles = []string{}
 	}
 	return &id, nil
 }
@@ -146,16 +163,17 @@ func (r *repository) InsertRefreshSession(ctx context.Context, tx pgx.Tx, p Inse
 
 func (r *repository) GetActorByUserID(ctx context.Context, userID, orgID string) (*ActorInfo, error) {
 	query := `
-		SELECT user_id, organization_id, username_normalized
-		FROM membership_login_names
-		WHERE user_id = $1
-		  AND organization_id = $2
-		  AND status = 'ACTIVE'
+		SELECT ln.user_id, ln.organization_id, ln.username_normalized, u.must_change_password
+		FROM membership_login_names ln
+		JOIN users u ON u.id = ln.user_id
+		WHERE ln.user_id = $1
+		  AND ln.organization_id = $2
+		  AND ln.status = 'ACTIVE'
 		LIMIT 1
 	`
 
 	var a ActorInfo
-	err := r.pool.QueryRow(ctx, query, userID, orgID).Scan(&a.UserID, &a.OrgID, &a.Username)
+	err := r.pool.QueryRow(ctx, query, userID, orgID).Scan(&a.UserID, &a.OrgID, &a.Username, &a.MustChangePassword)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, ErrActorNotFound
 	}
@@ -287,4 +305,123 @@ func (r *repository) FindRefreshSessionByTokenHash(ctx context.Context, tokenHas
 		return nil, fmt.Errorf("find refresh session: %w", err)
 	}
 	return &s, nil
+}
+
+func (r *repository) GetRolesByMembershipID(ctx context.Context, tx pgx.Tx, membershipID string) ([]string, error) {
+	query := `
+		SELECT role
+		FROM membership_roles
+		WHERE membership_id = $1
+		ORDER BY role
+	`
+
+	rows, err := tx.Query(ctx, query, membershipID)
+	if err != nil {
+		return nil, fmt.Errorf("get roles: %w", err)
+	}
+	defer rows.Close()
+
+	var roles []string
+	for rows.Next() {
+		var role string
+		if err := rows.Scan(&role); err != nil {
+			return nil, fmt.Errorf("scan role: %w", err)
+		}
+		roles = append(roles, role)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("read roles: %w", err)
+	}
+	if roles == nil {
+		roles = []string{}
+	}
+	return roles, nil
+}
+
+func (r *repository) GetLoginByUserID(ctx context.Context, tx pgx.Tx, userID, orgID string) (*LoginIdentity, error) {
+	query := `
+		SELECT
+			u.id,
+			m.id,
+			o.id,
+			ln.username_normalized,
+			ln.password_hash,
+			u.auth_version,
+			u.must_change_password,
+			array_agg(mr.role) FILTER (WHERE mr.role IS NOT NULL)
+		FROM membership_login_names ln
+		JOIN organizations o ON o.id = ln.organization_id
+		JOIN organization_memberships m
+			ON m.organization_id = ln.organization_id AND m.user_id = ln.user_id
+		JOIN users u ON u.id = ln.user_id
+		LEFT JOIN membership_roles mr ON mr.membership_id = m.id
+		WHERE u.id = $1
+		  AND o.id = $2
+		  AND o.status = 'ACTIVE'
+		  AND m.status = 'ACTIVE'
+		  AND ln.status = 'ACTIVE'
+		GROUP BY u.id, m.id, o.id, ln.username_normalized, ln.password_hash, u.auth_version, u.must_change_password
+		LIMIT 1
+	`
+
+	var id LoginIdentity
+	err := tx.QueryRow(ctx, query, userID, orgID).Scan(
+		&id.UserID,
+		&id.MembershipID,
+		&id.OrgID,
+		&id.Username,
+		&id.PasswordHash,
+		&id.AuthVersion,
+		&id.MustChangePassword,
+		&id.Roles,
+	)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, ErrActorNotFound
+	}
+	if err != nil {
+		return nil, fmt.Errorf("get login by user id: %w", err)
+	}
+	if id.Roles == nil {
+		id.Roles = []string{}
+	}
+	return &id, nil
+}
+
+func (r *repository) UpdatePassword(ctx context.Context, tx pgx.Tx, userID, orgID, passwordHash string) error {
+	_, err := tx.Exec(ctx, `
+		UPDATE users
+		SET auth_version = auth_version + 1,
+		    must_change_password = false
+		WHERE id = $1
+	`, userID)
+	if err != nil {
+		return fmt.Errorf("update user auth version: %w", err)
+	}
+
+	tag, err := tx.Exec(ctx, `
+		UPDATE membership_login_names
+		SET password_hash = $1
+		WHERE user_id = $2
+		  AND organization_id = $3
+	`, passwordHash, userID, orgID)
+	if err != nil {
+		return fmt.Errorf("update password hash: %w", err)
+	}
+	if tag.RowsAffected() == 0 {
+		return ErrActorNotFound
+	}
+	return nil
+}
+
+func (r *repository) RevokeUserSessions(ctx context.Context, tx pgx.Tx, userID string) error {
+	_, err := tx.Exec(ctx, `
+		UPDATE refresh_sessions
+		SET revoked_at = now()
+		WHERE user_id = $1
+		  AND revoked_at IS NULL
+	`, userID)
+	if err != nil {
+		return fmt.Errorf("revoke user sessions: %w", err)
+	}
+	return nil
 }

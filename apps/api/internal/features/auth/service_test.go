@@ -10,14 +10,18 @@ import (
 )
 
 type fakeRepository struct {
-	findFunc       func(ctx context.Context, orgCode, username string) (*LoginIdentity, error)
-	insertFunc     func(ctx context.Context, tx pgx.Tx, p InsertRefreshSessionParams) (string, error)
-	actorFunc      func(ctx context.Context, userID, orgID string) (*ActorInfo, error)
-	refreshFunc    func(ctx context.Context, tx pgx.Tx, tokenHash string) (*RefreshSession, error)
-	markReplaced   func(ctx context.Context, tx pgx.Tx, sessionID, replacedByTokenHash string) error
-	revokeSession  func(ctx context.Context, tx pgx.Tx, sessionID string) error
-	revokeFamily   func(ctx context.Context, tx pgx.Tx, familyID string) error
-	findByHashFunc func(ctx context.Context, tokenHash string) (*RefreshSession, error)
+	findFunc               func(ctx context.Context, orgCode, username string) (*LoginIdentity, error)
+	insertFunc             func(ctx context.Context, tx pgx.Tx, p InsertRefreshSessionParams) (string, error)
+	actorFunc              func(ctx context.Context, userID, orgID string) (*ActorInfo, error)
+	refreshFunc            func(ctx context.Context, tx pgx.Tx, tokenHash string) (*RefreshSession, error)
+	markReplaced           func(ctx context.Context, tx pgx.Tx, sessionID, replacedByTokenHash string) error
+	revokeSession          func(ctx context.Context, tx pgx.Tx, sessionID string) error
+	revokeFamily           func(ctx context.Context, tx pgx.Tx, familyID string) error
+	findByHashFunc         func(ctx context.Context, tokenHash string) (*RefreshSession, error)
+	rolesFunc              func(ctx context.Context, tx pgx.Tx, membershipID string) ([]string, error)
+	loginByUserIDFunc      func(ctx context.Context, tx pgx.Tx, userID, orgID string) (*LoginIdentity, error)
+	updatePasswordFunc     func(ctx context.Context, tx pgx.Tx, userID, orgID, passwordHash string) error
+	revokeUserSessionsFunc func(ctx context.Context, tx pgx.Tx, userID string) error
 }
 
 func (f *fakeRepository) FindLoginByCredentials(ctx context.Context, orgCode, username string) (*LoginIdentity, error) {
@@ -52,6 +56,22 @@ func (f *fakeRepository) FindRefreshSessionByTokenHash(ctx context.Context, toke
 	return f.findByHashFunc(ctx, tokenHash)
 }
 
+func (f *fakeRepository) GetRolesByMembershipID(ctx context.Context, tx pgx.Tx, membershipID string) ([]string, error) {
+	return f.rolesFunc(ctx, tx, membershipID)
+}
+
+func (f *fakeRepository) GetLoginByUserID(ctx context.Context, tx pgx.Tx, userID, orgID string) (*LoginIdentity, error) {
+	return f.loginByUserIDFunc(ctx, tx, userID, orgID)
+}
+
+func (f *fakeRepository) UpdatePassword(ctx context.Context, tx pgx.Tx, userID, orgID, passwordHash string) error {
+	return f.updatePasswordFunc(ctx, tx, userID, orgID, passwordHash)
+}
+
+func (f *fakeRepository) RevokeUserSessions(ctx context.Context, tx pgx.Tx, userID string) error {
+	return f.revokeUserSessionsFunc(ctx, tx, userID)
+}
+
 type stubTxManager struct{}
 
 func (stubTxManager) WithinTx(ctx context.Context, fn func(ctx context.Context, tx pgx.Tx) error) error {
@@ -62,12 +82,14 @@ func TestService_Login_OK(t *testing.T) {
 	repo := &fakeRepository{
 		findFunc: func(ctx context.Context, orgCode, username string) (*LoginIdentity, error) {
 			return &LoginIdentity{
-				UserID:       "user-id",
-				MembershipID: "membership-id",
-				OrgID:        "org-id",
-				Username:     "hs001",
-				PasswordHash: "$argon2id$v=19$m=65536,t=3,p=4$1g6Ot1/Ps3bNRlWCAiM9mA$e194j5UoiFL4BHv+vjP4yL32dPhq6r8ybAfR4ekSsBE",
-				AuthVersion:  1,
+				UserID:             "user-id",
+				MembershipID:       "membership-id",
+				OrgID:              "org-id",
+				Username:           "hs001",
+				PasswordHash:       "$argon2id$v=19$m=65536,t=3,p=4$1g6Ot1/Ps3bNRlWCAiM9mA$e194j5UoiFL4BHv+vjP4yL32dPhq6r8ybAfR4ekSsBE",
+				AuthVersion:        1,
+				MustChangePassword: false,
+				Roles:              []string{"student"},
 			}, nil
 		},
 		insertFunc: func(ctx context.Context, tx pgx.Tx, p InsertRefreshSessionParams) (string, error) {
@@ -99,6 +121,15 @@ func TestService_Login_OK(t *testing.T) {
 	if result.User.ID != "user-id" {
 		t.Errorf("user id = %q, want user-id", result.User.ID)
 	}
+	if len(result.Roles) != 1 || result.Roles[0] != "student" {
+		t.Errorf("roles = %v, want [student]", result.Roles)
+	}
+	if result.MustChangePassword {
+		t.Error("expected must_change_password = false")
+	}
+	if len(result.Permissions) == 0 {
+		t.Error("expected non-empty permissions for student")
+	}
 }
 
 func TestService_Login_BadPassword(t *testing.T) {
@@ -127,15 +158,16 @@ func TestService_Me_OK(t *testing.T) {
 	repo := &fakeRepository{
 		actorFunc: func(ctx context.Context, userID, orgID string) (*ActorInfo, error) {
 			return &ActorInfo{
-				UserID:   userID,
-				OrgID:    orgID,
-				Username: "hs001",
+				UserID:             userID,
+				OrgID:              orgID,
+				Username:           "hs001",
+				MustChangePassword: true,
 			}, nil
 		},
 	}
 
 	issuer := NewTokenIssuer("test-signing-key-minimum-32-bytes-long", "test-issuer", "test-audience", 15*time.Minute)
-	token, _, err := issuer.IssueAccessToken("user-id", "org-id", "session-id", []string{"student"}, 1)
+	token, _, err := issuer.IssueAccessToken("user-id", "org-id", "session-id", []string{"student"}, 1, false)
 	if err != nil {
 		t.Fatalf("IssueAccessToken failed: %v", err)
 	}
@@ -157,6 +189,9 @@ func TestService_Me_OK(t *testing.T) {
 	}
 	if len(result.Roles) != 1 || result.Roles[0] != "student" {
 		t.Errorf("roles = %v, want [student]", result.Roles)
+	}
+	if !result.MustChangePassword {
+		t.Error("expected must_change_password from DB to override token claim")
 	}
 }
 
@@ -184,7 +219,10 @@ func TestService_Refresh_OK(t *testing.T) {
 			return "new-session-id", nil
 		},
 		actorFunc: func(ctx context.Context, userID, orgID string) (*ActorInfo, error) {
-			return &ActorInfo{UserID: userID, OrgID: orgID, Username: "hs001"}, nil
+			return &ActorInfo{UserID: userID, OrgID: orgID, Username: "hs001", MustChangePassword: true}, nil
+		},
+		rolesFunc: func(ctx context.Context, tx pgx.Tx, membershipID string) ([]string, error) {
+			return []string{"teacher"}, nil
 		},
 	}
 
@@ -207,6 +245,12 @@ func TestService_Refresh_OK(t *testing.T) {
 	}
 	if result.User.ID != "user-id" {
 		t.Errorf("user id = %q, want user-id", result.User.ID)
+	}
+	if len(result.Roles) != 1 || result.Roles[0] != "teacher" {
+		t.Errorf("roles = %v, want [teacher]", result.Roles)
+	}
+	if !result.MustChangePassword {
+		t.Error("expected must_change_password = true from DB")
 	}
 }
 
@@ -295,5 +339,95 @@ func TestService_Logout_MissingCookie(t *testing.T) {
 	}
 	if !result.Success {
 		t.Error("expected success for missing cookie")
+	}
+}
+
+func TestService_ChangePassword_OK(t *testing.T) {
+	seedHash := "$argon2id$v=19$m=65536,t=3,p=4$1g6Ot1/Ps3bNRlWCAiM9mA$e194j5UoiFL4BHv+vjP4yL32dPhq6r8ybAfR4ekSsBE"
+	updated := false
+	revoked := false
+
+	repo := &fakeRepository{
+		loginByUserIDFunc: func(ctx context.Context, tx pgx.Tx, userID, orgID string) (*LoginIdentity, error) {
+			return &LoginIdentity{
+				UserID:       userID,
+				OrgID:        orgID,
+				PasswordHash: seedHash,
+			}, nil
+		},
+		updatePasswordFunc: func(ctx context.Context, tx pgx.Tx, userID, orgID, passwordHash string) error {
+			updated = true
+			return nil
+		},
+		revokeUserSessionsFunc: func(ctx context.Context, tx pgx.Tx, userID string) error {
+			revoked = true
+			return nil
+		},
+	}
+
+	issuer := NewTokenIssuer("test-signing-key-minimum-32-bytes-long", "test-issuer", "test-audience", 15*time.Minute)
+	token, _, err := issuer.IssueAccessToken("user-id", "org-id", "session-id", []string{"student"}, 1, true)
+	if err != nil {
+		t.Fatalf("IssueAccessToken failed: %v", err)
+	}
+
+	svc := NewService(repo, stubTxManager{}, issuer, 7*24*time.Hour)
+	if err := svc.ChangePassword(context.Background(), token, ChangePasswordRequest{
+		CurrentPassword: "Password123!",
+		NewPassword:     "NewPassword123!",
+	}); err != nil {
+		t.Fatalf("ChangePassword failed: %v", err)
+	}
+	if !updated {
+		t.Error("expected password to be updated")
+	}
+	if !revoked {
+		t.Error("expected sessions to be revoked")
+	}
+}
+
+func TestService_ChangePassword_BadCurrent(t *testing.T) {
+	seedHash := "$argon2id$v=19$m=65536,t=3,p=4$1g6Ot1/Ps3bNRlWCAiM9mA$e194j5UoiFL4BHv+vjP4yL32dPhq6r8ybAfR4ekSsBE"
+	repo := &fakeRepository{
+		loginByUserIDFunc: func(ctx context.Context, tx pgx.Tx, userID, orgID string) (*LoginIdentity, error) {
+			return &LoginIdentity{
+				UserID:       userID,
+				OrgID:        orgID,
+				PasswordHash: seedHash,
+			}, nil
+		},
+	}
+
+	issuer := NewTokenIssuer("test-signing-key-minimum-32-bytes-long", "test-issuer", "test-audience", 15*time.Minute)
+	token, _, err := issuer.IssueAccessToken("user-id", "org-id", "session-id", []string{"student"}, 1, true)
+	if err != nil {
+		t.Fatalf("IssueAccessToken failed: %v", err)
+	}
+
+	svc := NewService(repo, stubTxManager{}, issuer, 7*24*time.Hour)
+	err = svc.ChangePassword(context.Background(), token, ChangePasswordRequest{
+		CurrentPassword: "WrongPassword",
+		NewPassword:     "NewPassword123!",
+	})
+	if !errors.Is(err, ErrInvalidCredentials) {
+		t.Fatalf("expected ErrInvalidCredentials, got %v", err)
+	}
+}
+
+func TestService_ChangePassword_MissingFields(t *testing.T) {
+	repo := &fakeRepository{}
+
+	issuer := NewTokenIssuer("test-signing-key-minimum-32-bytes-long", "test-issuer", "test-audience", 15*time.Minute)
+	token, _, err := issuer.IssueAccessToken("user-id", "org-id", "session-id", []string{"student"}, 1, false)
+	if err != nil {
+		t.Fatalf("IssueAccessToken failed: %v", err)
+	}
+
+	svc := NewService(repo, stubTxManager{}, issuer, 7*24*time.Hour)
+	if err := svc.ChangePassword(context.Background(), token, ChangePasswordRequest{
+		CurrentPassword: "",
+		NewPassword:     "NewPassword123!",
+	}); !errors.Is(err, ErrInvalidCredentials) {
+		t.Fatalf("expected ErrInvalidCredentials for missing current password, got %v", err)
 	}
 }

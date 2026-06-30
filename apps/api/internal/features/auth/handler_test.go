@@ -15,10 +15,11 @@ import (
 )
 
 type fakeService struct {
-	loginFunc   func(ctx context.Context, req auth.LoginRequest) (*auth.LoginResult, error)
-	refreshFunc func(ctx context.Context, raw string) (*auth.RefreshResult, error)
-	logoutFunc  func(ctx context.Context, raw string) (*auth.LogoutResult, error)
-	meFunc      func(ctx context.Context, token string) (*auth.MeResult, error)
+	loginFunc          func(ctx context.Context, req auth.LoginRequest) (*auth.LoginResult, error)
+	refreshFunc        func(ctx context.Context, raw string) (*auth.RefreshResult, error)
+	logoutFunc         func(ctx context.Context, raw string) (*auth.LogoutResult, error)
+	meFunc             func(ctx context.Context, token string) (*auth.MeResult, error)
+	changePasswordFunc func(ctx context.Context, token string, req auth.ChangePasswordRequest) error
 }
 
 func (f *fakeService) Login(ctx context.Context, req auth.LoginRequest) (*auth.LoginResult, error) {
@@ -37,6 +38,10 @@ func (f *fakeService) Me(ctx context.Context, token string) (*auth.MeResult, err
 	return f.meFunc(ctx, token)
 }
 
+func (f *fakeService) ChangePassword(ctx context.Context, token string, req auth.ChangePasswordRequest) error {
+	return f.changePasswordFunc(ctx, token, req)
+}
+
 func addCSRF(req *http.Request) {
 	req.AddCookie(&http.Cookie{Name: csrf.CookieName, Value: "demo-csrf-token"})
 	req.Header.Set(csrf.HeaderName, "demo-csrf-token")
@@ -46,14 +51,14 @@ func TestHandler_Login_OK(t *testing.T) {
 	svc := &fakeService{
 		loginFunc: func(ctx context.Context, req auth.LoginRequest) (*auth.LoginResult, error) {
 			return &auth.LoginResult{
-				AccessToken:    "access-token-123",
-				ExpiresIn:      900,
-				RefreshToken:   "refresh-token-456",
-				RefreshExpires: time.Now().Add(7 * 24 * time.Hour),
-				User: auth.UserInfo{
-					ID:          "user-id",
-					DisplayName: "hs001",
-				},
+				AccessToken:        "access-token-123",
+				ExpiresIn:          900,
+				RefreshToken:       "refresh-token-456",
+				RefreshExpires:     time.Now().Add(7 * 24 * time.Hour),
+				User:               auth.UserInfo{ID: "user-id", DisplayName: "hs001"},
+				Roles:              []string{"student"},
+				Permissions:        []string{"attempt:read", "attempt:write", "self:read"},
+				MustChangePassword: false,
 			}, nil
 		},
 	}
@@ -151,11 +156,12 @@ func TestHandler_Me_ValidToken(t *testing.T) {
 				return nil, errors.New("unexpected token")
 			}
 			return &auth.MeResult{
-				ID:             "user-id",
-				OrganizationID: "org-id",
-				DisplayName:    "hs001",
-				Roles:          []string{"student"},
-				Permissions:    []string{},
+				ID:                 "user-id",
+				OrganizationID:     "org-id",
+				DisplayName:        "hs001",
+				Roles:              []string{"student"},
+				Permissions:        []string{"attempt:read"},
+				MustChangePassword: true,
 			}, nil
 		},
 	}
@@ -186,20 +192,23 @@ func TestHandler_Me_ValidToken(t *testing.T) {
 	if len(resp.Data.Roles) != 1 || resp.Data.Roles[0] != "student" {
 		t.Errorf("roles = %v, want [student]", resp.Data.Roles)
 	}
+	if !resp.Data.MustChangePassword {
+		t.Error("expected must_change_password = true")
+	}
 }
 
 func TestHandler_Refresh_OK(t *testing.T) {
 	svc := &fakeService{
 		refreshFunc: func(ctx context.Context, raw string) (*auth.RefreshResult, error) {
 			return &auth.RefreshResult{
-				AccessToken:    "new-access-token",
-				ExpiresIn:      900,
-				RefreshToken:   "new-refresh-token",
-				RefreshExpires: time.Now().Add(7 * 24 * time.Hour),
-				User: auth.UserInfo{
-					ID:          "user-id",
-					DisplayName: "hs001",
-				},
+				AccessToken:        "new-access-token",
+				ExpiresIn:          900,
+				RefreshToken:       "new-refresh-token",
+				RefreshExpires:     time.Now().Add(7 * 24 * time.Hour),
+				User:               auth.UserInfo{ID: "user-id", DisplayName: "hs001"},
+				Roles:              []string{"teacher"},
+				Permissions:        []string{"assessment:read", "attempt:read"},
+				MustChangePassword: true,
 			}, nil
 		},
 	}
@@ -312,5 +321,79 @@ func TestHandler_Logout_MissingCookie(t *testing.T) {
 
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, want %d", rec.Code, http.StatusOK)
+	}
+}
+
+func TestHandler_ChangePassword_OK(t *testing.T) {
+	svc := &fakeService{
+		changePasswordFunc: func(ctx context.Context, token string, req auth.ChangePasswordRequest) error {
+			if token != "valid-token" {
+				return errors.New("unexpected token")
+			}
+			if req.CurrentPassword != "Password123!" || req.NewPassword != "NewPassword123!" {
+				return errors.New("unexpected password payload")
+			}
+			return nil
+		},
+	}
+	h := auth.NewHandler(svc)
+
+	body := strings.NewReader(`{"current_password":"Password123!","new_password":"NewPassword123!"}`)
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/auth/change-password", body)
+	req.Header.Set("Authorization", "Bearer valid-token")
+	addCSRF(req)
+	rec := httptest.NewRecorder()
+
+	h.ChangePassword(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", rec.Code, http.StatusOK)
+	}
+
+	var resp struct {
+		Data auth.ChangePasswordResponse `json:"data"`
+	}
+	if err := json.NewDecoder(rec.Body).Decode(&resp); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if !resp.Data.Success {
+		t.Error("expected success")
+	}
+}
+
+func TestHandler_ChangePassword_InvalidCredentials(t *testing.T) {
+	svc := &fakeService{
+		changePasswordFunc: func(ctx context.Context, token string, req auth.ChangePasswordRequest) error {
+			return auth.ErrInvalidCredentials
+		},
+	}
+	h := auth.NewHandler(svc)
+
+	body := strings.NewReader(`{"current_password":"WrongPassword","new_password":"NewPassword123!"}`)
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/auth/change-password", body)
+	req.Header.Set("Authorization", "Bearer valid-token")
+	addCSRF(req)
+	rec := httptest.NewRecorder()
+
+	h.ChangePassword(rec, req)
+
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("status = %d, want %d", rec.Code, http.StatusUnauthorized)
+	}
+}
+
+func TestHandler_ChangePassword_MissingCSRF(t *testing.T) {
+	svc := &fakeService{}
+	h := auth.NewHandler(svc)
+
+	body := strings.NewReader(`{"current_password":"Password123!","new_password":"NewPassword123!"}`)
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/auth/change-password", body)
+	req.Header.Set("Authorization", "Bearer valid-token")
+	rec := httptest.NewRecorder()
+
+	h.ChangePassword(rec, req)
+
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("status = %d, want %d", rec.Code, http.StatusForbidden)
 	}
 }

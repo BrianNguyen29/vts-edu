@@ -21,10 +21,11 @@ type TokenIssuer struct {
 // AccessClaims is the custom JWT claim set for access tokens.
 type AccessClaims struct {
 	jwt.RegisteredClaims
-	OrgID       string   `json:"org"`
-	SessionID   string   `json:"sid"`
-	Roles       []string `json:"roles"`
-	AuthVersion int64    `json:"av"`
+	OrgID              string   `json:"org"`
+	SessionID          string   `json:"sid"`
+	Roles              []string `json:"roles"`
+	AuthVersion        int64    `json:"av"`
+	MustChangePassword bool     `json:"pwd_change_required"`
 }
 
 // NewTokenIssuer creates a token issuer. signingKey should be at least 32 bytes
@@ -40,7 +41,7 @@ func NewTokenIssuer(signingKey, issuer, audience string, ttl time.Duration) *Tok
 
 // IssueAccessToken signs a new access token and returns the token string and
 // its expiration time.
-func (ti *TokenIssuer) IssueAccessToken(userID, orgID, sessionID string, roles []string, authVersion int64) (string, time.Time, error) {
+func (ti *TokenIssuer) IssueAccessToken(userID, orgID, sessionID string, roles []string, authVersion int64, mustChangePassword bool) (string, time.Time, error) {
 	now := time.Now().UTC()
 	exp := now.Add(ti.ttl)
 
@@ -53,10 +54,11 @@ func (ti *TokenIssuer) IssueAccessToken(userID, orgID, sessionID string, roles [
 			ExpiresAt: jwt.NewNumericDate(exp),
 			ID:        randomJTI(),
 		},
-		OrgID:       orgID,
-		SessionID:   sessionID,
-		Roles:       roles,
-		AuthVersion: authVersion,
+		OrgID:              orgID,
+		SessionID:          sessionID,
+		Roles:              roles,
+		AuthVersion:        authVersion,
+		MustChangePassword: mustChangePassword,
 	}
 
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)

@@ -17,7 +17,18 @@ export interface AttemptItem {
   question_version_id: string;
   position: number;
   points: string;
+  prompt?: QuestionPrompt;
+  choices?: QuestionChoice[];
   answer?: AnswerSnapshot;
+}
+
+export interface QuestionPrompt {
+  text?: string;
+}
+
+export interface QuestionChoice {
+  id: string;
+  text?: string;
 }
 
 export interface AnswerSnapshot {
@@ -70,7 +81,7 @@ function isApiError(value: unknown): value is ApiError {
   );
 }
 
-function createApiError(status: number, raw: unknown): ApiResponseError {
+export function createApiError(status: number, raw: unknown): ApiResponseError {
   if (isApiError(raw)) {
     return new ApiResponseError(status, raw);
   }

@@ -16,10 +16,16 @@ import {
   type LoginCredentials,
 } from '@/shared/auth/auth-session-store';
 
+export interface ChangePasswordCredentials {
+  currentPassword: string;
+  newPassword: string;
+}
+
 interface AuthContextValue extends AuthSession {
   login: (credentials: LoginCredentials) => Promise<void>;
   logout: () => Promise<void>;
   refresh: () => Promise<boolean>;
+  changePassword: (credentials: ChangePasswordCredentials) => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null);
@@ -96,6 +102,7 @@ async function fetchActor(): Promise<CurrentActor> {
       display_name: string;
       roles: string[];
       permissions: string[];
+      must_change_password: boolean;
     };
   };
   const data = json.data;
@@ -105,7 +112,7 @@ async function fetchActor(): Promise<CurrentActor> {
     displayName: data.display_name,
     roles: data.roles,
     permissions: data.permissions,
-    mustChangePassword: false,
+    mustChangePassword: data.must_change_password,
   };
 }
 
@@ -253,8 +260,30 @@ export function AuthProvider({ children }: AuthProviderProps) {
     }
   }, []);
 
+  const changePassword = useCallback(
+    async (credentials: ChangePasswordCredentials) => {
+      const res = await apiClient('/auth/change-password', {
+        method: 'POST',
+        body: JSON.stringify({
+          current_password: credentials.currentPassword,
+          new_password: credentials.newPassword,
+        }),
+      });
+
+      if (!res.ok) {
+        if (res.status === 401 || res.status === 403) {
+          throw new Error('invalid');
+        }
+        throw new Error(`change password failed: ${res.status}`);
+      }
+    },
+    []
+  );
+
   return (
-    <AuthContext.Provider value={{ ...session, login, logout, refresh }}>
+    <AuthContext.Provider
+      value={{ ...session, login, logout, refresh, changePassword }}
+    >
       {children}
     </AuthContext.Provider>
   );

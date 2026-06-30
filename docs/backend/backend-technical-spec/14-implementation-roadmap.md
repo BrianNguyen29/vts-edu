@@ -9,28 +9,29 @@
 
 ## 2. Phase plan
 
-### Phase 0 — Foundation & proof of concept (2–3 tuần)
+### Phase 0 — Foundation & proof of concept (2–3 tuần) ✅ Implemented
 
 - Repository/pnpm workspace.
-- Go app skeleton, chi, Huma.
-- PostgreSQL, goose, sqlc.
+- Go app skeleton, chi.
+- PostgreSQL, sequential SQL migrations.
 - Structured errors/logging/config.
 - CI.
-- POC transaction + River.
+- TxManager + POC transaction boundaries.
 - POC attempt autosave revision và concurrent submit.
 
 Exit criteria:
 
 - Duplicate submit không tạo job trùng.
-- sqlc/OpenAPI generation chạy trong CI.
+- sqlc/OpenAPI groundwork staged behind Repository interfaces (see ADR-0010).
 
-### Phase 1 — Auth, users, tenancy (3–4 tuần)
+### Phase 1 — Auth, users, tenancy (3–4 tuần) ✅ Implemented
 
 - Organization.
-- User/membership/roles.
-- Login, JWT, refresh rotation.
-- Admin user CRUD.
-- Audit cơ bản.
+- User/membership/roles (`membership_roles`).
+- Login, JWT, refresh rotation, CSRF.
+- Forced password change (`/auth/change-password`).
+- Admin user CRUD + org update.
+- Audit schema baseline (chưa ghi log).
 
 ### Phase 2 — Academic structure (2–3 tuần)
 
@@ -47,9 +48,10 @@ Exit criteria:
 - Signed download.
 - Basic processing job.
 
-### Phase 4 — Question bank (3–5 tuần)
+### Phase 4 — Question bank (3–5 tuần) — Minimal version implemented
 
-- Bank/question/version.
+- Bank/question/version schema ✅
+- Snapshot prompt/choices/answer key into `attempt_items` ✅
 - 6 MVP types.
 - Validation/publish.
 - Search/filter.
@@ -59,15 +61,16 @@ Exit criteria:
 - Assessment/sections/items.
 - Settings/targets/accommodation.
 - Validate/publish snapshots.
+- Teacher assessment list ✅
 
-### Phase 6 — Attempt runtime (4–6 tuần)
+### Phase 6 — Attempt runtime (4–6 tuần) — Core implemented
 
 - Start/resume.
 - Item selection/shuffle.
-- Save answer/revision.
+- Save answer/revision ✅
 - Heartbeat/deadline.
-- Submit/expire.
-- Auto-grade/manual review.
+- Submit/expire ✅
+- Auto-grade/manual review (MCQ auto-grade ✅)
 - Load/concurrency tests.
 
 ### Phase 7 — Assignment & gradebook (4–5 tuần)
@@ -85,6 +88,13 @@ Exit criteria:
 - Monitoring/alerts.
 - Pilot data/import.
 - Bug fixing.
+
+## 2.5 Staged Huma/sqlc/OpenAPI plan
+
+- **Current**: Hand-maintained OpenAPI skeleton covers the current API surface in `docs/backend/backend-technical-spec/openapi/openapi-skeleton.yaml`. Repository interfaces in each feature package are the migration seam.
+- **Stage 1 — sqlc migration**: Introduce sqlc generated queries side-by-side with existing repository implementations; keep interfaces stable and migrate one feature at a time. No runtime handler/service rewrite.
+- **Stage 2 — Huma migration**: Add Huma operation definitions behind existing handlers or incrementally replace handler wiring while preserving response envelopes. OpenAPI generation becomes automatic.
+- **Stage 3 — Client generation**: Generate frontend API client/types from the Huma/OpenAPI contract once it stabilizes.
 
 ## 3. Effort estimate
 

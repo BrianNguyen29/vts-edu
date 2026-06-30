@@ -24,6 +24,8 @@ type AttemptItem struct {
 	QuestionVersionID string          `json:"question_version_id"`
 	Position          int             `json:"position"`
 	Points            string          `json:"points"`
+	Prompt            json.RawMessage `json:"prompt"`
+	Choices           json.RawMessage `json:"choices"`
 	Answer            *AnswerSnapshot `json:"answer,omitempty"`
 }
 

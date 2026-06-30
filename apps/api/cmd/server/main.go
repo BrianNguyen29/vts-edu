@@ -8,6 +8,8 @@ import (
 	"os"
 
 	"github.com/BrianNguyen29/vts-edu/apps/api/internal/app"
+	"github.com/BrianNguyen29/vts-edu/apps/api/internal/features/admin"
+	"github.com/BrianNguyen29/vts-edu/apps/api/internal/features/assessments"
 	"github.com/BrianNguyen29/vts-edu/apps/api/internal/features/attempts"
 	"github.com/BrianNguyen29/vts-edu/apps/api/internal/features/auth"
 	"github.com/BrianNguyen29/vts-edu/apps/api/internal/platform/csrf"
@@ -54,6 +56,8 @@ func main() {
 
 	var authHandler *auth.Handler
 	var attemptsHandler *attempts.Handler
+	var assessmentsHandler *assessments.Handler
+	var adminHandler *admin.Handler
 	if !cfg.DatabaseSkip {
 		authIssuer := auth.NewTokenIssuer(cfg.JWTSigningKey, "vts-edu-api", "vts-edu-web", cfg.AccessTokenTTL)
 		authRepo := auth.NewRepository(pool.Pool)
@@ -63,6 +67,14 @@ func main() {
 		attemptsRepo := attempts.NewRepository(pool.Pool)
 		attemptsSvc := attempts.NewService(attemptsRepo, srv.txManager)
 		attemptsHandler = attempts.NewHandler(attemptsSvc, authIssuer)
+
+		assessmentsRepo := assessments.NewRepository(pool.Pool)
+		assessmentsSvc := assessments.NewService(assessmentsRepo)
+		assessmentsHandler = assessments.NewHandler(assessmentsSvc, authIssuer)
+
+		adminRepo := admin.NewRepository(pool.Pool)
+		adminSvc := admin.NewService(adminRepo, srv.txManager)
+		adminHandler = admin.NewHandler(adminSvc, authIssuer)
 	}
 
 	r := chi.NewRouter()
@@ -84,6 +96,7 @@ func main() {
 			r.Get("/me", authHandler.Me)
 			r.Post("/auth/refresh", authHandler.Refresh)
 			r.Post("/auth/logout", authHandler.Logout)
+			r.Post("/auth/change-password", authHandler.ChangePassword)
 		} else {
 			r.Post("/auth/login", srv.loginPlaceholderHandler)
 			r.Get("/me", srv.mePlaceholderHandler)
@@ -101,6 +114,30 @@ func main() {
 			r.Get("/attempts/{attempt_id}", srv.getAttemptPlaceholderHandler)
 			r.Put("/attempts/{attempt_id}/answers/{attempt_item_id}", srv.saveAnswerPlaceholderHandler)
 			r.Post("/attempts/{attempt_id}/submit", srv.submitPlaceholderHandler)
+		}
+
+		// Teacher/admin assessment endpoints.
+		if assessmentsHandler != nil {
+			r.Get("/assessments", assessmentsHandler.ListAssessments)
+		} else {
+			r.Get("/assessments", srv.listAssessmentsPlaceholderHandler)
+		}
+
+		// Admin endpoints.
+		if adminHandler != nil {
+			r.Get("/users", adminHandler.ListUsers)
+			r.Post("/users", adminHandler.CreateUser)
+			r.Put("/users/{user_id}/roles", adminHandler.UpdateRoles)
+			r.Post("/users/{user_id}/reset-password", adminHandler.ResetPassword)
+			r.Get("/organizations/current", adminHandler.GetOrganization)
+			r.Patch("/organizations/current", adminHandler.UpdateOrganization)
+		} else {
+			r.Get("/users", srv.adminPlaceholderHandler)
+			r.Post("/users", srv.adminPlaceholderHandler)
+			r.Put("/users/{user_id}/roles", srv.adminPlaceholderHandler)
+			r.Post("/users/{user_id}/reset-password", srv.adminPlaceholderHandler)
+			r.Get("/organizations/current", srv.adminPlaceholderHandler)
+			r.Patch("/organizations/current", srv.adminPlaceholderHandler)
 		}
 	})
 
@@ -195,6 +232,14 @@ func (s *server) logoutPlaceholderHandler(w http.ResponseWriter, r *http.Request
 	}
 	// TODO: revoke refresh session, clear refresh cookie.
 	writeJSON(w, http.StatusOK, map[string]string{"message": "logout placeholder"})
+}
+
+func (s *server) listAssessmentsPlaceholderHandler(w http.ResponseWriter, r *http.Request) {
+	writeJSON(w, http.StatusServiceUnavailable, map[string]string{"message": "assessments placeholder; database unavailable"})
+}
+
+func (s *server) adminPlaceholderHandler(w http.ResponseWriter, r *http.Request) {
+	writeJSON(w, http.StatusServiceUnavailable, map[string]string{"message": "admin placeholder; database unavailable"})
 }
 
 func (s *server) getAttemptPlaceholderHandler(w http.ResponseWriter, r *http.Request) {

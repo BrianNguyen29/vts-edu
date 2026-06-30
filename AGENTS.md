@@ -95,8 +95,12 @@ docker build -t vts-edu-api -f apps/api/Dockerfile apps/api
 
 ## Recently implemented
 
-- Auth slice (`internal/features/auth`): login, `/me`, refresh rotation, logout, JWT access tokens, CSRF double-submit, Argon2id password hashing.
-- Attempt runtime slice (`internal/features/attempts`): `GET /attempts/{id}`, `PUT /attempts/{id}/answers/{item_id}`, `POST /attempts/{id}/submit` with tenant-scoped ownership, request-time expiration, and optimistic answer revision.
+- Auth slice (`internal/features/auth`): login, `/me`, refresh rotation, logout, change-password, JWT access tokens, CSRF double-submit, Argon2id password hashing, persisted multi-role memberships (`membership_roles`), and forced password change flag/claim.
+- Attempt runtime slice (`internal/features/attempts`): `GET /attempts/{id}`, `PUT /attempts/{id}/answers/{item_id}`, `POST /attempts/{id}/submit` with tenant-scoped ownership, request-time expiration, real question prompt/choices snapshots, synchronous MCQ grading, and optimistic answer revision.
+- Question bank slice (`internal/features/...` schema via migrations): minimal `question_banks`, `questions`, `question_versions`, prompt/choices/answer key snapshots copied into `attempt_items`.
+- Teacher assessment list slice (`internal/features/assessments`): `GET /assessments` role-gated to teacher/admin and tenant scoped.
+- Admin slice (`internal/features/admin`): `GET/POST /users`, `PUT /users/{user_id}/roles`, `POST /users/{user_id}/reset-password`, `GET/PATCH /organizations/current`, all admin-only and tenant scoped.
+- E2E smoke coverage for student attempt grading, teacher role + assessment list, forced password change, and admin user/org management.
 - Frontend demo wiring: dashboard demo link, exam runner page, and fixed demo attempt UUID `00000000-0000-4000-8000-000000000001`.
 
 > **Note on Koyeb artifacts:** files such as `apps/api/koyeb.yaml` are legacy. Render is the current backend deployment target.
