@@ -1,0 +1,231 @@
+openapi: 3.1.0
+info:
+  title: LMS Backend API
+  version: 0.1.0
+servers:
+  - url: /api/v1
+paths:
+  /auth/login:
+    post:
+      operationId: auth.login
+      tags: [Auth]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LoginRequest'
+      responses:
+        '200':
+          description: Login success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LoginResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+  /auth/refresh:
+    post:
+      operationId: auth.refresh
+      tags: [Auth]
+      security: []
+      responses:
+        '200':
+          description: Access token refreshed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RefreshResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+  /auth/logout:
+    post:
+      operationId: auth.logout
+      tags: [Auth]
+      responses:
+        '204':
+          description: Logged out
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+  /me:
+    get:
+      operationId: me.get
+      tags: [Auth]
+      responses:
+        '200':
+          description: Current actor
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MeResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+  /attempts/{attempt_id}/answers/{attempt_item_id}:
+    put:
+      operationId: attempt.saveAnswer
+      tags: [Attempts]
+      parameters:
+        - name: attempt_id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+        - name: attempt_item_id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SaveAnswerRequest'
+      responses:
+        '200':
+          description: Answer saved
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SaveAnswerResponse'
+        '409':
+          description: Revision conflict
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+  /attempts/{attempt_id}/submit:
+    post:
+      operationId: attempt.submit
+      tags: [Attempts]
+      parameters:
+        - name: attempt_id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SubmitAttemptRequest'
+      responses:
+        '200':
+          description: Submitted or expired
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SubmitAttemptResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  schemas:
+    LoginRequest:
+      type: object
+      additionalProperties: false
+      required: [organization_code, username, password]
+      properties:
+        organization_code: {type: string, minLength: 1, maxLength: 64}
+        username: {type: string, minLength: 1, maxLength: 128}
+        password: {type: string, minLength: 1, maxLength: 1024}
+    LoginResponse:
+      type: object
+      required: [data]
+      properties:
+        data:
+          type: object
+          required: [access_token, expires_in, user]
+          properties:
+            access_token: {type: string}
+            expires_in: {type: integer}
+            user: {type: object}
+    RefreshResponse:
+      type: object
+      required: [data]
+      properties:
+        data:
+          type: object
+          required: [access_token, expires_in]
+          properties:
+            access_token: {type: string}
+            expires_in: {type: integer}
+    MeResponse:
+      type: object
+      required: [data]
+      properties:
+        data:
+          type: object
+          required: [id, organization_id, roles, permissions]
+          properties:
+            id: {type: string, format: uuid}
+            organization_id: {type: string, format: uuid}
+            roles: {type: array, items: {type: string}}
+            permissions: {type: array, items: {type: string}}
+    SaveAnswerRequest:
+      type: object
+      additionalProperties: false
+      required: [expected_revision, client_mutation_id, answer]
+      properties:
+        expected_revision: {type: integer, minimum: 0}
+        client_mutation_id: {type: string, format: uuid}
+        answer:
+          type: object
+          required: [type]
+          properties:
+            type: {type: string, enum: [SINGLE_CHOICE, MULTIPLE_CHOICE, TRUE_FALSE, SHORT_TEXT, NUMERIC, ESSAY]}
+            choice_ids: {type: array, items: {type: string}}
+            text: {type: string}
+            numeric_value: {type: string}
+    SaveAnswerResponse:
+      type: object
+      required: [data]
+      properties:
+        data:
+          type: object
+          required: [attempt_item_id, revision, saved_at]
+          properties:
+            attempt_item_id: {type: string, format: uuid}
+            acknowledged_client_mutation_id: {type: string, format: uuid}
+            revision: {type: integer, minimum: 1}
+            saved_at: {type: string, format: date-time}
+    SubmitAttemptRequest:
+      type: object
+      additionalProperties: false
+      required: [final_answer_revisions]
+      properties:
+        final_answer_revisions:
+          type: object
+          additionalProperties: {type: integer}
+          description: Map attempt_item_id -> expected revision
+    SubmitAttemptResponse:
+      type: object
+      required: [data]
+      properties:
+        data:
+          type: object
+          required: [status, submitted_at]
+          properties:
+            status: {type: string, enum: [SUBMITTED, EXPIRED]}
+            submitted_at: {type: string, format: date-time}
+            grading_status: {type: string, enum: [QUEUED, AUTO_GRADED, MANUAL_REVIEW, FINALIZED]}
+    Problem:
+      type: object
+      required: [title, status, code]
+      properties:
+        type: {type: string, format: uri-reference}
+        title: {type: string}
+        status: {type: integer}
+        code: {type: string}
+        detail: {type: string}
+        request_id: {type: string}
+        current_revision: {type: integer}
+  responses:
+    Unauthorized:
+      description: Authentication required or invalid
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'

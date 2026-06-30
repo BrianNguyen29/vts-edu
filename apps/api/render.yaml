@@ -1,0 +1,39 @@
+# Render Web Service blueprint for apps/api.
+# Use this as a starting point when creating a new Web Service on Render.
+# Set secret values via the Render dashboard; do not commit real secrets here.
+services:
+  - type: web
+    name: vts-edu-api
+    runtime: docker
+    repo: https://github.com/BrianNguyen29/vts-edu.git
+    rootDir: apps/api
+    dockerfilePath: Dockerfile
+    dockerContext: .
+    envVars:
+      - key: PORT
+        value: "8080"
+      - key: ENVIRONMENT
+        value: production
+      - key: FRONTEND_ORIGINS
+        sync: false
+      - key: DATABASE_URL
+        sync: false
+      - key: DB_MAX_OPEN_CONNS
+        value: "5"
+      - key: DB_MAX_IDLE_CONNS
+        value: "2"
+      - key: JWT_SIGNING_KEY
+        sync: false
+      - key: REFRESH_TOKEN_KEY
+        sync: false
+      - key: ACCESS_TOKEN_TTL
+        value: 15m
+      - key: REFRESH_TOKEN_TTL
+        value: 7d
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_SERVICE_ROLE_KEY
+        sync: false
+      - key: SUPABASE_STORAGE_BUCKET
+        value: vts-edu-files
+    healthCheckPath: /readyz

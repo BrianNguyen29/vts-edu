@@ -1,0 +1,49 @@
+# A string used to distinguish different Supabase projects on the same local machine.
+project_id = "vts_edu_local"
+
+[api]
+enabled = true
+port = 54321
+schemas = ["public", "storage", "graphql_public"]
+extra_search_path = ["public", "extensions"]
+max_rows = 1000
+
+[db]
+port = 54322
+shadow_port = 54320
+major_version = 15
+
+[db.pooler]
+enabled = false
+port = 54329
+pool_mode = "transaction"
+default_pool_size = 20
+max_client_conn = 100
+
+[realtime]
+enabled = true
+
+[studio]
+enabled = true
+port = 54323
+api_url = "http://127.0.0.1"
+
+[inbucket]
+enabled = true
+port = 54324
+
+[storage]
+enabled = true
+file_size_limit = "50MiB"
+
+[auth]
+enabled = false
+# This project uses backend-owned JWT + refresh cookie, not Supabase Auth.
+
+[edge_runtime]
+enabled = false
+
+# Initial seed data can be added here later; keep empty for scaffold.
+[db.seed]
+enabled = false
+sql_paths = []

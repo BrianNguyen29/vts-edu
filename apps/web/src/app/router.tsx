@@ -1,0 +1,150 @@
+import { createBrowserRouter, Navigate, useLocation } from 'react-router-dom';
+import { AuthLayout } from '@/app/layouts/auth-layout';
+import { AppShellLayout } from '@/app/layouts/app-shell-layout';
+import { ExamLayout } from '@/app/layouts/exam-layout';
+import { LoginPage } from '@/pages/login/login-page';
+import { DiagnosticsPage } from '@/pages/diagnostics/diagnostics-page';
+import { DashboardPage } from '@/pages/dashboard/dashboard-page';
+import { TeacherDashboardPage } from '@/pages/dashboard/teacher-dashboard-page';
+import { AdminDashboardPage } from '@/pages/dashboard/admin-dashboard-page';
+import { ExamPage } from '@/pages/exam/exam-page';
+import { NotFoundPage } from '@/pages/not-found/not-found-page';
+import { useAuth } from '@/app/providers/auth-provider';
+import type { ReactNode } from 'react';
+
+function ProtectedRoute({ children }: { children: ReactNode }) {
+  const auth = useAuth();
+  const location = useLocation();
+
+  if (auth.status === 'bootstrapping') {
+    return <div className="loading-full">Đang khởi tạo phiên làm việc…</div>;
+  }
+
+  if (auth.status === 'anonymous' || auth.status === 'degraded') {
+    return (
+      <Navigate
+        to={`/login?returnTo=${encodeURIComponent(location.pathname + location.search)}`}
+        replace
+      />
+    );
+  }
+
+  return children;
+}
+
+function GuestOnly({ children }: { children: ReactNode }) {
+  const auth = useAuth();
+
+  if (auth.status === 'bootstrapping') {
+    return <div className="loading-full">Đang khởi tạo phiên làm việc…</div>;
+  }
+
+  if (auth.status === 'authenticated') {
+    return <Navigate to="/app" replace />;
+  }
+
+  return children;
+}
+
+function LandingRedirect() {
+  const auth = useAuth();
+
+  if (auth.status === 'bootstrapping') {
+    return <div className="loading-full">Đang khởi tạo phiên làm việc…</div>;
+  }
+
+  if (auth.status === 'authenticated') {
+    return <Navigate to="/app" replace />;
+  }
+
+  return <Navigate to="/login" replace />;
+}
+
+function getRoleHomePath(roles: string[]): string {
+  if (roles.includes('admin')) return '/app/admin';
+  if (roles.includes('teacher')) return '/app/teacher';
+  return '/app/student';
+}
+
+function RoleRedirect() {
+  const auth = useAuth();
+
+  if (auth.status === 'bootstrapping') {
+    return <div className="loading-full">Đang khởi tạo phiên làm việc…</div>;
+  }
+
+  if (auth.status !== 'authenticated' || !auth.actor) {
+    return <Navigate to="/login" replace />;
+  }
+
+  return <Navigate to={getRoleHomePath(auth.actor.roles)} replace />;
+}
+
+export const router = createBrowserRouter([
+  {
+    path: '/',
+    element: <LandingRedirect />,
+  },
+  {
+    path: '/login',
+    element: (
+      <GuestOnly>
+        <AuthLayout />
+      </GuestOnly>
+    ),
+    children: [
+      {
+        index: true,
+        element: <LoginPage />,
+      },
+    ],
+  },
+  {
+    path: '/diagnostics',
+    element: <DiagnosticsPage />,
+  },
+  {
+    path: '/app',
+    element: (
+      <ProtectedRoute>
+        <AppShellLayout />
+      </ProtectedRoute>
+    ),
+    children: [
+      {
+        index: true,
+        element: <RoleRedirect />,
+      },
+      {
+        path: 'student',
+        element: <DashboardPage />,
+      },
+      {
+        path: 'teacher',
+        element: <TeacherDashboardPage />,
+      },
+      {
+        path: 'admin',
+        element: <AdminDashboardPage />,
+      },
+    ],
+  },
+  {
+    path: '/exam/attempts/:attemptId',
+    element: (
+      <ProtectedRoute>
+        <ExamLayout />
+      </ProtectedRoute>
+    ),
+    children: [
+      {
+        index: true,
+        element: <ExamPage />,
+      },
+    ],
+  },
+  {
+    path: '*',
+    element: <NotFoundPage />,
+  },
+]);

@@ -1,0 +1,41 @@
+{
+  "name": "vts-edu",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "packageManager": "pnpm@9.0.0",
+  "scripts": {
+    "web:dev": "pnpm --filter @vts-edu/web dev",
+    "web:build": "pnpm --filter @vts-edu/web build",
+    "web:typecheck": "pnpm --filter @vts-edu/web typecheck",
+    "api:dev": "pnpm --filter @vts-edu/api dev",
+    "api:test": "pnpm --filter @vts-edu/api test",
+
+    "check": "pnpm web:typecheck && pnpm web:build && cd apps/api && go test ./... && go vet ./... && test -z \"$(gofmt -l .)\"",
+
+    "e2e:db:start": "./scripts/e2e_db_start.sh",
+    "e2e:db:migrate": "./scripts/e2e_db_migrate.sh",
+    "e2e:db:stop": "./scripts/e2e_db_stop.sh",
+    "e2e:smoke": "./scripts/e2e_smoke.sh",
+
+    "vercel:version": "pnpm exec vercel --version",
+    "vercel:pull": "pnpm exec vercel env pull .env.local --yes --cwd apps/web",
+    "vercel:build": "pnpm exec vercel build --cwd apps/web",
+    "vercel:deploy:preview": "pnpm exec vercel deploy --cwd apps/web",
+
+    "supabase:version": "pnpm exec supabase --version",
+    "supabase:start": "pnpm exec supabase start",
+    "supabase:stop": "pnpm exec supabase stop",
+    "supabase:status": "pnpm exec supabase status",
+    "supabase:db:reset": "pnpm exec supabase db reset",
+    "supabase:db:push:local": "pnpm exec supabase db push --local",
+    "supabase:db:push:remote": "pnpm exec supabase db push",
+    "supabase:migration:list": "pnpm exec supabase migration list",
+    "supabase:link": "pnpm exec supabase link"
+  },
+  "devDependencies": {
+    "supabase": "^2.0.0",
+    "typescript": "^5.6.0",
+    "vercel": "^41.0.0"
+  }
+}

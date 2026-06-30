@@ -1,0 +1,38 @@
+name: Supabase pg_dump backup
+
+on:
+  schedule:
+    # Weekly on Sundays at 03:00 UTC.
+    - cron: '0 3 * * 0'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: write
+
+jobs:
+  backup:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Dump database
+        env:
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+        run: |
+          set -euo pipefail
+          TIMESTAMP=$(date -u +%Y%m%d-%H%M%S)
+          DUMP_FILE="vts-edu-backup-${TIMESTAMP}.sql"
+          pg_dump "${SUPABASE_DB_URL}" --clean --if-exists --no-owner --no-privileges > "${DUMP_FILE}"
+          gzip "${DUMP_FILE}"
+          echo "dump_file=${DUMP_FILE}.gz" >> "$GITHUB_ENV"
+
+      - name: Upload backup artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: vts-edu-backup-${{ github.run_id }}
+          path: ${{ env.dump_file }}
+          retention-days: 30
+
+      - name: Backup summary
+        run: |
+          echo "Backup artifact uploaded."
+          echo "Note: this is a demo-only backup. RPO is weekly; restore tests should run in an isolated environment."
