@@ -7,11 +7,14 @@ import {
   resetUserPassword,
   updateOrganization,
   updateUserRoles,
+  type CreateUserRequest,
+  type UpdateRolesRequest,
   type User,
 } from '@/shared/api/admin';
 import { ApiResponseError } from '@/shared/api/attempts';
 import { PasswordPolicyHints } from '@/shared/components/password-policy-hints';
 import { validatePassword } from '@/shared/lib/password-policy';
+import { AuditLogsPanel } from './audit-logs-panel';
 
 const AVAILABLE_ROLES = ['student', 'teacher', 'admin'] as const;
 
@@ -47,11 +50,16 @@ export function AdminDashboardPage() {
 
   const [users, setUsers] = useState<User[]>([]);
   const [usersLoading, setUsersLoading] = useState(true);
+  const [userCursor, setUserCursor] = useState<string | undefined>();
+  const [userHasMore, setUserHasMore] = useState(false);
+  const [isLoadingMoreUsers, setIsLoadingMoreUsers] = useState(false);
   const [searchInput, setSearchInput] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
 
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
+
+  const [activeTab, setActiveTab] = useState<'org' | 'users' | 'audit'>('org');
 
   const [mode, setMode] = useState<ViewMode>('list');
   const [selectedUser, setSelectedUser] = useState<User | null>(null);
@@ -76,15 +84,20 @@ export function AdminDashboardPage() {
     let cancelled = false;
 
     async function load() {
+      setUsersLoading(true);
+      setUserCursor(undefined);
+      setUserHasMore(false);
       try {
         const [orgData, usersData] = await Promise.all([
           getOrganization(),
-          listUsers({ q: searchQuery || undefined, limit: 50 }),
+          listUsers({ q: searchQuery || undefined, limit: 10 }),
         ]);
         if (cancelled) return;
         setOrgName(orgData.name);
         setOrgCode(orgData.code);
         setUsers(usersData.data);
+        setUserCursor(usersData.page?.next_cursor ?? undefined);
+        setUserHasMore(usersData.page?.has_more ?? false);
       } catch (err) {
         if (cancelled) return;
         setError(formatFriendlyError(err));
@@ -102,6 +115,25 @@ export function AdminDashboardPage() {
       cancelled = true;
     };
   }, [searchQuery]);
+
+  async function loadMoreUsers() {
+    if (!userHasMore || !userCursor || isLoadingMoreUsers) return;
+    setIsLoadingMoreUsers(true);
+    try {
+      const response = await listUsers({
+        q: searchQuery || undefined,
+        limit: 10,
+        cursor: userCursor,
+      });
+      setUsers((prev) => [...prev, ...response.data]);
+      setUserCursor(response.page?.next_cursor ?? undefined);
+      setUserHasMore(response.page?.has_more ?? false);
+    } catch (err) {
+      setError(formatFriendlyError(err));
+    } finally {
+      setIsLoadingMoreUsers(false);
+    }
+  }
 
   useEffect(() => {
     const timer = setTimeout(() => {
@@ -152,7 +184,7 @@ export function AdminDashboardPage() {
         display_name: displayName.trim(),
         email: email.trim(),
         temporary_password: tempPassword,
-        roles: newUserRoles,
+        roles: (newUserRoles as CreateUserRequest['roles']),
       });
       setUsers((prev) => [...prev, created]);
       setMode('list');
@@ -177,9 +209,9 @@ export function AdminDashboardPage() {
     clearMessages();
 
     try {
-      await updateUserRoles(selectedUser.id, { roles: editRoles });
+      await updateUserRoles(selectedUser.id, { roles: editRoles as UpdateRolesRequest['roles'] });
       setUsers((prev) =>
-        prev.map((u) => (u.id === selectedUser.id ? { ...u, roles: editRoles } : u))
+        prev.map((u) => (u.id === selectedUser.id ? { ...u, roles: editRoles as UpdateRolesRequest['roles'] } : u))
       );
       setMode('list');
       setSelectedUser(null);
@@ -266,8 +298,36 @@ export function AdminDashboardPage() {
         </div>
       )}
 
-      <section className="admin-section">
-        <h2>Tổ chức</h2>
+      <nav className="admin-tabs" aria-label="Quản lý quản trị">
+        <button
+          type="button"
+          className={activeTab === 'org' ? 'active' : ''}
+          onClick={() => setActiveTab('org')}
+          aria-current={activeTab === 'org' ? 'page' : undefined}
+        >
+          Tổ chức
+        </button>
+        <button
+          type="button"
+          className={activeTab === 'users' ? 'active' : ''}
+          onClick={() => setActiveTab('users')}
+          aria-current={activeTab === 'users' ? 'page' : undefined}
+        >
+          Người dùng
+        </button>
+        <button
+          type="button"
+          className={activeTab === 'audit' ? 'active' : ''}
+          onClick={() => setActiveTab('audit')}
+          aria-current={activeTab === 'audit' ? 'page' : undefined}
+        >
+          Nhật ký hoạt động
+        </button>
+      </nav>
+
+      {activeTab === 'org' && (
+        <section className="admin-section">
+          <h2>Tổ chức</h2>
         <div className="org-card">
           <div className="org-info">
             <div>
@@ -315,10 +375,12 @@ export function AdminDashboardPage() {
           </div>
         </div>
       </section>
+      )}
 
+      {activeTab === 'users' && (
       <section className="admin-section">
         <div className="section-header">
-          <h2>Ngườii dùng</h2>
+          <h2>Người dùng</h2>
           {mode === 'list' && (
             <button
               type="button"
@@ -473,6 +535,7 @@ export function AdminDashboardPage() {
                   : 'Chưa có ngườii dùng nào.'}
               </p>
             ) : (
+              <>
               <div className="users-table-wrapper">
                 <table className="users-table">
                   <thead>
@@ -524,10 +587,25 @@ export function AdminDashboardPage() {
                   </tbody>
                 </table>
               </div>
+              {userHasMore && (
+                <div className="load-more">
+                  <button
+                    type="button"
+                    onClick={loadMoreUsers}
+                    disabled={isLoadingMoreUsers}
+                  >
+                    {isLoadingMoreUsers ? 'Đang tải…' : 'Tải thêm'}
+                  </button>
+                </div>
+              )}
+              </>
             )}
           </>
         )}
       </section>
+      )}
+
+      {activeTab === 'audit' && <AuditLogsPanel />}
     </div>
   );
 }

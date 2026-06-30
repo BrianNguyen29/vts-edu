@@ -37,11 +37,14 @@ func (h *Handler) Login(w http.ResponseWriter, r *http.Request) {
 
 	result, err := h.svc.Login(r.Context(), req)
 	if err != nil {
-		if errors.Is(err, ErrInvalidCredentials) {
+		switch {
+		case errors.Is(err, ErrInvalidCredentials):
 			writeError(w, http.StatusUnauthorized, "invalid_credentials", "invalid organization code, username, or password")
-			return
+		case errors.Is(err, ErrAccountLocked):
+			writeError(w, http.StatusTooManyRequests, "account_locked", "account temporarily locked due to failed login attempts")
+		default:
+			writeError(w, http.StatusInternalServerError, "internal_error", "login failed")
 		}
-		writeError(w, http.StatusInternalServerError, "internal_error", "login failed")
 		return
 	}
 
@@ -166,7 +169,7 @@ func (h *Handler) ChangePassword(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusUnauthorized, "invalid_credentials", "current password is incorrect")
 		case errors.Is(err, ErrUnauthorized):
 			writeError(w, http.StatusUnauthorized, "unauthorized", "invalid or expired token")
-		case errors.Is(err, ErrWeakPassword), errors.Is(err, ErrPasswordUnchanged):
+		case errors.Is(err, ErrWeakPassword), errors.Is(err, ErrPasswordUnchanged), errors.Is(err, ErrPasswordReused):
 			writeError(w, http.StatusBadRequest, "bad_request", err.Error())
 		default:
 			writeError(w, http.StatusInternalServerError, "internal_error", "change password failed")

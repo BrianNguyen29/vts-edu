@@ -1,5 +1,7 @@
 package admin
 
+import "encoding/json"
+
 // User is the public admin view of a user within an organization.
 type User struct {
 	ID                 string   `json:"id"`
@@ -58,12 +60,42 @@ type ListOptions struct {
 	Query  string
 	Limit  int
 	Offset int
+	Cursor string
+	Count  bool
 }
 
 // PageInfo is returned with paginated list responses.
 type PageInfo struct {
-	Limit  int `json:"limit"`
-	Offset int `json:"offset"`
+	Limit      int     `json:"limit"`
+	Offset     int     `json:"offset"`
+	NextCursor *string `json:"next_cursor,omitempty"`
+	HasMore    bool    `json:"has_more"`
+	TotalCount *int64  `json:"total_count,omitempty"`
+}
+
+// AuditLog is the public view of an audit log row.
+type AuditLog struct {
+	ID           string          `json:"id"`
+	ActorUserID  string          `json:"actor_user_id"`
+	Action       string          `json:"action"`
+	ResourceType string          `json:"resource_type"`
+	ResourceID   string          `json:"resource_id"`
+	Before       json.RawMessage `json:"before,omitempty"`
+	After        json.RawMessage `json:"after,omitempty"`
+	Metadata     json.RawMessage `json:"metadata,omitempty"`
+	CreatedAt    string          `json:"created_at"`
+}
+
+// AuditLogListOptions filters and paginates the audit log list.
+type AuditLogListOptions struct {
+	Action      string
+	ActorUserID string
+	From        string
+	To          string
+	Limit       int
+	Offset      int
+	Cursor      string
+	Count       bool
 }
 
 // DataEnvelope wraps successful API responses.

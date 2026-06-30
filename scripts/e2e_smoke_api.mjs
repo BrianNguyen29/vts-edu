@@ -1,7 +1,3 @@
-import { exec } from 'node:child_process';
-import { promisify } from 'node:util';
-
-const execAsync = promisify(exec);
 const API_BASE = 'http://localhost:8080';
 const API_PREFIX = `${API_BASE}/api/v1`;
 const ATTEMPT_ID = '00000000-0000-4000-8000-000000000001';
@@ -47,6 +43,36 @@ async function login() {
   return json.data.access_token;
 }
 
+async function assertLoginLockout(username) {
+  for (let i = 0; i < 5; i++) {
+    const r = await fetch(`${API_PREFIX}/auth/login`, {
+      method: 'POST',
+      headers: headers(null, true),
+      body: JSON.stringify({
+        organization_code: 'school-a',
+        username,
+        password: 'WrongPassword123!',
+      }),
+    });
+    if (r.status !== 401) {
+      throw new Error(`expected failed login to return 401, got ${r.status}`);
+    }
+  }
+  const r = await fetch(`${API_PREFIX}/auth/login`, {
+    method: 'POST',
+    headers: headers(null, true),
+    body: JSON.stringify({
+      organization_code: 'school-a',
+      username,
+      password: 'Password123!',
+    }),
+  });
+  if (r.status !== 429) {
+    throw new Error(`expected locked account login to return 429, got ${r.status}`);
+  }
+  console.log('  login lockout returned 429 after 5 failures');
+}
+
 async function me(token) {
   const r = await fetch(`${API_PREFIX}/me`, { headers: headers(token) });
   if (!r.ok) throw new Error(`/me failed: ${r.status}`);
@@ -89,6 +115,18 @@ async function assertChangePasswordRejected(token, currentPassword, newPassword)
   console.log('  change-password weak rejected:', r.status);
 }
 
+async function assertChangePasswordReused(token, currentPassword, oldPassword) {
+  const r = await fetch(`${API_PREFIX}/auth/change-password`, {
+    method: 'POST',
+    headers: headers(token, true),
+    body: JSON.stringify({ current_password: currentPassword, new_password: oldPassword }),
+  });
+  if (r.status !== 400) {
+    throw new Error(`expected reused password change to return 400, got ${r.status}`);
+  }
+  console.log('  change-password reused rejected:', r.status);
+}
+
 async function listAssessments(token) {
   const r = await fetch(`${API_PREFIX}/assessments`, { headers: headers(token) });
   if (!r.ok) throw new Error(`list assessments failed: ${r.status}`);
@@ -113,6 +151,9 @@ async function listAssessmentsSearch(token, query, limit) {
   }
   if (!json.page || json.page.limit !== limit) {
     throw new Error(`expected page.limit=${limit}, got ${JSON.stringify(json.page)}`);
+  }
+  if (json.page.has_more !== false) {
+    throw new Error(`expected has_more=false for single assessment, got ${JSON.stringify(json.page)}`);
   }
   return json.data;
 }
@@ -148,6 +189,45 @@ async function listUsersSearchAndLimit(token, query, limit) {
     throw new Error(`expected page.limit=${limit}, got ${JSON.stringify(json.page)}`);
   }
   return json.data;
+}
+
+async function fetchUsersPage(token, opts = {}) {
+  const url = new URL(`${API_PREFIX}/users`);
+  if (opts.q) url.searchParams.set('q', opts.q);
+  if (opts.limit) url.searchParams.set('limit', String(opts.limit));
+  if (opts.cursor) url.searchParams.set('cursor', opts.cursor);
+  if (opts.count) url.searchParams.set('count', 'true');
+  const r = await fetch(url, { headers: headers(token) });
+  if (!r.ok) throw new Error(`fetch users page failed: ${r.status}`);
+  return await r.json();
+}
+
+async function assertUsersCursorPagination(token, limit) {
+  const first = await fetchUsersPage(token, { limit });
+  console.log('  users cursor page 1:', first.data.length, '| page:', first.page);
+  if (!Array.isArray(first.data) || first.data.length !== limit) {
+    throw new Error(`expected ${limit} users on first cursor page, got ${first.data?.length}`);
+  }
+  if (!first.page || !first.page.has_more || !first.page.next_cursor) {
+    throw new Error(`expected first users page to have has_more and next_cursor, got ${JSON.stringify(first.page)}`);
+  }
+
+  const second = await fetchUsersPage(token, { limit, cursor: first.page.next_cursor });
+  console.log('  users cursor page 2:', second.data.length, '| page:', second.page);
+  if (!Array.isArray(second.data) || second.data.length === 0) {
+    throw new Error('expected non-empty second users cursor page');
+  }
+  if (!second.page || second.page.limit !== limit) {
+    throw new Error(`expected second users page metadata, got ${JSON.stringify(second.page)}`);
+  }
+}
+
+async function assertUsersCount(token) {
+  const json = await fetchUsersPage(token, { limit: 1, count: true });
+  console.log('  users count page:', json.data.length, '| page:', json.page);
+  if (typeof json.page?.total_count !== 'number' || json.page.total_count < 3) {
+    throw new Error(`expected total_count >= 3, got ${JSON.stringify(json.page)}`);
+  }
 }
 
 async function createUser(token, loginName, displayName, roles, temporaryPassword) {
@@ -206,6 +286,18 @@ async function assertResetPasswordRejected(token, userID, temporaryPassword) {
   console.log('  reset-password weak rejected:', r.status);
 }
 
+async function assertResetPasswordReused(token, userID, temporaryPassword) {
+  const r = await fetch(`${API_PREFIX}/users/${userID}/reset-password`, {
+    method: 'POST',
+    headers: headers(token, true),
+    body: JSON.stringify({ temporary_password: temporaryPassword }),
+  });
+  if (r.status !== 400) {
+    throw new Error(`expected reused password reset to return 400, got ${r.status}`);
+  }
+  console.log('  reset-password reused rejected:', r.status);
+}
+
 async function getCurrentOrg(token) {
   const r = await fetch(`${API_PREFIX}/organizations/current`, { headers: headers(token) });
   if (!r.ok) throw new Error(`get current org failed: ${r.status}`);
@@ -233,17 +325,67 @@ async function assertNonAdminCannotAccessAdmin(token, label) {
   console.log(`  ${label} /users correctly rejected:`, r.status);
 }
 
-async function assertAuditLogs(orgID, expectedActions) {
-  const { stdout } = await execAsync(
-    `docker exec vts-e2e-postgres psql -U postgres -v ON_ERROR_STOP=1 -t -c "` +
-      `SELECT action FROM audit_logs WHERE organization_id = '${orgID}' ORDER BY created_at DESC` +
-    `"`
-  );
-  const rows = stdout.split('\n').map((s) => s.trim()).filter(Boolean);
-  console.log('  audit log actions:', rows);
+async function listAuditLogs(token, filters = {}) {
+  const url = new URL(`${API_PREFIX}/audit-logs`);
+  url.searchParams.set('limit', '50');
+  for (const [key, value] of Object.entries(filters)) {
+    if (value !== undefined && value !== '') {
+      url.searchParams.set(key, String(value));
+    }
+  }
+  const r = await fetch(url, { headers: headers(token) });
+  if (!r.ok) throw new Error(`list audit logs failed: ${r.status}`);
+  const json = await r.json();
+  console.log('  audit logs:', json.data.length, '| page:', json.page);
+  return json.data;
+}
+
+async function fetchAuditLogsPage(token, opts = {}) {
+  const url = new URL(`${API_PREFIX}/audit-logs`);
+  if (opts.limit) url.searchParams.set('limit', String(opts.limit));
+  if (opts.cursor) url.searchParams.set('cursor', opts.cursor);
+  if (opts.action) url.searchParams.set('action', opts.action);
+  if (opts.count) url.searchParams.set('count', 'true');
+  const r = await fetch(url, { headers: headers(token) });
+  if (!r.ok) throw new Error(`fetch audit logs page failed: ${r.status}`);
+  return await r.json();
+}
+
+async function assertAuditLogsCursorPagination(token, limit) {
+  const first = await fetchAuditLogsPage(token, { limit });
+  console.log('  audit logs cursor page 1:', first.data.length, '| page:', first.page);
+  if (!Array.isArray(first.data) || first.data.length !== limit) {
+    throw new Error(`expected ${limit} audit logs on first cursor page, got ${first.data?.length}`);
+  }
+  if (!first.page || !first.page.has_more || !first.page.next_cursor) {
+    throw new Error(`expected first audit logs page to have has_more and next_cursor, got ${JSON.stringify(first.page)}`);
+  }
+
+  const second = await fetchAuditLogsPage(token, { limit, cursor: first.page.next_cursor });
+  console.log('  audit logs cursor page 2:', second.data.length, '| page:', second.page);
+  if (!Array.isArray(second.data) || second.data.length === 0) {
+    throw new Error('expected non-empty second audit logs cursor page');
+  }
+  if (!second.page || second.page.limit !== limit) {
+    throw new Error(`expected second audit logs page metadata, got ${JSON.stringify(second.page)}`);
+  }
+}
+
+async function assertAuditLogsCount(token) {
+  const json = await fetchAuditLogsPage(token, { limit: 1, count: true });
+  console.log('  audit logs count page:', json.data.length, '| page:', json.page);
+  if (typeof json.page?.total_count !== 'number' || json.page.total_count < 4) {
+    throw new Error(`expected total_count >= 4, got ${JSON.stringify(json.page)}`);
+  }
+}
+
+async function assertAuditLogs(token, expectedActions) {
+  const rows = await listAuditLogs(token);
+  const actions = rows.map((row) => row.action);
+  console.log('  audit log actions:', actions);
   for (const action of expectedActions) {
-    if (!rows.includes(action)) {
-      throw new Error(`expected audit log action ${action} not found; got ${JSON.stringify(rows)}`);
+    if (!actions.includes(action)) {
+      throw new Error(`expected audit log action ${action} not found; got ${JSON.stringify(actions)}`);
     }
   }
 }
@@ -330,6 +472,7 @@ async function main() {
   if (!teacherAfter.data.roles.includes('teacher')) {
     throw new Error(`teacher re-login roles mismatch: ${teacherAfter.data.roles}`);
   }
+  await assertChangePasswordReused(teacherAfter.data.access_token, 'NewPassword123!', 'Password123!');
 
   console.log('Checking teacher assessment list...');
   await listAssessments(teacherAfter.data.access_token);
@@ -351,6 +494,7 @@ async function main() {
   if (!adminAfter.data.roles.includes('admin')) {
     throw new Error(`admin re-login roles mismatch: ${adminAfter.data.roles}`);
   }
+  await assertChangePasswordReused(adminAfter.data.access_token, 'AdminPass123!', 'Password123!');
 
   const users = await listUsers(adminAfter.data.access_token);
   if (users.length < 3) {
@@ -362,6 +506,10 @@ async function main() {
   if (searchedUsers.length > 1) {
     throw new Error(`expected at most 1 user with limit=1, got ${searchedUsers.length}`);
   }
+
+  console.log('Checking users cursor pagination/count...');
+  await assertUsersCursorPagination(adminAfter.data.access_token, 1);
+  await assertUsersCount(adminAfter.data.access_token);
 
   await assertCreateUserRejected(adminAfter.data.access_token, 'weakuser', 'Weak User', ['student'], 'password');
 
@@ -377,6 +525,7 @@ async function main() {
 
   await updateUserRoles(adminAfter.data.access_token, newUser.id, ['student', 'teacher']);
   await assertResetPasswordRejected(adminAfter.data.access_token, newUser.id, 'password123');
+  await assertResetPasswordReused(adminAfter.data.access_token, newUser.id, 'TempPass123!');
   await resetUserPassword(adminAfter.data.access_token, newUser.id, 'ResetPass123!');
   const resetLogin = await loginWith('testuser', 'ResetPass123!');
   if (!resetLogin.data.must_change_password) {
@@ -390,10 +539,23 @@ async function main() {
   await updateCurrentOrg(adminAfter.data.access_token, 'Trường THPT Demo A Updated');
 
   console.log('Checking audit logs...');
-  await assertAuditLogs(org.id, ['organization.update', 'user.reset_password', 'user.update_roles', 'user.create']);
+  await assertAuditLogs(adminAfter.data.access_token, ['organization.update', 'user.reset_password', 'user.update_roles', 'user.create']);
+
+  console.log('Checking audit log action filter...');
+  const filtered = await listAuditLogs(adminAfter.data.access_token, { action: 'user.create' });
+  if (filtered.length === 0 || filtered.some((row) => row.action !== 'user.create')) {
+    throw new Error(`expected only user.create audit rows, got ${JSON.stringify(filtered.map((r) => r.action))}`);
+  }
+
+  console.log('Checking audit logs cursor pagination/count...');
+  await assertAuditLogsCursorPagination(adminAfter.data.access_token, 1);
+  await assertAuditLogsCount(adminAfter.data.access_token);
 
   await assertNonAdminCannotAccessAdmin(token, 'student');
   await assertNonAdminCannotAccessAdmin(teacherAfter.data.access_token, 'teacher');
+
+  console.log('Checking login lockout...');
+  await assertLoginLockout('hs001');
 
   console.log('Smoke passed.');
 }

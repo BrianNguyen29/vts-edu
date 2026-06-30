@@ -31,18 +31,26 @@ export function TeacherDashboardPage() {
   const [error, setError] = useState<string | null>(null);
   const [searchInput, setSearchInput] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
+  const [assessmentCursor, setAssessmentCursor] = useState<string | undefined>();
+  const [assessmentHasMore, setAssessmentHasMore] = useState(false);
+  const [isLoadingMoreAssessments, setIsLoadingMoreAssessments] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
 
     async function load() {
+      setLoading(true);
+      setAssessmentCursor(undefined);
+      setAssessmentHasMore(false);
       try {
         const response = await listAssessments({
           q: searchQuery || undefined,
-          limit: 50,
+          limit: 10,
         });
         if (cancelled) return;
         setAssessments(response.data);
+        setAssessmentCursor(response.page?.next_cursor ?? undefined);
+        setAssessmentHasMore(response.page?.has_more ?? false);
       } catch (err) {
         if (cancelled) return;
         setError(formatFriendlyError(err));
@@ -57,6 +65,25 @@ export function TeacherDashboardPage() {
       cancelled = true;
     };
   }, [searchQuery]);
+
+  async function loadMoreAssessments() {
+    if (!assessmentHasMore || !assessmentCursor || isLoadingMoreAssessments) return;
+    setIsLoadingMoreAssessments(true);
+    try {
+      const response = await listAssessments({
+        q: searchQuery || undefined,
+        limit: 10,
+        cursor: assessmentCursor,
+      });
+      setAssessments((prev) => [...prev, ...response.data]);
+      setAssessmentCursor(response.page?.next_cursor ?? undefined);
+      setAssessmentHasMore(response.page?.has_more ?? false);
+    } catch (err) {
+      setError(formatFriendlyError(err));
+    } finally {
+      setIsLoadingMoreAssessments(false);
+    }
+  }
 
   useEffect(() => {
     const timer = setTimeout(() => {
@@ -102,19 +129,32 @@ export function TeacherDashboardPage() {
           ))}
 
         {!loading && !error && assessments.length > 0 && (
-          <ul className="assessment-list">
-            {assessments.map((assessment) => (
-              <li key={assessment.id} className="assessment-item">
-                <div className="assessment-title">{assessment.title}</div>
-                <div className="assessment-meta">
-                  <span className="assessment-status">{assessment.status}</span>
-                  <span className="assessment-duration">
-                    {assessment.duration_minutes} phút
-                  </span>
-                </div>
-              </li>
-            ))}
-          </ul>
+          <>
+            <ul className="assessment-list">
+              {assessments.map((assessment) => (
+                <li key={assessment.id} className="assessment-item">
+                  <div className="assessment-title">{assessment.title}</div>
+                  <div className="assessment-meta">
+                    <span className="assessment-status">{assessment.status}</span>
+                    <span className="assessment-duration">
+                      {assessment.duration_minutes} phút
+                    </span>
+                  </div>
+                </li>
+              ))}
+            </ul>
+            {assessmentHasMore && (
+              <div className="load-more">
+                <button
+                  type="button"
+                  onClick={loadMoreAssessments}
+                  disabled={isLoadingMoreAssessments}
+                >
+                  {isLoadingMoreAssessments ? 'Đang tải…' : 'Tải thêm'}
+                </button>
+              </div>
+            )}
+          </>
         )}
       </section>
 

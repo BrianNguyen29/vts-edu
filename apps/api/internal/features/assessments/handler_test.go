@@ -14,10 +14,10 @@ import (
 )
 
 type fakeService struct {
-	listFunc func(ctx context.Context, orgID string, opts assessments.ListOptions) ([]assessments.AssessmentListItem, error)
+	listFunc func(ctx context.Context, orgID string, opts assessments.ListOptions) ([]assessments.AssessmentListItem, *assessments.PageInfo, error)
 }
 
-func (f *fakeService) ListAssessments(ctx context.Context, orgID string, opts assessments.ListOptions) ([]assessments.AssessmentListItem, error) {
+func (f *fakeService) ListAssessments(ctx context.Context, orgID string, opts assessments.ListOptions) ([]assessments.AssessmentListItem, *assessments.PageInfo, error) {
 	return f.listFunc(ctx, orgID, opts)
 }
 
@@ -32,10 +32,10 @@ func tokenWithRoles(roles []string) string {
 
 func TestHandler_ListAssessments_TeacherAllowed(t *testing.T) {
 	svc := &fakeService{
-		listFunc: func(ctx context.Context, orgID string, opts assessments.ListOptions) ([]assessments.AssessmentListItem, error) {
+		listFunc: func(ctx context.Context, orgID string, opts assessments.ListOptions) ([]assessments.AssessmentListItem, *assessments.PageInfo, error) {
 			return []assessments.AssessmentListItem{
 				{ID: "a1", Title: "Demo", Status: "PUBLISHED", DurationMinutes: 45},
-			}, nil
+			}, nil, nil
 		},
 	}
 	issuer := auth.NewTokenIssuer("test-signing-key-minimum-32-bytes-long", "test-issuer", "test-audience", 15*time.Minute)
@@ -67,7 +67,7 @@ func TestHandler_ListAssessments_TeacherAllowed(t *testing.T) {
 
 func TestHandler_ListAssessments_PaginationQuery(t *testing.T) {
 	svc := &fakeService{
-		listFunc: func(ctx context.Context, orgID string, opts assessments.ListOptions) ([]assessments.AssessmentListItem, error) {
+		listFunc: func(ctx context.Context, orgID string, opts assessments.ListOptions) ([]assessments.AssessmentListItem, *assessments.PageInfo, error) {
 			if opts.Query != "mid" {
 				t.Errorf("query = %q, want mid", opts.Query)
 			}
@@ -79,7 +79,7 @@ func TestHandler_ListAssessments_PaginationQuery(t *testing.T) {
 			}
 			return []assessments.AssessmentListItem{
 				{ID: "a2", Title: "Midterm", Status: "PUBLISHED", DurationMinutes: 60},
-			}, nil
+			}, &assessments.PageInfo{Limit: 2, Offset: 5}, nil
 		},
 	}
 	issuer := auth.NewTokenIssuer("test-signing-key-minimum-32-bytes-long", "test-issuer", "test-audience", 15*time.Minute)
@@ -115,8 +115,8 @@ func TestHandler_ListAssessments_PaginationQuery(t *testing.T) {
 
 func TestHandler_ListAssessments_AdminAllowed(t *testing.T) {
 	svc := &fakeService{
-		listFunc: func(ctx context.Context, orgID string, opts assessments.ListOptions) ([]assessments.AssessmentListItem, error) {
-			return []assessments.AssessmentListItem{}, nil
+		listFunc: func(ctx context.Context, orgID string, opts assessments.ListOptions) ([]assessments.AssessmentListItem, *assessments.PageInfo, error) {
+			return []assessments.AssessmentListItem{}, nil, nil
 		},
 	}
 	issuer := auth.NewTokenIssuer("test-signing-key-minimum-32-bytes-long", "test-issuer", "test-audience", 15*time.Minute)
@@ -166,8 +166,8 @@ func TestHandler_ListAssessments_MissingToken(t *testing.T) {
 
 func TestHandler_ListAssessments_ServiceError(t *testing.T) {
 	svc := &fakeService{
-		listFunc: func(ctx context.Context, orgID string, opts assessments.ListOptions) ([]assessments.AssessmentListItem, error) {
-			return nil, errors.New("boom")
+		listFunc: func(ctx context.Context, orgID string, opts assessments.ListOptions) ([]assessments.AssessmentListItem, *assessments.PageInfo, error) {
+			return nil, nil, errors.New("boom")
 		},
 	}
 	issuer := auth.NewTokenIssuer("test-signing-key-minimum-32-bytes-long", "test-issuer", "test-audience", 15*time.Minute)

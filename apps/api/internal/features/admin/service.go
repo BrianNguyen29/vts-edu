@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/BrianNguyen29/vts-edu/apps/api/internal/features/auth"
+	"github.com/BrianNguyen29/vts-edu/apps/api/internal/platform/pagination"
 	"github.com/jackc/pgx/v5"
 )
 
@@ -17,7 +18,8 @@ type TransactionManager interface {
 
 // Service is the admin application service contract.
 type Service interface {
-	ListUsers(ctx context.Context, orgID string, opts ListOptions) ([]User, error)
+	ListUsers(ctx context.Context, orgID string, opts ListOptions) ([]User, *PageInfo, error)
+	ListAuditLogs(ctx context.Context, orgID string, opts AuditLogListOptions) ([]AuditLog, *PageInfo, error)
 	CreateUser(ctx context.Context, orgID, actorID string, req CreateUserRequest) (User, error)
 	UpdateRoles(ctx context.Context, orgID, actorID, userID string, req UpdateRolesRequest) error
 	ResetPassword(ctx context.Context, orgID, actorID, userID string, req ResetPasswordRequest) error
@@ -35,8 +37,70 @@ func NewService(repo Repository, tm TransactionManager) Service {
 	return &service{repo: repo, tm: tm}
 }
 
-func (s *service) ListUsers(ctx context.Context, orgID string, opts ListOptions) ([]User, error) {
-	return s.repo.ListUsers(ctx, orgID, opts)
+func (s *service) ListUsers(ctx context.Context, orgID string, opts ListOptions) ([]User, *PageInfo, error) {
+	queryOpts := opts
+	if opts.Limit > 0 {
+		queryOpts.Limit = opts.Limit + 1
+	}
+
+	users, err := s.repo.ListUsers(ctx, orgID, queryOpts)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	page := &PageInfo{Limit: opts.Limit, Offset: opts.Offset}
+	if opts.Limit > 0 {
+		if len(users) > opts.Limit {
+			page.HasMore = true
+			last := users[opts.Limit-1]
+			cursor := pagination.Encode(pagination.Cursor{Key: last.LoginName, ID: last.ID})
+			page.NextCursor = &cursor
+			users = users[:opts.Limit]
+		}
+	}
+
+	if opts.Count {
+		count, err := s.repo.CountUsers(ctx, orgID, opts)
+		if err != nil {
+			return nil, nil, err
+		}
+		page.TotalCount = &count
+	}
+
+	return users, page, nil
+}
+
+func (s *service) ListAuditLogs(ctx context.Context, orgID string, opts AuditLogListOptions) ([]AuditLog, *PageInfo, error) {
+	queryOpts := opts
+	if opts.Limit > 0 {
+		queryOpts.Limit = opts.Limit + 1
+	}
+
+	logs, err := s.repo.ListAuditLogs(ctx, orgID, queryOpts)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	page := &PageInfo{Limit: opts.Limit, Offset: opts.Offset}
+	if opts.Limit > 0 {
+		if len(logs) > opts.Limit {
+			page.HasMore = true
+			last := logs[opts.Limit-1]
+			cursor := pagination.Encode(pagination.Cursor{Key: last.CreatedAt, ID: last.ID})
+			page.NextCursor = &cursor
+			logs = logs[:opts.Limit]
+		}
+	}
+
+	if opts.Count {
+		count, err := s.repo.CountAuditLogs(ctx, orgID, opts)
+		if err != nil {
+			return nil, nil, err
+		}
+		page.TotalCount = &count
+	}
+
+	return logs, page, nil
 }
 
 func (s *service) CreateUser(ctx context.Context, orgID, actorID string, req CreateUserRequest) (User, error) {
@@ -77,6 +141,10 @@ func (s *service) CreateUser(ctx context.Context, orgID, actorID string, req Cre
 			return err
 		}
 		created = u
+
+		if err := auth.StorePasswordHistory(ctx, s.repo, tx, u.ID, "", hash); err != nil {
+			return err
+		}
 
 		after, _ := json.Marshal(map[string]any{
 			"id":           u.ID,
@@ -152,15 +220,29 @@ func (s *service) ResetPassword(ctx context.Context, orgID, actorID, userID stri
 		return err
 	}
 
-	hash, err := auth.HashPassword(req.TemporaryPassword)
-	if err != nil {
-		return fmt.Errorf("hash password: %w", err)
-	}
-
 	return s.tm.WithinTx(ctx, func(ctx context.Context, tx pgx.Tx) error {
+		oldHash, err := s.repo.GetLoginPasswordHash(ctx, tx, userID, orgID)
+		if err != nil {
+			return err
+		}
+
+		if err := auth.CheckPasswordHistory(ctx, s.repo, userID, req.TemporaryPassword); err != nil {
+			return err
+		}
+
+		hash, err := auth.HashPassword(req.TemporaryPassword)
+		if err != nil {
+			return fmt.Errorf("hash password: %w", err)
+		}
+
 		if err := s.repo.ResetPassword(ctx, tx, userID, orgID, hash); err != nil {
 			return err
 		}
+
+		if err := auth.StorePasswordHistory(ctx, s.repo, tx, userID, oldHash, hash); err != nil {
+			return err
+		}
+
 		if err := s.repo.RevokeUserSessions(ctx, tx, userID); err != nil {
 			return err
 		}

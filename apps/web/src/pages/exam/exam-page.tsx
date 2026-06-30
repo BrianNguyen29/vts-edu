@@ -264,7 +264,7 @@ export function ExamPage() {
 
   if (snapshot.status === 'SUBMITTED' || submitResult) {
     const result = submitResult;
-    const submittedAt = result?.submitted_at || snapshot.submitted_at;
+    const submittedAt = result?.submitted_at || snapshot.submitted_at || undefined;
 
     return (
       <div className="exam-page">

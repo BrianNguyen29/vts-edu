@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/BrianNguyen29/vts-edu/apps/api/internal/features/auth"
 	"github.com/go-chi/chi/v5"
@@ -51,18 +52,52 @@ func (h *Handler) ListUsers(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	users, err := h.svc.ListUsers(r.Context(), actor.OrgID, opts)
+	users, page, err := h.svc.ListUsers(r.Context(), actor.OrgID, opts)
 	if err != nil {
+		if errors.Is(err, ErrInvalidCursor) {
+			writeError(w, http.StatusBadRequest, "bad_request", "invalid cursor")
+			return
+		}
 		writeError(w, http.StatusInternalServerError, "internal_error", "failed to list users")
 		return
 	}
 
 	if opts.Limit > 0 {
-		writePagedData(w, http.StatusOK, users, &PageInfo{Limit: opts.Limit, Offset: opts.Offset})
+		writePagedData(w, http.StatusOK, users, page)
 		return
 	}
 
 	writeData(w, http.StatusOK, users)
+}
+
+// ListAuditLogs handles GET /api/v1/audit-logs.
+func (h *Handler) ListAuditLogs(w http.ResponseWriter, r *http.Request) {
+	actor, ok := h.requireAdmin(w, r)
+	if !ok {
+		return
+	}
+
+	opts, ok := parseAuditLogListOptions(w, r)
+	if !ok {
+		return
+	}
+
+	logs, page, err := h.svc.ListAuditLogs(r.Context(), actor.OrgID, opts)
+	if err != nil {
+		if errors.Is(err, ErrInvalidCursor) {
+			writeError(w, http.StatusBadRequest, "bad_request", "invalid cursor")
+			return
+		}
+		writeError(w, http.StatusInternalServerError, "internal_error", "failed to list audit logs")
+		return
+	}
+
+	if opts.Limit > 0 {
+		writePagedData(w, http.StatusOK, logs, page)
+		return
+	}
+
+	writeData(w, http.StatusOK, logs)
 }
 
 // CreateUser handles POST /api/v1/users.
@@ -83,7 +118,7 @@ func (h *Handler) CreateUser(w http.ResponseWriter, r *http.Request) {
 		switch {
 		case errors.Is(err, ErrDuplicateLogin):
 			writeError(w, http.StatusConflict, "duplicate_login", err.Error())
-		case errors.Is(err, ErrInvalidInput), errors.Is(err, auth.ErrWeakPassword):
+		case errors.Is(err, ErrInvalidInput), errors.Is(err, auth.ErrWeakPassword), errors.Is(err, auth.ErrPasswordReused):
 			writeError(w, http.StatusBadRequest, "bad_request", err.Error())
 		default:
 			writeError(w, http.StatusInternalServerError, "internal_error", "failed to create user")
@@ -141,7 +176,7 @@ func (h *Handler) ResetPassword(w http.ResponseWriter, r *http.Request) {
 		switch {
 		case errors.Is(err, ErrUserNotFound):
 			writeError(w, http.StatusNotFound, "not_found", err.Error())
-		case errors.Is(err, ErrInvalidInput), errors.Is(err, auth.ErrWeakPassword):
+		case errors.Is(err, ErrInvalidInput), errors.Is(err, auth.ErrWeakPassword), errors.Is(err, auth.ErrPasswordReused):
 			writeError(w, http.StatusBadRequest, "bad_request", err.Error())
 		default:
 			writeError(w, http.StatusInternalServerError, "internal_error", "failed to reset password")
@@ -216,6 +251,66 @@ func parseListOptions(w http.ResponseWriter, r *http.Request) (ListOptions, bool
 			return ListOptions{}, false
 		}
 		opts.Offset = val
+	}
+
+	if cursor := strings.TrimSpace(r.URL.Query().Get("cursor")); cursor != "" {
+		opts.Cursor = cursor
+		opts.Offset = 0
+	}
+
+	if r.URL.Query().Get("count") == "true" {
+		opts.Count = true
+	}
+
+	return opts, true
+}
+
+func parseAuditLogListOptions(w http.ResponseWriter, r *http.Request) (AuditLogListOptions, bool) {
+	opts := AuditLogListOptions{
+		Action:      strings.TrimSpace(r.URL.Query().Get("action")),
+		ActorUserID: strings.TrimSpace(r.URL.Query().Get("actor_user_id")),
+		From:        strings.TrimSpace(r.URL.Query().Get("from")),
+		To:          strings.TrimSpace(r.URL.Query().Get("to")),
+	}
+
+	if opts.From != "" {
+		if _, err := time.Parse(time.RFC3339, opts.From); err != nil {
+			writeError(w, http.StatusBadRequest, "bad_request", "invalid from timestamp")
+			return AuditLogListOptions{}, false
+		}
+	}
+	if opts.To != "" {
+		if _, err := time.Parse(time.RFC3339, opts.To); err != nil {
+			writeError(w, http.StatusBadRequest, "bad_request", "invalid to timestamp")
+			return AuditLogListOptions{}, false
+		}
+	}
+
+	if l := r.URL.Query().Get("limit"); l != "" {
+		val, err := strconv.Atoi(l)
+		if err != nil || val < 1 {
+			writeError(w, http.StatusBadRequest, "bad_request", "invalid limit")
+			return AuditLogListOptions{}, false
+		}
+		opts.Limit = val
+	}
+
+	if o := r.URL.Query().Get("offset"); o != "" {
+		val, err := strconv.Atoi(o)
+		if err != nil || val < 0 {
+			writeError(w, http.StatusBadRequest, "bad_request", "invalid offset")
+			return AuditLogListOptions{}, false
+		}
+		opts.Offset = val
+	}
+
+	if cursor := strings.TrimSpace(r.URL.Query().Get("cursor")); cursor != "" {
+		opts.Cursor = cursor
+		opts.Offset = 0
+	}
+
+	if r.URL.Query().Get("count") == "true" {
+		opts.Count = true
 	}
 
 	return opts, true

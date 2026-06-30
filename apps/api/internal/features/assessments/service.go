@@ -2,11 +2,13 @@ package assessments
 
 import (
 	"context"
+
+	"github.com/BrianNguyen29/vts-edu/apps/api/internal/platform/pagination"
 )
 
 // Service is the assessments application service contract.
 type Service interface {
-	ListAssessments(ctx context.Context, orgID string, opts ListOptions) ([]AssessmentListItem, error)
+	ListAssessments(ctx context.Context, orgID string, opts ListOptions) ([]AssessmentListItem, *PageInfo, error)
 }
 
 type service struct {
@@ -19,10 +21,34 @@ func NewService(repo Repository) Service {
 }
 
 // ListAssessments returns the tenant-scoped published/open assessment list.
-func (s *service) ListAssessments(ctx context.Context, orgID string, opts ListOptions) ([]AssessmentListItem, error) {
-	rows, err := s.repo.ListPublishedByOrganization(ctx, orgID, opts)
+func (s *service) ListAssessments(ctx context.Context, orgID string, opts ListOptions) ([]AssessmentListItem, *PageInfo, error) {
+	queryOpts := opts
+	if opts.Limit > 0 {
+		queryOpts.Limit = opts.Limit + 1
+	}
+
+	rows, err := s.repo.ListPublishedByOrganization(ctx, orgID, queryOpts)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
+	}
+
+	page := &PageInfo{Limit: opts.Limit, Offset: opts.Offset}
+	if opts.Limit > 0 {
+		if len(rows) > opts.Limit {
+			page.HasMore = true
+			last := rows[opts.Limit-1]
+			cursor := pagination.Encode(pagination.Cursor{Key: last.CreatedAt, ID: last.ID})
+			page.NextCursor = &cursor
+			rows = rows[:opts.Limit]
+		}
+	}
+
+	if opts.Count {
+		count, err := s.repo.CountPublishedByOrganization(ctx, orgID, opts)
+		if err != nil {
+			return nil, nil, err
+		}
+		page.TotalCount = &count
 	}
 
 	items := make([]AssessmentListItem, len(rows))
@@ -34,5 +60,5 @@ func (s *service) ListAssessments(ctx context.Context, orgID string, opts ListOp
 			DurationMinutes: r.DurationMinutes,
 		}
 	}
-	return items, nil
+	return items, page, nil
 }

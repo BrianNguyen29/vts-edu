@@ -15,6 +15,8 @@ function buildQueryString(opts: ListOptions): string {
   if (opts.q) params.set('q', opts.q);
   if (opts.limit !== undefined) params.set('limit', String(opts.limit));
   if (opts.offset !== undefined) params.set('offset', String(opts.offset));
+  if (opts.cursor) params.set('cursor', opts.cursor);
+  if (opts.count) params.set('count', 'true');
   const query = params.toString();
   return query ? `?${query}` : '';
 }

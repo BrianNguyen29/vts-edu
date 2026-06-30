@@ -11,36 +11,62 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
-const listPublishedByOrganization = `-- name: ListPublishedByOrganization :many
-SELECT id, title, status, duration_minutes
+const countPublishedByOrganization = `-- name: CountPublishedByOrganization :one
+SELECT COUNT(*)
 FROM assessments
 WHERE organization_id = $1
   AND status IN ('OPEN', 'PUBLISHED')
   AND ($2::text = '' OR title ILIKE '%' || $2 || '%')
-ORDER BY created_at DESC
-LIMIT NULLIF($3::int, 0) OFFSET $4::int
+`
+
+type CountPublishedByOrganizationParams struct {
+	OrganizationID pgtype.UUID `json:"organization_id"`
+	SearchQuery    string      `json:"search_query"`
+}
+
+func (q *Queries) CountPublishedByOrganization(ctx context.Context, arg CountPublishedByOrganizationParams) (int64, error) {
+	row := q.db.QueryRow(ctx, countPublishedByOrganization, arg.OrganizationID, arg.SearchQuery)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
+const listPublishedByOrganization = `-- name: ListPublishedByOrganization :many
+SELECT id, title, status, duration_minutes, created_at
+FROM assessments
+WHERE organization_id = $1
+  AND status IN ('OPEN', 'PUBLISHED')
+  AND ($2::text = '' OR title ILIKE '%' || $2 || '%')
+  AND ($3::text = '' OR created_at < $3::timestamptz OR (created_at = $3::timestamptz AND id::text < $4))
+ORDER BY created_at DESC, id DESC
+LIMIT NULLIF($6::int, 0) OFFSET $5::int
 `
 
 type ListPublishedByOrganizationParams struct {
 	OrganizationID pgtype.UUID `json:"organization_id"`
-	Column2        string      `json:"column_2"`
-	Column3        int32       `json:"column_3"`
-	Column4        int32       `json:"column_4"`
+	SearchQuery    string      `json:"search_query"`
+	CursorKey      string      `json:"cursor_key"`
+	CursorID       pgtype.UUID `json:"cursor_id"`
+	PageOffset     int32       `json:"page_offset"`
+	PageLimit      int32       `json:"page_limit"`
 }
 
 type ListPublishedByOrganizationRow struct {
-	ID              pgtype.UUID `json:"id"`
-	Title           string      `json:"title"`
-	Status          string      `json:"status"`
-	DurationMinutes int32       `json:"duration_minutes"`
+	ID              pgtype.UUID        `json:"id"`
+	Title           string             `json:"title"`
+	Status          string             `json:"status"`
+	DurationMinutes int32              `json:"duration_minutes"`
+	CreatedAt       pgtype.Timestamptz `json:"created_at"`
 }
 
 func (q *Queries) ListPublishedByOrganization(ctx context.Context, arg ListPublishedByOrganizationParams) ([]ListPublishedByOrganizationRow, error) {
 	rows, err := q.db.Query(ctx, listPublishedByOrganization,
 		arg.OrganizationID,
-		arg.Column2,
-		arg.Column3,
-		arg.Column4,
+		arg.SearchQuery,
+		arg.CursorKey,
+		arg.CursorID,
+		arg.PageOffset,
+		arg.PageLimit,
 	)
 	if err != nil {
 		return nil, err
@@ -54,6 +80,7 @@ func (q *Queries) ListPublishedByOrganization(ctx context.Context, arg ListPubli
 			&i.Title,
 			&i.Status,
 			&i.DurationMinutes,
+			&i.CreatedAt,
 		); err != nil {
 			return nil, err
 		}

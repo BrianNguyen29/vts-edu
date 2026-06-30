@@ -7,7 +7,9 @@ import (
 	"fmt"
 	"time"
 
+	attemptssqlc "github.com/BrianNguyen29/vts-edu/apps/api/internal/features/attempts/sqlc"
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -61,255 +63,317 @@ type GradingResult struct {
 	GradingStatus string
 }
 
-type repository struct {
-	pool *pgxpool.Pool
+type sqlcRepository struct {
+	queries *attemptssqlc.Queries
 }
 
-// NewRepository creates a new attempts repository backed by a pgx pool.
+// NewRepository creates a new attempts repository backed by generated sqlc queries.
+// It preserves the existing Repository interface.
 func NewRepository(pool *pgxpool.Pool) Repository {
-	return &repository{pool: pool}
+	return &sqlcRepository{queries: attemptssqlc.New(pool)}
 }
 
-func (r *repository) GetAttempt(ctx context.Context, attemptID, orgID, userID string) (*Attempt, error) {
-	query := `
-		SELECT
-			a.id,
-			a.organization_id,
-			a.assessment_id,
-			a.publication_id,
-			a.status,
-			a.started_at,
-			a.expires_at,
-			a.submitted_at,
-			a.score::text,
-			a.max_score::text,
-			a.grading_status
-		FROM attempts a
-		WHERE a.id = $1
-		  AND a.organization_id = $2
-		  AND a.student_user_id = $3
-		LIMIT 1
-	`
+func toUUID(s string) (pgtype.UUID, error) {
+	var u pgtype.UUID
+	if err := u.Scan(s); err != nil {
+		return pgtype.UUID{}, err
+	}
+	return u, nil
+}
 
-	var a Attempt
-	err := r.pool.QueryRow(ctx, query, attemptID, orgID, userID).Scan(
-		&a.ID,
-		&a.OrganizationID,
-		&a.AssessmentID,
-		&a.PublicationID,
-		&a.Status,
-		&a.StartedAt,
-		&a.ExpiresAt,
-		&a.SubmittedAt,
-		&a.Score,
-		&a.MaxScore,
-		&a.GradingStatus,
-	)
+func toText(s string) pgtype.Text {
+	return pgtype.Text{String: s, Valid: s != ""}
+}
+
+func textPtr(t pgtype.Text) *string {
+	if t.Valid {
+		return &t.String
+	}
+	return nil
+}
+
+func tsPtr(t pgtype.Timestamptz) *time.Time {
+	if t.Valid {
+		return &t.Time
+	}
+	return nil
+}
+
+func uuidPtr(u pgtype.UUID) *string {
+	if u.Valid {
+		s := u.String()
+		return &s
+	}
+	return nil
+}
+
+func toNumeric(s string) (pgtype.Numeric, error) {
+	var n pgtype.Numeric
+	if err := n.Scan(s); err != nil {
+		return pgtype.Numeric{}, err
+	}
+	return n, nil
+}
+
+func numericPtr(n pgtype.Numeric) *string {
+	if n.Valid {
+		f, err := n.Float64Value()
+		if err != nil {
+			return nil
+		}
+		s := fmt.Sprintf("%.2f", f.Float64)
+		return &s
+	}
+	return nil
+}
+
+func (r *sqlcRepository) GetAttempt(ctx context.Context, attemptID, orgID, userID string) (*Attempt, error) {
+	id, err := toUUID(attemptID)
+	if err != nil {
+		return nil, fmt.Errorf("invalid attempt id: %w", err)
+	}
+	org, err := toUUID(orgID)
+	if err != nil {
+		return nil, fmt.Errorf("invalid organization id: %w", err)
+	}
+	usr, err := toUUID(userID)
+	if err != nil {
+		return nil, fmt.Errorf("invalid user id: %w", err)
+	}
+
+	row, err := r.queries.GetAttempt(ctx, attemptssqlc.GetAttemptParams{
+		ID:             id,
+		OrganizationID: org,
+		StudentUserID:  usr,
+	})
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, ErrAttemptNotFound
 	}
 	if err != nil {
 		return nil, fmt.Errorf("get attempt: %w", err)
 	}
-	return &a, nil
+
+	return &Attempt{
+		ID:             row.ID.String(),
+		OrganizationID: row.OrganizationID.String(),
+		AssessmentID:   row.AssessmentID.String(),
+		PublicationID:  uuidPtr(row.PublicationID),
+		Status:         row.Status,
+		StartedAt:      tsPtr(row.StartedAt),
+		ExpiresAt:      tsPtr(row.ExpiresAt),
+		SubmittedAt:    tsPtr(row.SubmittedAt),
+		Score:          numericPtr(row.Score),
+		MaxScore:       numericPtr(row.MaxScore),
+		GradingStatus:  textPtr(row.GradingStatus),
+	}, nil
 }
 
-func (r *repository) GetAttemptItems(ctx context.Context, attemptID, orgID string) ([]AttemptItemRow, error) {
-	query := `
-		SELECT
-			ai.id,
-			ai.question_version_id,
-			ai.position,
-			ai.points::text,
-			ai.prompt_json,
-			ai.choices_json,
-			aa.answer_payload,
-			ai.answer_key_json,
-			aa.revision,
-			aa.answered_at
-		FROM attempt_items ai
-		LEFT JOIN attempt_answers aa
-			ON aa.attempt_item_id = ai.id
-			AND aa.organization_id = ai.organization_id
-			AND aa.attempt_id = ai.attempt_id
-		WHERE ai.attempt_id = $1
-		  AND ai.organization_id = $2
-		ORDER BY ai.position
-	`
+func (r *sqlcRepository) GetAttemptItems(ctx context.Context, attemptID, orgID string) ([]AttemptItemRow, error) {
+	id, err := toUUID(attemptID)
+	if err != nil {
+		return nil, fmt.Errorf("invalid attempt id: %w", err)
+	}
+	org, err := toUUID(orgID)
+	if err != nil {
+		return nil, fmt.Errorf("invalid organization id: %w", err)
+	}
 
-	rows, err := r.pool.Query(ctx, query, attemptID, orgID)
+	rows, err := r.queries.GetAttemptItems(ctx, attemptssqlc.GetAttemptItemsParams{
+		AttemptID:      id,
+		OrganizationID: org,
+	})
 	if err != nil {
 		return nil, fmt.Errorf("list attempt items: %w", err)
 	}
-	defer rows.Close()
 
-	var items []AttemptItemRow
-	for rows.Next() {
-		var it AttemptItemRow
-		if err := rows.Scan(
-			&it.ID,
-			&it.QuestionVersionID,
-			&it.Position,
-			&it.Points,
-			&it.Prompt,
-			&it.Choices,
-			&it.AnswerPayload,
-			&it.AnswerKey,
-			&it.Revision,
-			&it.AnsweredAt,
-		); err != nil {
-			return nil, fmt.Errorf("scan attempt item: %w", err)
+	items := make([]AttemptItemRow, len(rows))
+	for i, row := range rows {
+		items[i] = AttemptItemRow{
+			ID:                row.ID.String(),
+			QuestionVersionID: row.QuestionVersionID.String(),
+			Position:          int(row.Position),
+			Points:            row.AiPoints,
+			Prompt:            json.RawMessage(row.PromptJson),
+			Choices:           json.RawMessage(row.ChoicesJson),
+			AnswerPayload:     json.RawMessage(row.AnswerPayload),
+			AnswerKey:         json.RawMessage(row.AnswerKeyJson),
+			Revision:          int8Ptr(row.Revision),
+			AnsweredAt:        tsPtr(row.AnsweredAt),
 		}
-		items = append(items, it)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("iterate attempt items: %w", err)
 	}
 	return items, nil
 }
 
-func (r *repository) GetAttemptForUpdate(ctx context.Context, tx pgx.Tx, attemptID, orgID, userID string) (*Attempt, error) {
-	query := `
-		SELECT
-			id,
-			organization_id,
-			assessment_id,
-			publication_id,
-			status,
-			started_at,
-			expires_at,
-			submitted_at,
-			score::text,
-			max_score::text,
-			grading_status
-		FROM attempts
-		WHERE id = $1
-		  AND organization_id = $2
-		  AND student_user_id = $3
-		FOR UPDATE
-	`
+func int8Ptr(n pgtype.Int8) *int64 {
+	if n.Valid {
+		return &n.Int64
+	}
+	return nil
+}
 
-	var a Attempt
-	err := tx.QueryRow(ctx, query, attemptID, orgID, userID).Scan(
-		&a.ID,
-		&a.OrganizationID,
-		&a.AssessmentID,
-		&a.PublicationID,
-		&a.Status,
-		&a.StartedAt,
-		&a.ExpiresAt,
-		&a.SubmittedAt,
-		&a.Score,
-		&a.MaxScore,
-		&a.GradingStatus,
-	)
+func (r *sqlcRepository) GetAttemptForUpdate(ctx context.Context, tx pgx.Tx, attemptID, orgID, userID string) (*Attempt, error) {
+	id, err := toUUID(attemptID)
+	if err != nil {
+		return nil, fmt.Errorf("invalid attempt id: %w", err)
+	}
+	org, err := toUUID(orgID)
+	if err != nil {
+		return nil, fmt.Errorf("invalid organization id: %w", err)
+	}
+	usr, err := toUUID(userID)
+	if err != nil {
+		return nil, fmt.Errorf("invalid user id: %w", err)
+	}
+
+	row, err := r.queries.WithTx(tx).GetAttemptForUpdate(ctx, attemptssqlc.GetAttemptForUpdateParams{
+		ID:             id,
+		OrganizationID: org,
+		StudentUserID:  usr,
+	})
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, ErrAttemptNotFound
 	}
 	if err != nil {
 		return nil, fmt.Errorf("get attempt for update: %w", err)
 	}
-	return &a, nil
+
+	return &Attempt{
+		ID:             row.ID.String(),
+		OrganizationID: row.OrganizationID.String(),
+		AssessmentID:   row.AssessmentID.String(),
+		PublicationID:  uuidPtr(row.PublicationID),
+		Status:         row.Status,
+		StartedAt:      tsPtr(row.StartedAt),
+		ExpiresAt:      tsPtr(row.ExpiresAt),
+		SubmittedAt:    tsPtr(row.SubmittedAt),
+		Score:          numericPtr(row.Score),
+		MaxScore:       numericPtr(row.MaxScore),
+		GradingStatus:  textPtr(row.GradingStatus),
+	}, nil
 }
 
-func (r *repository) ItemExists(ctx context.Context, tx pgx.Tx, itemID, attemptID, orgID string) (bool, error) {
-	query := `
-		SELECT 1
-		FROM attempt_items
-		WHERE id = $1
-		  AND attempt_id = $2
-		  AND organization_id = $3
-		LIMIT 1
-	`
-
-	var n int
-	err := tx.QueryRow(ctx, query, itemID, attemptID, orgID).Scan(&n)
-	if errors.Is(err, pgx.ErrNoRows) {
-		return false, nil
+func (r *sqlcRepository) ItemExists(ctx context.Context, tx pgx.Tx, itemID, attemptID, orgID string) (bool, error) {
+	id, err := toUUID(itemID)
+	if err != nil {
+		return false, fmt.Errorf("invalid item id: %w", err)
 	}
+	attempt, err := toUUID(attemptID)
+	if err != nil {
+		return false, fmt.Errorf("invalid attempt id: %w", err)
+	}
+	org, err := toUUID(orgID)
+	if err != nil {
+		return false, fmt.Errorf("invalid organization id: %w", err)
+	}
+
+	exists, err := r.queries.WithTx(tx).ItemExists(ctx, attemptssqlc.ItemExistsParams{
+		ID:             id,
+		AttemptID:      attempt,
+		OrganizationID: org,
+	})
 	if err != nil {
 		return false, fmt.Errorf("check item exists: %w", err)
 	}
-	return true, nil
+	return exists, nil
 }
 
-func (r *repository) UpsertAnswer(ctx context.Context, tx pgx.Tx, attemptID, itemID, orgID string, payload json.RawMessage) (*AnswerSaved, error) {
-	query := `
-		INSERT INTO attempt_answers (
-			organization_id,
-			attempt_id,
-			attempt_item_id,
-			answer_payload,
-			revision,
-			answered_at,
-			updated_at
-		) VALUES ($1, $2, $3, $4, 1, now(), now())
-		ON CONFLICT (organization_id, attempt_id, attempt_item_id)
-		DO UPDATE SET
-			answer_payload = EXCLUDED.answer_payload,
-			revision = attempt_answers.revision + 1,
-			answered_at = now(),
-			updated_at = now()
-		RETURNING revision, answered_at, answer_payload
-	`
+func (r *sqlcRepository) UpsertAnswer(ctx context.Context, tx pgx.Tx, attemptID, itemID, orgID string, payload json.RawMessage) (*AnswerSaved, error) {
+	attempt, err := toUUID(attemptID)
+	if err != nil {
+		return nil, fmt.Errorf("invalid attempt id: %w", err)
+	}
+	item, err := toUUID(itemID)
+	if err != nil {
+		return nil, fmt.Errorf("invalid item id: %w", err)
+	}
+	org, err := toUUID(orgID)
+	if err != nil {
+		return nil, fmt.Errorf("invalid organization id: %w", err)
+	}
 
-	var saved AnswerSaved
-	saved.AttemptItemID = itemID
-	err := tx.QueryRow(ctx, query, orgID, attemptID, itemID, payload).Scan(
-		&saved.Revision,
-		&saved.AnsweredAt, // not used in response, but scanned for completeness
-		&saved.AnswerPayload,
-	)
+	row, err := r.queries.WithTx(tx).UpsertAnswer(ctx, attemptssqlc.UpsertAnswerParams{
+		OrganizationID: org,
+		AttemptID:      attempt,
+		AttemptItemID:  item,
+		AnswerPayload:  payload,
+	})
 	if err != nil {
 		return nil, fmt.Errorf("upsert answer: %w", err)
 	}
-	return &saved, nil
+
+	return &AnswerSaved{
+		AttemptItemID: itemID,
+		Revision:      row.Revision,
+		AnswerPayload: json.RawMessage(row.AnswerPayload),
+		AnsweredAt:    row.AnsweredAt.Time,
+	}, nil
 }
 
-func (r *repository) MarkAttemptExpired(ctx context.Context, tx pgx.Tx, attemptID, orgID, userID string) error {
-	query := `
-		UPDATE attempts
-		SET status = 'EXPIRED', updated_at = now()
-		WHERE id = $1
-		  AND organization_id = $2
-		  AND student_user_id = $3
-	`
-	_, err := tx.Exec(ctx, query, attemptID, orgID, userID)
+func (r *sqlcRepository) MarkAttemptExpired(ctx context.Context, tx pgx.Tx, attemptID, orgID, userID string) error {
+	attempt, err := toUUID(attemptID)
 	if err != nil {
+		return fmt.Errorf("invalid attempt id: %w", err)
+	}
+	org, err := toUUID(orgID)
+	if err != nil {
+		return fmt.Errorf("invalid organization id: %w", err)
+	}
+	usr, err := toUUID(userID)
+	if err != nil {
+		return fmt.Errorf("invalid user id: %w", err)
+	}
+
+	if err := r.queries.WithTx(tx).MarkAttemptExpired(ctx, attemptssqlc.MarkAttemptExpiredParams{
+		ID:             attempt,
+		OrganizationID: org,
+		StudentUserID:  usr,
+	}); err != nil {
 		return fmt.Errorf("mark attempt expired: %w", err)
 	}
 	return nil
 }
 
-func (r *repository) SubmitAttempt(ctx context.Context, tx pgx.Tx, attemptID, orgID, userID, score, maxScore, gradingStatus string) (*GradingResult, error) {
-	query := `
-		UPDATE attempts
-		SET status = 'SUBMITTED',
-		    submitted_at = now(),
-		    score = $4,
-		    max_score = $5,
-		    grading_status = $6,
-		    updated_at = now()
-		WHERE id = $1
-		  AND organization_id = $2
-		  AND student_user_id = $3
-		  AND status = 'IN_PROGRESS'
-		RETURNING submitted_at, score::text, max_score::text, grading_status
-	`
+func (r *sqlcRepository) SubmitAttempt(ctx context.Context, tx pgx.Tx, attemptID, orgID, userID, score, maxScore, gradingStatus string) (*GradingResult, error) {
+	attempt, err := toUUID(attemptID)
+	if err != nil {
+		return nil, fmt.Errorf("invalid attempt id: %w", err)
+	}
+	org, err := toUUID(orgID)
+	if err != nil {
+		return nil, fmt.Errorf("invalid organization id: %w", err)
+	}
+	usr, err := toUUID(userID)
+	if err != nil {
+		return nil, fmt.Errorf("invalid user id: %w", err)
+	}
+	scoreNum, err := toNumeric(score)
+	if err != nil {
+		return nil, fmt.Errorf("invalid score: %w", err)
+	}
+	maxScoreNum, err := toNumeric(maxScore)
+	if err != nil {
+		return nil, fmt.Errorf("invalid max score: %w", err)
+	}
 
-	var result GradingResult
-	err := tx.QueryRow(ctx, query, attemptID, orgID, userID, score, maxScore, gradingStatus).Scan(
-		&result.SubmittedAt,
-		&result.Score,
-		&result.MaxScore,
-		&result.GradingStatus,
-	)
+	row, err := r.queries.WithTx(tx).SubmitAttempt(ctx, attemptssqlc.SubmitAttemptParams{
+		ID:             attempt,
+		OrganizationID: org,
+		StudentUserID:  usr,
+		Score:          scoreNum,
+		MaxScore:       maxScoreNum,
+		GradingStatus:  toText(gradingStatus),
+	})
 	if errors.Is(err, pgx.ErrNoRows) {
-		// Not IN_PROGRESS anymore; caller will reconcile.
 		return nil, ErrAttemptNotInProgress
 	}
 	if err != nil {
 		return nil, fmt.Errorf("submit attempt: %w", err)
 	}
-	return &result, nil
+
+	return &GradingResult{
+		SubmittedAt:   row.SubmittedAt.Time,
+		Score:         row.Score,
+		MaxScore:      row.MaxScore,
+		GradingStatus: row.GradingStatus.String,
+	}, nil
 }

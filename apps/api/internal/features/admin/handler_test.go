@@ -16,7 +16,8 @@ import (
 )
 
 type fakeService struct {
-	listFunc          func(ctx context.Context, orgID string, opts admin.ListOptions) ([]admin.User, error)
+	listFunc          func(ctx context.Context, orgID string, opts admin.ListOptions) ([]admin.User, *admin.PageInfo, error)
+	listAuditFunc     func(ctx context.Context, orgID string, opts admin.AuditLogListOptions) ([]admin.AuditLog, *admin.PageInfo, error)
 	createFunc        func(ctx context.Context, orgID, actorID string, req admin.CreateUserRequest) (admin.User, error)
 	updateRolesFunc   func(ctx context.Context, orgID, actorID, userID string, req admin.UpdateRolesRequest) error
 	resetPasswordFunc func(ctx context.Context, orgID, actorID, userID string, req admin.ResetPasswordRequest) error
@@ -24,8 +25,12 @@ type fakeService struct {
 	updateOrgFunc     func(ctx context.Context, orgID, actorID string, req admin.UpdateOrganizationRequest) (admin.Organization, error)
 }
 
-func (f *fakeService) ListUsers(ctx context.Context, orgID string, opts admin.ListOptions) ([]admin.User, error) {
+func (f *fakeService) ListUsers(ctx context.Context, orgID string, opts admin.ListOptions) ([]admin.User, *admin.PageInfo, error) {
 	return f.listFunc(ctx, orgID, opts)
+}
+
+func (f *fakeService) ListAuditLogs(ctx context.Context, orgID string, opts admin.AuditLogListOptions) ([]admin.AuditLog, *admin.PageInfo, error) {
+	return f.listAuditFunc(ctx, orgID, opts)
 }
 
 func (f *fakeService) CreateUser(ctx context.Context, orgID, actorID string, req admin.CreateUserRequest) (admin.User, error) {
@@ -59,10 +64,10 @@ func tokenWithRoles(roles []string) string {
 
 func TestHandler_ListUsers_AdminAllowed(t *testing.T) {
 	svc := &fakeService{
-		listFunc: func(ctx context.Context, orgID string, opts admin.ListOptions) ([]admin.User, error) {
+		listFunc: func(ctx context.Context, orgID string, opts admin.ListOptions) ([]admin.User, *admin.PageInfo, error) {
 			return []admin.User{
 				{ID: "u1", LoginName: "admin001", Roles: []string{"admin"}},
-			}, nil
+			}, nil, nil
 		},
 	}
 	issuer := auth.NewTokenIssuer("test-signing-key-minimum-32-bytes-long", "test-issuer", "test-audience", 15*time.Minute)
@@ -91,7 +96,7 @@ func TestHandler_ListUsers_AdminAllowed(t *testing.T) {
 
 func TestHandler_ListUsers_PaginationQuery(t *testing.T) {
 	svc := &fakeService{
-		listFunc: func(ctx context.Context, orgID string, opts admin.ListOptions) ([]admin.User, error) {
+		listFunc: func(ctx context.Context, orgID string, opts admin.ListOptions) ([]admin.User, *admin.PageInfo, error) {
 			if opts.Query != "alice" {
 				t.Errorf("query = %q, want alice", opts.Query)
 			}
@@ -101,7 +106,7 @@ func TestHandler_ListUsers_PaginationQuery(t *testing.T) {
 			if opts.Offset != 10 {
 				t.Errorf("offset = %d, want 10", opts.Offset)
 			}
-			return []admin.User{{ID: "u1", LoginName: "alice01"}}, nil
+			return []admin.User{{ID: "u1", LoginName: "alice01"}}, &admin.PageInfo{Limit: 5, Offset: 10}, nil
 		},
 	}
 	issuer := auth.NewTokenIssuer("test-signing-key-minimum-32-bytes-long", "test-issuer", "test-audience", 15*time.Minute)
@@ -145,6 +150,62 @@ func TestHandler_ListUsers_StudentForbidden(t *testing.T) {
 	rec := httptest.NewRecorder()
 
 	h.ListUsers(rec, req)
+
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("status = %d, want %d", rec.Code, http.StatusForbidden)
+	}
+}
+
+func TestHandler_ListAuditLogs_AdminAllowed(t *testing.T) {
+	svc := &fakeService{
+		listAuditFunc: func(ctx context.Context, orgID string, opts admin.AuditLogListOptions) ([]admin.AuditLog, *admin.PageInfo, error) {
+			if opts.Action != "user.create" {
+				t.Errorf("action = %q, want user.create", opts.Action)
+			}
+			return []admin.AuditLog{{ID: "log-1", Action: "user.create"}}, &admin.PageInfo{Limit: 5}, nil
+		},
+	}
+	issuer := auth.NewTokenIssuer("test-signing-key-minimum-32-bytes-long", "test-issuer", "test-audience", 15*time.Minute)
+	h := admin.NewHandler(svc, issuer)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/audit-logs?action=user.create&limit=5", nil)
+	req.Header.Set("Authorization", "Bearer "+tokenWithRoles([]string{"admin"}))
+	rec := httptest.NewRecorder()
+
+	h.ListAuditLogs(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", rec.Code, http.StatusOK)
+	}
+
+	var resp struct {
+		Data []admin.AuditLog `json:"data"`
+		Page *struct {
+			Limit  int `json:"limit"`
+			Offset int `json:"offset"`
+		} `json:"page"`
+	}
+	if err := json.NewDecoder(rec.Body).Decode(&resp); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if len(resp.Data) != 1 {
+		t.Fatalf("expected 1 audit log, got %d", len(resp.Data))
+	}
+	if resp.Page == nil || resp.Page.Limit != 5 {
+		t.Fatalf("expected page limit 5, got %+v", resp.Page)
+	}
+}
+
+func TestHandler_ListAuditLogs_StudentForbidden(t *testing.T) {
+	svc := &fakeService{}
+	issuer := auth.NewTokenIssuer("test-signing-key-minimum-32-bytes-long", "test-issuer", "test-audience", 15*time.Minute)
+	h := admin.NewHandler(svc, issuer)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/audit-logs", nil)
+	req.Header.Set("Authorization", "Bearer "+tokenWithRoles([]string{"student"}))
+	rec := httptest.NewRecorder()
+
+	h.ListAuditLogs(rec, req)
 
 	if rec.Code != http.StatusForbidden {
 		t.Fatalf("status = %d, want %d", rec.Code, http.StatusForbidden)
@@ -209,6 +270,27 @@ func TestHandler_CreateUser_DuplicateLogin(t *testing.T) {
 
 	if rec.Code != http.StatusConflict {
 		t.Fatalf("status = %d, want %d", rec.Code, http.StatusConflict)
+	}
+}
+
+func TestHandler_CreateUser_ReusedPassword(t *testing.T) {
+	svc := &fakeService{
+		createFunc: func(ctx context.Context, orgID, actorID string, req admin.CreateUserRequest) (admin.User, error) {
+			return admin.User{}, auth.ErrPasswordReused
+		},
+	}
+	issuer := auth.NewTokenIssuer("test-signing-key-minimum-32-bytes-long", "test-issuer", "test-audience", 15*time.Minute)
+	h := admin.NewHandler(svc, issuer)
+
+	body := strings.NewReader(`{"login_name":"newuser","display_name":"New User","temporary_password":"TempPass123!","roles":["student"]}`)
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/users", body)
+	req.Header.Set("Authorization", "Bearer "+tokenWithRoles([]string{"admin"}))
+	rec := httptest.NewRecorder()
+
+	h.CreateUser(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want %d", rec.Code, http.StatusBadRequest)
 	}
 }
 
@@ -287,6 +369,31 @@ func TestHandler_ResetPassword_OK(t *testing.T) {
 	}
 }
 
+func TestHandler_ResetPassword_ReusedPassword(t *testing.T) {
+	svc := &fakeService{
+		resetPasswordFunc: func(ctx context.Context, orgID, actorID, userID string, req admin.ResetPasswordRequest) error {
+			return auth.ErrPasswordReused
+		},
+	}
+	issuer := auth.NewTokenIssuer("test-signing-key-minimum-32-bytes-long", "test-issuer", "test-audience", 15*time.Minute)
+	h := admin.NewHandler(svc, issuer)
+
+	body := strings.NewReader(`{"temporary_password":"OldPass123!"}`)
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/users/u1/reset-password", body)
+	req.Header.Set("Authorization", "Bearer "+tokenWithRoles([]string{"admin"}))
+	rec := httptest.NewRecorder()
+
+	rctx := chi.NewRouteContext()
+	rctx.URLParams.Add("user_id", "u1")
+	req = req.WithContext(context.WithValue(req.Context(), chi.RouteCtxKey, rctx))
+
+	h.ResetPassword(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want %d", rec.Code, http.StatusBadRequest)
+	}
+}
+
 func TestHandler_GetOrganization_OK(t *testing.T) {
 	svc := &fakeService{
 		getOrgFunc: func(ctx context.Context, orgID string) (admin.Organization, error) {
@@ -350,8 +457,8 @@ func TestHandler_UpdateOrganization_OK(t *testing.T) {
 
 func TestHandler_ServiceError(t *testing.T) {
 	svc := &fakeService{
-		listFunc: func(ctx context.Context, orgID string, opts admin.ListOptions) ([]admin.User, error) {
-			return nil, errors.New("boom")
+		listFunc: func(ctx context.Context, orgID string, opts admin.ListOptions) ([]admin.User, *admin.PageInfo, error) {
+			return nil, nil, errors.New("boom")
 		},
 	}
 	issuer := auth.NewTokenIssuer("test-signing-key-minimum-32-bytes-long", "test-issuer", "test-audience", 15*time.Minute)

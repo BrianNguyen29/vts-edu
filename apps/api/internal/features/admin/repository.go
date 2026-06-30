@@ -2,195 +2,284 @@ package admin
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
-	"strings"
+	"time"
 
+	adminsqlc "github.com/BrianNguyen29/vts-edu/apps/api/internal/features/admin/sqlc"
+	"github.com/BrianNguyen29/vts-edu/apps/api/internal/platform/pagination"
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 // Repository defines persistence operations for the admin feature.
 type Repository interface {
 	ListUsers(ctx context.Context, orgID string, opts ListOptions) ([]User, error)
+	CountUsers(ctx context.Context, orgID string, opts ListOptions) (int64, error)
+	ListAuditLogs(ctx context.Context, orgID string, opts AuditLogListOptions) ([]AuditLog, error)
+	CountAuditLogs(ctx context.Context, orgID string, opts AuditLogListOptions) (int64, error)
 	LoginExists(ctx context.Context, orgID, loginName string) (bool, error)
 	CreateUser(ctx context.Context, tx pgx.Tx, orgID, displayName, email, loginName, passwordHash string, roles []string) (User, error)
 	GetMembershipID(ctx context.Context, orgID, userID string) (string, error)
 	ReplaceRoles(ctx context.Context, tx pgx.Tx, membershipID string, roles []string) error
 	BumpAuthVersion(ctx context.Context, tx pgx.Tx, userID string) error
+	GetLoginPasswordHash(ctx context.Context, tx pgx.Tx, userID, orgID string) (string, error)
 	ResetPassword(ctx context.Context, tx pgx.Tx, userID, orgID, passwordHash string) error
 	RevokeUserSessions(ctx context.Context, tx pgx.Tx, userID string) error
 	InsertAuditLog(ctx context.Context, tx pgx.Tx, p AuditLogParams) error
 	GetOrganization(ctx context.Context, orgID string) (Organization, error)
 	UpdateOrganization(ctx context.Context, tx pgx.Tx, orgID, name string) error
+
+	ListPasswordHistory(ctx context.Context, userID string, limit int) ([]string, error)
+	InsertPasswordHistory(ctx context.Context, tx pgx.Tx, userID, passwordHash string) error
+	DeleteOldPasswordHistory(ctx context.Context, tx pgx.Tx, userID string, keep int) error
 }
 
-type repository struct {
-	pool *pgxpool.Pool
+type sqlcRepository struct {
+	queries *adminsqlc.Queries
 }
 
-// NewRepository creates a new admin repository backed by a pgx pool.
+// NewRepository creates a new admin repository backed by generated sqlc queries.
+// It preserves the existing Repository interface.
 func NewRepository(pool *pgxpool.Pool) Repository {
-	return &repository{pool: pool}
+	return &sqlcRepository{queries: adminsqlc.New(pool)}
 }
 
-func (r *repository) ListUsers(ctx context.Context, orgID string, opts ListOptions) ([]User, error) {
-	var b strings.Builder
-	args := []any{orgID}
-	b.WriteString(`
-		SELECT
-			u.id,
-			u.display_name,
-			u.email,
-			ln.username_normalized,
-			u.must_change_password,
-			array_agg(mr.role) FILTER (WHERE mr.role IS NOT NULL)
-		FROM users u
-		JOIN organization_memberships m
-			ON m.user_id = u.id
-		JOIN membership_login_names ln
-			ON ln.user_id = u.id AND ln.organization_id = m.organization_id
-		LEFT JOIN membership_roles mr
-			ON mr.membership_id = m.id
-		WHERE m.organization_id = $1
-		  AND m.status = 'ACTIVE'
-		  AND ln.status = 'ACTIVE'
-	`)
+func toUUID(s string) (pgtype.UUID, error) {
+	var u pgtype.UUID
+	if err := u.Scan(s); err != nil {
+		return pgtype.UUID{}, err
+	}
+	return u, nil
+}
 
-	if opts.Query != "" {
-		args = append(args, "%"+opts.Query+"%")
-		b.WriteString(fmt.Sprintf(`
-		  AND (
-			  ln.username_normalized ILIKE $%d
-			  OR u.display_name ILIKE $%d
-			  OR u.email ILIKE $%d
-		  )
-		`, len(args), len(args), len(args)))
+func toText(s string) pgtype.Text {
+	return pgtype.Text{String: s, Valid: s != ""}
+}
+
+func decodeUserCursor(cursor string) (string, pgtype.UUID, error) {
+	if cursor == "" {
+		return "", pgtype.UUID{}, nil
+	}
+	c, err := pagination.Decode(cursor)
+	if err != nil {
+		return "", pgtype.UUID{}, err
+	}
+	id, err := toUUID(c.ID)
+	if err != nil {
+		return "", pgtype.UUID{}, pagination.ErrInvalidCursor
+	}
+	return c.Key, id, nil
+}
+
+func (r *sqlcRepository) ListUsers(ctx context.Context, orgID string, opts ListOptions) ([]User, error) {
+	orgUUID, err := toUUID(orgID)
+	if err != nil {
+		return nil, fmt.Errorf("invalid organization id: %w", err)
 	}
 
-	b.WriteString(`
-		GROUP BY u.id, u.display_name, u.email, ln.username_normalized, u.must_change_password
-		ORDER BY ln.username_normalized
-	`)
-
-	if opts.Limit > 0 {
-		args = append(args, opts.Limit)
-		b.WriteString(fmt.Sprintf(` LIMIT $%d`, len(args)))
-		if opts.Offset > 0 {
-			args = append(args, opts.Offset)
-			b.WriteString(fmt.Sprintf(` OFFSET $%d`, len(args)))
-		}
+	key, cursorID, err := decodeUserCursor(opts.Cursor)
+	if err != nil {
+		return nil, ErrInvalidCursor
 	}
 
-	rows, err := r.pool.Query(ctx, b.String(), args...)
+	rows, err := r.queries.ListUsers(ctx, adminsqlc.ListUsersParams{
+		OrganizationID: orgUUID,
+		SearchQuery:    opts.Query,
+		CursorKey:      key,
+		CursorID:       cursorID,
+		PageOffset:     int32(opts.Offset),
+		PageLimit:      int32(opts.Limit),
+	})
 	if err != nil {
 		return nil, fmt.Errorf("list users: %w", err)
 	}
-	defer rows.Close()
 
-	var users []User
-	for rows.Next() {
-		var u User
-		if err := rows.Scan(
-			&u.ID,
-			&u.DisplayName,
-			&u.Email,
-			&u.LoginName,
-			&u.MustChangePassword,
-			&u.Roles,
-		); err != nil {
-			return nil, fmt.Errorf("scan user: %w", err)
+	users := make([]User, len(rows))
+	for i, row := range rows {
+		users[i] = User{
+			ID:                 row.ID.String(),
+			DisplayName:        row.DisplayName.String,
+			Email:              row.Email.String,
+			LoginName:          row.UsernameNormalized,
+			Roles:              toStringSlice(row.ArrayAgg),
+			MustChangePassword: row.MustChangePassword,
 		}
-		if u.Roles == nil {
-			u.Roles = []string{}
-		}
-		users = append(users, u)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("iterate users: %w", err)
-	}
-	if users == nil {
-		users = []User{}
 	}
 	return users, nil
 }
 
-func (r *repository) InsertAuditLog(ctx context.Context, tx pgx.Tx, p AuditLogParams) error {
-	_, err := tx.Exec(ctx, `
-		INSERT INTO audit_logs (
-			organization_id,
-			actor_user_id,
-			action,
-			resource_type,
-			resource_id,
-			before_json,
-			after_json,
-			metadata_json
-		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-	`, p.OrganizationID, p.ActorUserID, p.Action, p.ResourceType, p.ResourceID, p.BeforeJSON, p.AfterJSON, p.MetadataJSON)
+func (r *sqlcRepository) CountUsers(ctx context.Context, orgID string, opts ListOptions) (int64, error) {
+	orgUUID, err := toUUID(orgID)
 	if err != nil {
-		return fmt.Errorf("insert audit log: %w", err)
+		return 0, fmt.Errorf("invalid organization id: %w", err)
 	}
-	return nil
+
+	count, err := r.queries.CountUsers(ctx, adminsqlc.CountUsersParams{
+		OrganizationID: orgUUID,
+		SearchQuery:    opts.Query,
+	})
+	if err != nil {
+		return 0, fmt.Errorf("count users: %w", err)
+	}
+	return count, nil
 }
 
-func (r *repository) LoginExists(ctx context.Context, orgID, loginName string) (bool, error) {
-	query := `
-		SELECT 1
-		FROM membership_login_names
-		WHERE organization_id = $1
-		  AND lower(username_normalized) = $2
-		LIMIT 1
-	`
-
-	var n int
-	err := r.pool.QueryRow(ctx, query, orgID, strings.ToLower(loginName)).Scan(&n)
-	if errors.Is(err, pgx.ErrNoRows) {
-		return false, nil
+func toStringSlice(v interface{}) []string {
+	if v == nil {
+		return []string{}
 	}
+	arr, ok := v.([]interface{})
+	if !ok {
+		return []string{}
+	}
+	out := make([]string, 0, len(arr))
+	for _, item := range arr {
+		if s, ok := item.(string); ok {
+			out = append(out, s)
+		}
+	}
+	return out
+}
+
+func decodeAuditCursor(cursor string) (string, pgtype.UUID, error) {
+	if cursor == "" {
+		return "", pgtype.UUID{}, nil
+	}
+	c, err := pagination.Decode(cursor)
+	if err != nil {
+		return "", pgtype.UUID{}, err
+	}
+	id, err := toUUID(c.ID)
+	if err != nil {
+		return "", pgtype.UUID{}, pagination.ErrInvalidCursor
+	}
+	return c.Key, id, nil
+}
+
+func (r *sqlcRepository) ListAuditLogs(ctx context.Context, orgID string, opts AuditLogListOptions) ([]AuditLog, error) {
+	orgUUID, err := toUUID(orgID)
+	if err != nil {
+		return nil, fmt.Errorf("invalid organization id: %w", err)
+	}
+
+	key, cursorID, err := decodeAuditCursor(opts.Cursor)
+	if err != nil {
+		return nil, ErrInvalidCursor
+	}
+
+	rows, err := r.queries.ListAuditLogs(ctx, adminsqlc.ListAuditLogsParams{
+		OrganizationID: orgUUID,
+		ActionName:     opts.Action,
+		ActorUserID:    opts.ActorUserID,
+		FromTime:       opts.From,
+		ToTime:         opts.To,
+		CursorKey:      key,
+		CursorID:       cursorID,
+		PageOffset:     int32(opts.Offset),
+		PageLimit:      int32(opts.Limit),
+	})
+	if err != nil {
+		return nil, fmt.Errorf("list audit logs: %w", err)
+	}
+
+	logs := make([]AuditLog, len(rows))
+	for i, row := range rows {
+		logs[i] = AuditLog{
+			ID:           row.ID.String(),
+			ActorUserID:  row.ActorUserID.String(),
+			Action:       row.Action,
+			ResourceType: row.ResourceType.String,
+			ResourceID:   row.ResourceID.String(),
+			Before:       json.RawMessage(row.BeforeJson),
+			After:        json.RawMessage(row.AfterJson),
+			Metadata:     json.RawMessage(row.MetadataJson),
+			CreatedAt:    row.CreatedAt.Time.Format(time.RFC3339),
+		}
+	}
+	return logs, nil
+}
+
+func (r *sqlcRepository) CountAuditLogs(ctx context.Context, orgID string, opts AuditLogListOptions) (int64, error) {
+	orgUUID, err := toUUID(orgID)
+	if err != nil {
+		return 0, fmt.Errorf("invalid organization id: %w", err)
+	}
+
+	count, err := r.queries.CountAuditLogs(ctx, adminsqlc.CountAuditLogsParams{
+		OrganizationID: orgUUID,
+		ActionName:     opts.Action,
+		ActorUserID:    opts.ActorUserID,
+		FromTime:       opts.From,
+		ToTime:         opts.To,
+	})
+	if err != nil {
+		return 0, fmt.Errorf("count audit logs: %w", err)
+	}
+	return count, nil
+}
+
+func (r *sqlcRepository) LoginExists(ctx context.Context, orgID, loginName string) (bool, error) {
+	orgUUID, err := toUUID(orgID)
+	if err != nil {
+		return false, fmt.Errorf("invalid organization id: %w", err)
+	}
+	exists, err := r.queries.LoginExists(ctx, adminsqlc.LoginExistsParams{
+		OrganizationID: orgUUID,
+		Lower:          loginName,
+	})
 	if err != nil {
 		return false, fmt.Errorf("check login exists: %w", err)
 	}
-	return true, nil
+	return exists, nil
 }
 
-func (r *repository) CreateUser(ctx context.Context, tx pgx.Tx, orgID, displayName, email, loginName, passwordHash string, roles []string) (User, error) {
-	var userID string
-	if err := tx.QueryRow(ctx, `
-		INSERT INTO users (display_name, email, must_change_password)
-		VALUES ($1, $2, true)
-		RETURNING id
-	`, displayName, email).Scan(&userID); err != nil {
+func (r *sqlcRepository) CreateUser(ctx context.Context, tx pgx.Tx, orgID, displayName, email, loginName, passwordHash string, roles []string) (User, error) {
+	q := r.queries.WithTx(tx)
+
+	orgUUID, err := toUUID(orgID)
+	if err != nil {
+		return User{}, fmt.Errorf("invalid organization id: %w", err)
+	}
+
+	userID, err := q.CreateUser(ctx, adminsqlc.CreateUserParams{
+		DisplayName: toText(displayName),
+		Email:       toText(email),
+	})
+	if err != nil {
 		return User{}, fmt.Errorf("insert user: %w", err)
 	}
 
-	var membershipID string
-	if err := tx.QueryRow(ctx, `
-		INSERT INTO organization_memberships (organization_id, user_id)
-		VALUES ($1, $2)
-		RETURNING id
-	`, orgID, userID).Scan(&membershipID); err != nil {
+	membershipID, err := q.CreateMembership(ctx, adminsqlc.CreateMembershipParams{
+		OrganizationID: orgUUID,
+		UserID:         userID,
+	})
+	if err != nil {
 		return User{}, fmt.Errorf("insert membership: %w", err)
 	}
 
-	if _, err := tx.Exec(ctx, `
-		INSERT INTO membership_login_names (organization_id, username_normalized, user_id, password_hash)
-		VALUES ($1, $2, $3, $4)
-	`, orgID, strings.ToLower(loginName), userID, passwordHash); err != nil {
+	if err := q.CreateLoginName(ctx, adminsqlc.CreateLoginNameParams{
+		OrganizationID: orgUUID,
+		Lower:          loginName,
+		UserID:         userID,
+		PasswordHash:   toText(passwordHash),
+	}); err != nil {
 		return User{}, fmt.Errorf("insert login name: %w", err)
 	}
 
 	for _, role := range roles {
-		if _, err := tx.Exec(ctx, `
-			INSERT INTO membership_roles (membership_id, role)
-			VALUES ($1, $2)
-		`, membershipID, role); err != nil {
+		if err := q.CreateRole(ctx, adminsqlc.CreateRoleParams{
+			MembershipID: membershipID,
+			Role:         role,
+		}); err != nil {
 			return User{}, fmt.Errorf("insert role: %w", err)
 		}
 	}
 
 	return User{
-		ID:                 userID,
+		ID:                 userID.String(),
 		DisplayName:        displayName,
 		Email:              email,
 		LoginName:          loginName,
@@ -199,126 +288,227 @@ func (r *repository) CreateUser(ctx context.Context, tx pgx.Tx, orgID, displayNa
 	}, nil
 }
 
-func (r *repository) GetMembershipID(ctx context.Context, orgID, userID string) (string, error) {
-	query := `
-		SELECT id
-		FROM organization_memberships
-		WHERE organization_id = $1
-		  AND user_id = $2
-		  AND status = 'ACTIVE'
-		LIMIT 1
-	`
-
-	var id string
-	err := r.pool.QueryRow(ctx, query, orgID, userID).Scan(&id)
+func (r *sqlcRepository) GetMembershipID(ctx context.Context, orgID, userID string) (string, error) {
+	orgUUID, err := toUUID(orgID)
+	if err != nil {
+		return "", fmt.Errorf("invalid organization id: %w", err)
+	}
+	userUUID, err := toUUID(userID)
+	if err != nil {
+		return "", fmt.Errorf("invalid user id: %w", err)
+	}
+	id, err := r.queries.GetMembershipID(ctx, adminsqlc.GetMembershipIDParams{
+		OrganizationID: orgUUID,
+		UserID:         userUUID,
+	})
 	if errors.Is(err, pgx.ErrNoRows) {
 		return "", ErrUserNotFound
 	}
 	if err != nil {
 		return "", fmt.Errorf("get membership: %w", err)
 	}
-	return id, nil
+	return id.String(), nil
 }
 
-func (r *repository) ReplaceRoles(ctx context.Context, tx pgx.Tx, membershipID string, roles []string) error {
-	if _, err := tx.Exec(ctx, `
-		DELETE FROM membership_roles
-		WHERE membership_id = $1
-	`, membershipID); err != nil {
+func (r *sqlcRepository) ReplaceRoles(ctx context.Context, tx pgx.Tx, membershipID string, roles []string) error {
+	q := r.queries.WithTx(tx)
+	mID, err := toUUID(membershipID)
+	if err != nil {
+		return fmt.Errorf("invalid membership id: %w", err)
+	}
+	if err := q.DeleteRoles(ctx, mID); err != nil {
 		return fmt.Errorf("delete roles: %w", err)
 	}
-
 	for _, role := range roles {
-		if _, err := tx.Exec(ctx, `
-			INSERT INTO membership_roles (membership_id, role)
-			VALUES ($1, $2)
-		`, membershipID, role); err != nil {
+		if err := q.CreateRole(ctx, adminsqlc.CreateRoleParams{
+			MembershipID: mID,
+			Role:         role,
+		}); err != nil {
 			return fmt.Errorf("insert role: %w", err)
 		}
 	}
 	return nil
 }
 
-func (r *repository) BumpAuthVersion(ctx context.Context, tx pgx.Tx, userID string) error {
-	_, err := tx.Exec(ctx, `
-		UPDATE users
-		SET auth_version = auth_version + 1
-		WHERE id = $1
-	`, userID)
+func (r *sqlcRepository) BumpAuthVersion(ctx context.Context, tx pgx.Tx, userID string) error {
+	userUUID, err := toUUID(userID)
 	if err != nil {
+		return fmt.Errorf("invalid user id: %w", err)
+	}
+	if err := r.queries.WithTx(tx).BumpAuthVersion(ctx, userUUID); err != nil {
 		return fmt.Errorf("bump auth version: %w", err)
 	}
 	return nil
 }
 
-func (r *repository) ResetPassword(ctx context.Context, tx pgx.Tx, userID, orgID, passwordHash string) error {
-	tag, err := tx.Exec(ctx, `
-		UPDATE membership_login_names
-		SET password_hash = $1
-		WHERE user_id = $2
-		  AND organization_id = $3
-	`, passwordHash, userID, orgID)
+func (r *sqlcRepository) GetLoginPasswordHash(ctx context.Context, tx pgx.Tx, userID, orgID string) (string, error) {
+	userUUID, err := toUUID(userID)
+	if err != nil {
+		return "", fmt.Errorf("invalid user id: %w", err)
+	}
+	orgUUID, err := toUUID(orgID)
+	if err != nil {
+		return "", fmt.Errorf("invalid organization id: %w", err)
+	}
+
+	row, err := r.queries.WithTx(tx).GetLoginPasswordHash(ctx, adminsqlc.GetLoginPasswordHashParams{
+		UserID:         userUUID,
+		OrganizationID: orgUUID,
+	})
+	if errors.Is(err, pgx.ErrNoRows) {
+		return "", ErrUserNotFound
+	}
+	if err != nil {
+		return "", fmt.Errorf("get login password hash: %w", err)
+	}
+	return row.String, nil
+}
+
+func (r *sqlcRepository) ResetPassword(ctx context.Context, tx pgx.Tx, userID, orgID, passwordHash string) error {
+	q := r.queries.WithTx(tx)
+	userUUID, err := toUUID(userID)
+	if err != nil {
+		return fmt.Errorf("invalid user id: %w", err)
+	}
+	orgUUID, err := toUUID(orgID)
+	if err != nil {
+		return fmt.Errorf("invalid organization id: %w", err)
+	}
+	rows, err := q.ResetPassword(ctx, adminsqlc.ResetPasswordParams{
+		PasswordHash:   toText(passwordHash),
+		UserID:         userUUID,
+		OrganizationID: orgUUID,
+	})
 	if err != nil {
 		return fmt.Errorf("update password hash: %w", err)
 	}
-	if tag.RowsAffected() == 0 {
+	if rows == 0 {
 		return ErrUserNotFound
 	}
-
-	if _, err := tx.Exec(ctx, `
-		UPDATE users
-		SET must_change_password = true,
-		    auth_version = auth_version + 1
-		WHERE id = $1
-	`, userID); err != nil {
+	if err := q.SetMustChangePassword(ctx, userUUID); err != nil {
 		return fmt.Errorf("update user flags: %w", err)
 	}
 	return nil
 }
 
-func (r *repository) RevokeUserSessions(ctx context.Context, tx pgx.Tx, userID string) error {
-	_, err := tx.Exec(ctx, `
-		UPDATE refresh_sessions
-		SET revoked_at = now()
-		WHERE user_id = $1
-		  AND revoked_at IS NULL
-	`, userID)
+func (r *sqlcRepository) RevokeUserSessions(ctx context.Context, tx pgx.Tx, userID string) error {
+	userUUID, err := toUUID(userID)
 	if err != nil {
+		return fmt.Errorf("invalid user id: %w", err)
+	}
+	if err := r.queries.WithTx(tx).RevokeUserSessions(ctx, userUUID); err != nil {
 		return fmt.Errorf("revoke user sessions: %w", err)
 	}
 	return nil
 }
 
-func (r *repository) GetOrganization(ctx context.Context, orgID string) (Organization, error) {
-	query := `
-		SELECT id, code, name
-		FROM organizations
-		WHERE id = $1
-		LIMIT 1
-	`
+func (r *sqlcRepository) InsertAuditLog(ctx context.Context, tx pgx.Tx, p AuditLogParams) error {
+	orgUUID, err := toUUID(p.OrganizationID)
+	if err != nil {
+		return fmt.Errorf("invalid organization id: %w", err)
+	}
+	actorUUID, err := toUUID(p.ActorUserID)
+	if err != nil {
+		return fmt.Errorf("invalid actor user id: %w", err)
+	}
+	resourceUUID, err := toUUID(p.ResourceID)
+	if err != nil {
+		return fmt.Errorf("invalid resource id: %w", err)
+	}
+	if err := r.queries.WithTx(tx).InsertAuditLog(ctx, adminsqlc.InsertAuditLogParams{
+		OrganizationID: orgUUID,
+		ActorUserID:    actorUUID,
+		Action:         p.Action,
+		ResourceType:   toText(p.ResourceType),
+		ResourceID:     resourceUUID,
+		BeforeJson:     p.BeforeJSON,
+		AfterJson:      p.AfterJSON,
+		MetadataJson:   p.MetadataJSON,
+	}); err != nil {
+		return fmt.Errorf("insert audit log: %w", err)
+	}
+	return nil
+}
 
-	var o Organization
-	err := r.pool.QueryRow(ctx, query, orgID).Scan(&o.ID, &o.Code, &o.Name)
+func (r *sqlcRepository) GetOrganization(ctx context.Context, orgID string) (Organization, error) {
+	orgUUID, err := toUUID(orgID)
+	if err != nil {
+		return Organization{}, fmt.Errorf("invalid organization id: %w", err)
+	}
+	row, err := r.queries.GetOrganization(ctx, orgUUID)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return Organization{}, ErrOrganizationNotFound
 	}
 	if err != nil {
 		return Organization{}, fmt.Errorf("get organization: %w", err)
 	}
-	return o, nil
+	return Organization{
+		ID:   row.ID.String(),
+		Code: row.Code,
+		Name: row.Name,
+	}, nil
 }
 
-func (r *repository) UpdateOrganization(ctx context.Context, tx pgx.Tx, orgID, name string) error {
-	tag, err := tx.Exec(ctx, `
-		UPDATE organizations
-		SET name = $1
-		WHERE id = $2
-	`, name, orgID)
+func (r *sqlcRepository) UpdateOrganization(ctx context.Context, tx pgx.Tx, orgID, name string) error {
+	orgUUID, err := toUUID(orgID)
+	if err != nil {
+		return fmt.Errorf("invalid organization id: %w", err)
+	}
+	rows, err := r.queries.WithTx(tx).UpdateOrganization(ctx, adminsqlc.UpdateOrganizationParams{
+		Name: name,
+		ID:   orgUUID,
+	})
 	if err != nil {
 		return fmt.Errorf("update organization: %w", err)
 	}
-	if tag.RowsAffected() == 0 {
+	if rows == 0 {
 		return ErrOrganizationNotFound
+	}
+	return nil
+}
+
+func (r *sqlcRepository) ListPasswordHistory(ctx context.Context, userID string, limit int) ([]string, error) {
+	userUUID, err := toUUID(userID)
+	if err != nil {
+		return nil, fmt.Errorf("invalid user id: %w", err)
+	}
+	hashes, err := r.queries.ListPasswordHistory(ctx, adminsqlc.ListPasswordHistoryParams{
+		UserID: userUUID,
+		Limit:  int32(limit),
+	})
+	if err != nil {
+		return nil, fmt.Errorf("list password history: %w", err)
+	}
+	if hashes == nil {
+		hashes = []string{}
+	}
+	return hashes, nil
+}
+
+func (r *sqlcRepository) InsertPasswordHistory(ctx context.Context, tx pgx.Tx, userID, passwordHash string) error {
+	userUUID, err := toUUID(userID)
+	if err != nil {
+		return fmt.Errorf("invalid user id: %w", err)
+	}
+	if err := r.queries.WithTx(tx).InsertPasswordHistory(ctx, adminsqlc.InsertPasswordHistoryParams{
+		UserID:       userUUID,
+		PasswordHash: passwordHash,
+	}); err != nil {
+		return fmt.Errorf("insert password history: %w", err)
+	}
+	return nil
+}
+
+func (r *sqlcRepository) DeleteOldPasswordHistory(ctx context.Context, tx pgx.Tx, userID string, keep int) error {
+	userUUID, err := toUUID(userID)
+	if err != nil {
+		return fmt.Errorf("invalid user id: %w", err)
+	}
+	if err := r.queries.WithTx(tx).DeleteOldPasswordHistory(ctx, adminsqlc.DeleteOldPasswordHistoryParams{
+		UserID: userUUID,
+		Offset: int32(keep),
+	}); err != nil {
+		return fmt.Errorf("delete old password history: %w", err)
 	}
 	return nil
 }

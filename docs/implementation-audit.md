@@ -25,11 +25,11 @@ Repo-wide implementation tracking. Append-only; do not delete historical entries
 - [x] Fix CORS middleware: disallowed origins no longer receive a fallback `Access-Control-Allow-Origin`.
 - [x] Preserve CSRF behavior (`GET /api/v1/auth/csrf-token`, validation on cookie-backed unsafe endpoints).
 - [x] Add `DB_SKIP` option for local dev without Postgres (documented below).
+- [x] Add `sqlc` baseline and generate queries for `assessments`, `admin`, `auth`, and `attempts` tables. Existing `Repository` interfaces are the migration seam; no runtime code rewrite.
 
 ### Remaining S0 (staged)
 
-- [ ] Add `sqlc` baseline and first generated queries for identity/attempt tables. Existing `Repository` interfaces are the migration seam; do not rewrite runtime code.
-- [ ] Add Huma/OpenAPI skeleton endpoint definitions. The hand-maintained OpenAPI skeleton in `docs/backend/backend-technical-spec/openapi/openapi-skeleton.yaml` now covers the current API surface; Huma adoption is deferred until a staged migration is planned.
+- [ ] Add Huma runtime wiring and automatic OpenAPI generation. The hand-maintained OpenAPI skeleton in `docs/backend/backend-technical-spec/openapi/openapi-skeleton.yaml` now covers the current API surface; Huma adoption is deferred until the API contract stabilizes.
 
 ### Decisions / notes
 
@@ -185,6 +185,145 @@ Repo-wide implementation tracking. Append-only; do not delete historical entries
 - `pnpm api:sqlc` uses `go run github.com/sqlc-dev/sqlc/cmd/sqlc@latest` so no global install is required.
 - Generated sqlc files are committed because the project does not yet have CI generation.
 
+## 2026-06-30 — Audit log reader backend (next-slice1-audit-reader-backend)
+
+### Done
+
+- [x] Added `GET /api/v1/audit-logs` admin-only endpoint with tenant scoping.
+- [x] Supported filters `action`, `actor_user_id`, `from`, `to` and pagination `limit`/`offset`.
+- [x] Reused existing response envelope with optional `page` metadata when `limit` is supplied.
+- [x] Added service/repository/handler tests for admin gate and filter behavior.
+- [x] Updated OpenAPI skeleton with `/audit-logs` path and `AuditLog` schema.
+- [x] Updated E2E smoke to verify audit logs via HTTP endpoint and action filter, replacing the direct DB query.
+
+### Deferred / not in scope
+
+- Frontend audit log UI/dashboard.
+- sqlc migration for admin repository.
+- Cursor pagination.
+
+### Decisions / notes
+
+- Timestamps are validated as RFC3339 in the handler and returned as RFC3339 strings.
+- Audit log JSONB columns (`before_json`, `after_json`, `metadata_json`) are exposed as optional JSON objects without leaking sensitive values.
+
+## 2026-06-30 — Admin repository sqlc migration (next-slice2-admin-sqlc)
+
+### Done
+
+- [x] Added `apps/api/internal/features/admin/queries.sql` covering all admin repository operations including list filters, writes inside transactions, and audit logs.
+- [x] Updated `apps/api/sqlc.yaml` to generate `adminsqlc` package under `apps/api/internal/features/admin/sqlc/`.
+- [x] Replaced manual admin `repository.go` implementation with a sqlc wrapper that preserves the existing `admin.Repository` interface.
+- [x] `NewRepository` now returns the sqlc-backed implementation; service/handler contracts remain unchanged.
+- [x] Transactional methods use `queries.WithTx(tx)` to run generated queries inside the existing transaction boundary.
+- [x] Preserved dynamic list behavior via conditional SQL expressions in generated queries.
+
+### Deferred / not in scope
+
+- sqlc migration for `auth` and `attempts` repositories.
+- Huma runtime migration.
+- Frontend changes.
+
+### Decisions / notes
+
+- `pgtype.UUID` and `pgtype.Text` conversions are isolated in the wrapper; the public interface continues to use plain strings.
+- `array_agg` roles are converted from `interface{}` to `[]string` in the wrapper.
+- Manual repository code was removed because the sqlc replacement is complete and tests/smoke pass.
+
+## 2026-06-30 — Auth repository sqlc migration (next-slice2-auth-sqlc)
+
+### Done
+
+- [x] Added `apps/api/internal/features/auth/queries.sql` covering login lookup, refresh session lifecycle, actor lookup, role lookup, password update, and session revocation.
+- [x] Updated `apps/api/sqlc.yaml` to generate `authsqlc` package under `apps/api/internal/features/auth/sqlc/`.
+- [x] Replaced manual auth `repository.go` implementation with a sqlc wrapper preserving the existing `auth.Repository` interface.
+- [x] `NewRepository` now returns the sqlc-backed implementation; service/handler contracts unchanged.
+- [x] Transactional methods use `queries.WithTx(tx)`.
+
+### Deferred / not in scope
+
+- sqlc migration for `attempts` repository.
+- Huma runtime migration.
+- Frontend changes.
+
+### Decisions / notes
+
+- `array_agg` roles are converted from `interface{}` to `[]string` in the wrapper, matching the previous repository behavior.
+- Nullable `pgtype.Text`/`pgtype.Timestamptz` fields are mapped to pointer types in the wrapper.
+- Password update is split into two generated queries (`BumpUserAuthVersion` and `UpdateLoginPassword`) executed inside the same transaction.
+
+## 2026-06-30 — Attempts repository sqlc migration (next-slice2-attempts-sqlc)
+
+### Done
+
+- [x] Added `apps/api/internal/features/attempts/queries.sql` covering attempt/attempt_item reads, answer save revision, transactional submit/grade, and list operations.
+- [x] Updated `apps/api/sqlc.yaml` to generate `attemptssqlc` package under `apps/api/internal/features/attempts/sqlc/`.
+- [x] Replaced manual attempts `repository.go` implementation with a sqlc wrapper preserving the existing `attempts.Repository` interface.
+- [x] `NewRepository` now returns the sqlc-backed implementation; service/handler contracts unchanged.
+- [x] Transactional methods use `queries.WithTx(tx)` inside the existing transaction boundary.
+- [x] Mapped nullable `pgtype.Numeric` score/max_score to pointer strings and `pgtype.Timestamptz`/Text to pointer types in the wrapper.
+
+### Deferred / not in scope
+
+- Huma runtime migration.
+- Frontend changes.
+
+### Decisions / notes
+
+- `pgtype.Numeric` is converted to `*string` using `Float64Value()` and `fmt.Sprintf("%.2f", ...)`, preserving the existing 2-decimal string contract.
+- `array_agg` item IDs and answer choice arrays are converted from `[]interface{}` to `[]string` in the wrapper.
+- Manual repository code was removed because the sqlc replacement is complete and tests/smoke pass.
+
+## 2026-06-30 — OpenAPI types CI expansion (next-slice3-openapi-types-ci)
+
+### Done
+
+- [x] Updated `apps/web/src/shared/api/admin.ts` to derive `Organization`, `User`, `CreateUserRequest`, `UpdateRolesRequest`, `ResetPasswordRequest`, `UpdateOrganizationRequest`, and `AuditLog` from generated `components['schemas']` type-only.
+- [x] Updated `apps/web/src/shared/api/attempts.ts` to derive `AttemptSnapshot`, `AttemptItem`, `QuestionPrompt`, `QuestionChoice`, `AnswerSnapshot`, `AnswerSaved`, `AttemptSubmitted`, and `PageInfo` from generated `components['schemas']` type-only.
+- [x] Improved `docs/backend/backend-technical-spec/openapi/openapi-skeleton.yaml` free-form object schemas (`prompt`, `choices`, `answer_payload`, `before`, `after`, `metadata`) with `additionalProperties: true` so generated types are usable at runtime boundaries.
+- [x] Added `generated-code-check` job to `.github/workflows/ci.yml` that installs Node/Go, runs `pnpm api:types` and `pnpm api:sqlc`, then `git diff --exit-code` on `apps/web/src/shared/api/openapi-schema.d.ts` and `apps/api/internal/features/*/sqlc/` to reject stale generated code.
+- [x] Adjusted `admin-dashboard-page.tsx` form state and casts to align with generated enum role arrays.
+- [x] Adjusted `exam-page.tsx` submitted-at fallback to handle nullable `submitted_at` from generated schema.
+
+### Deferred / not in scope
+
+- Runtime OpenAPI client (`openapi-fetch`) replacing `apiClient`.
+- Huma runtime migration.
+
+### Decisions / notes
+
+- `apiClient` runtime remains unchanged; generated types are consumed type-only.
+- Generated `User`/`CreateUserRequest`/`UpdateRolesRequest` role arrays are enum unions (`("student" | "teacher" | "admin")[]`); UI form state stays `string[]` and casts at the API boundary.
+- CI stale check only diffs generated artifacts; source files (queries.sql, openapi-skeleton.yaml) are not checked by `git diff` because the generator output is the signal.
+
+## 2026-06-30 — Cursor pagination (next-slice4-cursor-pagination)
+
+### Done
+
+- [x] Added `apps/api/internal/platform/pagination/cursor.go` with base64url JSON cursor encode/decode and `ErrInvalidCursor`.
+- [x] Extended `admin.ListOptions` and `admin.AuditLogListOptions` with `Cursor` and `Count`; updated `admin.PageInfo` to include `next_cursor`, `has_more`, and `total_count`.
+- [x] Extended `assessments.ListOptions` and `assessments.PageInfo` with the same cursor/count fields.
+- [x] Added cursor and count support to sqlc queries for `ListUsers`, `ListAuditLogs`, and `ListPublishedByOrganization`; added `CountUsers`, `CountAuditLogs`, and `CountPublishedByOrganization` queries.
+- [x] Updated admin/assessments service and handler layers to build page metadata (fetch `limit+1`, trim to `limit`, encode next cursor) and optional `total_count`.
+- [x] Preserved backward-compatible `offset` behavior and no-param full-list responses.
+- [x] Updated OpenAPI skeleton with `ListCursor`, `ListCount` parameters and richer `PageInfo` schema; regenerated TypeScript types.
+- [x] Updated frontend `admin.ts`, `assessments.ts`, and `attempts.ts` query builders to pass `cursor` and `count`.
+- [x] Added load-more UI to admin users list, teacher assessments list, and audit logs panel; search/filter resets the cursor.
+- [x] Extended E2E smoke to verify cursor pagination and `total_count` for users and audit logs, and `has_more: false` for assessments.
+
+### Deferred / not in scope
+
+- Huma runtime migration.
+- Removal of `offset` (kept for backward compatibility).
+- Cursor support for attempt history (not a list endpoint yet).
+
+### Decisions / notes
+
+- Cursor encoding uses JSON `{k, i}` base64url raw encoding for stability and readability during debugging.
+- User cursor key is `username_normalized` (ascending); audit/assessment cursor key is `created_at` RFC3339 (descending).
+- Services request `limit+1` rows and use the extra row only to determine `has_more`; repositories return the raw slice including the extra row when present.
+- `count=true` runs an additional `COUNT(*)` with the same filters but ignoring cursor; skipped unless requested.
+
 ## Change log
 
 | Date | Task | Files changed | Verification |
@@ -195,4 +334,53 @@ Repo-wide implementation tracking. Append-only; do not delete historical entries
 | 2026-06-30 | DX hardening | `package.json`, `apps/web/package.json`, `.github/workflows/ci.yml`, `scripts/e2e_*.sh`, `scripts/e2e_smoke_api.mjs`, `docs/e2e-local-run.md`, `docs/implementation-audit.md`, `AGENTS.md` | `pnpm check` passes; `pnpm e2e:smoke` passes against local Postgres container; CI includes migration validation. |
 | 2026-06-30 | Product slices S1–S3 backend | `apps/api/internal/features/auth/*`, `apps/api/internal/features/attempts/*`, `apps/api/internal/features/assessments/*`, `apps/api/internal/features/admin/*`, `apps/api/cmd/server/main.go`, `supabase/migrations/000008_*` to `000012_*`, `docs/backend/backend-technical-spec/openapi/openapi-skeleton.yaml`, `docs/backend/backend-technical-spec/adr/0010-huma-sqlc-staged-groundwork.md`, `docs/e2e-local-run.md`, `docs/implementation-audit.md`, `README.md`, `AGENTS.md` | `pnpm check` passes; `pnpm e2e:smoke` passes covering roles, change password, attempt grading, assessment list, and admin user/org flow. |
 | 2026-06-30 | Backend hardening (policy, pagination, audit) | `apps/api/internal/features/auth/password_policy.go`, `apps/api/internal/features/auth/*`, `apps/api/internal/features/admin/*`, `apps/api/internal/features/assessments/*`, `scripts/e2e_smoke_api.mjs`, `docs/backend/backend-technical-spec/openapi/openapi-skeleton.yaml`, `docs/backend/backend-technical-spec/14-implementation-roadmap.md`, `docs/implementation-audit.md` | `pnpm check` passes; `pnpm e2e:smoke` passes with weak-password rejections, search/limit assertions, and audit log verification. |
+| 2026-06-30 | Audit log reader backend | `apps/api/internal/features/admin/*`, `apps/api/cmd/server/main.go`, `scripts/e2e_smoke_api.mjs`, `docs/backend/backend-technical-spec/openapi/openapi-skeleton.yaml`, `docs/implementation-audit.md` | `pnpm check` passes; `pnpm e2e:smoke` passes với `GET /audit-logs`, action filter, và role gate. |
 | 2026-06-30 | Generated types + sqlc assessments groundwork | `package.json`, `apps/web/src/shared/api/openapi-schema.d.ts`, `apps/web/src/shared/api/assessments.ts`, `apps/api/sqlc.yaml`, `apps/api/internal/features/assessments/queries.sql`, `apps/api/internal/features/assessments/sqlc/*`, `apps/api/internal/features/assessments/repository.go`, `docs/backend/backend-technical-spec/adr/0010-huma-sqlc-staged-groundwork.md`, `docs/backend/backend-technical-spec/14-implementation-roadmap.md`, `docs/implementation-audit.md` | `pnpm check` passes; `pnpm e2e:smoke` passes với assessment list/search sử dụng sqlc wrapper. |
+| 2026-06-30 | Admin repository sqlc migration | `apps/api/sqlc.yaml`, `apps/api/internal/features/admin/queries.sql`, `apps/api/internal/features/admin/repository.go`, `apps/api/internal/features/admin/sqlc/*`, `docs/implementation-audit.md` | `pnpm api:sqlc` generates admin code; `pnpm check` và `pnpm e2e:smoke` xanh; `admin.Repository` interface được giữ nguyên. |
+| 2026-06-30 | Auth repository sqlc migration | `apps/api/sqlc.yaml`, `apps/api/internal/features/auth/queries.sql`, `apps/api/internal/features/auth/repository.go`, `apps/api/internal/features/auth/sqlc/*`, `docs/implementation-audit.md` | `pnpm api:sqlc` generates auth code; `pnpm check` và `pnpm e2e:smoke` xanh; `auth.Repository` interface được giữ nguyên. |
+| 2026-06-30 | Attempts repository sqlc migration | `apps/api/sqlc.yaml`, `apps/api/internal/features/attempts/queries.sql`, `apps/api/internal/features/attempts/repository.go`, `apps/api/internal/features/attempts/sqlc/*`, `docs/implementation-audit.md`, `docs/backend/backend-technical-spec/adr/0010-huma-sqlc-staged-groundwork.md`, `docs/backend/backend-technical-spec/14-implementation-roadmap.md` | `pnpm api:sqlc` generates attempts code; `pnpm check` và `pnpm e2e:smoke` xanh; `attempts.Repository` interface được giữ nguyên; `GET /attempts/{id}` null score/max_score scan error fixed. |
+| 2026-06-30 | OpenAPI types CI expansion | `apps/web/src/shared/api/admin.ts`, `apps/web/src/shared/api/attempts.ts`, `apps/web/src/shared/api/openapi-schema.d.ts`, `apps/web/src/pages/dashboard/admin-dashboard-page.tsx`, `apps/web/src/pages/exam/exam-page.tsx`, `docs/backend/backend-technical-spec/openapi/openapi-skeleton.yaml`, `.github/workflows/ci.yml`, `docs/implementation-audit.md` | `pnpm api:types`, `pnpm api:sqlc`, `pnpm check`, `pnpm e2e:smoke` xanh; CI YAML hợp lệ; `apiClient` runtime không đổi. |
+| 2026-06-30 | Cursor pagination | `apps/api/internal/platform/pagination/cursor.go`, `apps/api/internal/features/admin/*`, `apps/api/internal/features/assessments/*`, `apps/web/src/shared/api/admin.ts`, `apps/web/src/shared/api/assessments.ts`, `apps/web/src/shared/api/attempts.ts`, `apps/web/src/pages/dashboard/admin-dashboard-page.tsx`, `apps/web/src/pages/dashboard/teacher-dashboard-page.tsx`, `apps/web/src/pages/dashboard/audit-logs-panel.tsx`, `docs/backend/backend-technical-spec/openapi/openapi-skeleton.yaml`, `apps/web/src/shared/api/openapi-schema.d.ts`, `scripts/e2e_smoke_api.mjs`, `docs/implementation-audit.md` | `pnpm api:types`, `pnpm api:sqlc`, `pnpm check`, `pnpm e2e:smoke` xanh; cursor và count hoạt động cho users/audit/assessments; UI load-more có mặt. |
+| 2026-06-30 | Password history + login lockout | `supabase/migrations/000013_*`, `apps/api/internal/features/auth/password_policy.go`, `apps/api/internal/features/auth/service.go`, `apps/api/internal/features/auth/handler.go`, `apps/api/internal/features/auth/repository.go`, `apps/api/internal/features/auth/queries.sql`, `apps/api/internal/features/admin/service.go`, `apps/api/internal/features/admin/handler.go`, `apps/api/internal/features/admin/repository.go`, `apps/api/internal/features/admin/queries.sql`, `apps/api/internal/features/auth/sqlc/*`, `apps/api/internal/features/admin/sqlc/*`, `apps/web/src/shared/api/openapi-schema.d.ts`, `scripts/e2e_smoke_api.mjs`, `docs/backend/backend-technical-spec/openapi/openapi-skeleton.yaml`, `docs/implementation-audit.md` | `pnpm api:sqlc`, `pnpm api:types`, `pnpm check`, `pnpm e2e:smoke` xanh; lịch sử 5 mật khẩu, khóa đăng nhập sau 5 lần sai trong 15 phút. |
+
+## 2026-06-30 — Password history and login lockout
+
+### Done
+
+- [x] Migration `000013_password_history_and_login_lockout.sql` adds `password_history` and `login_attempts` tables with tenant-scoped indexes.
+- [x] `auth.PasswordHistoryLength` (5) and shared helpers `CheckPasswordHistory` / `StorePasswordHistory`.
+- [x] `auth.Login` checks lockout threshold (5 failed attempts in 15 minutes), records failures on bad passwords, and clears attempts on success.
+- [x] `auth.ChangePassword` rejects the last 5 password hashes and stores both the old and new hashes.
+- [x] `admin.CreateUser` stores the initial temporary password hash in history.
+- [x] `admin.ResetPassword` fetches the current hash, rejects recent history, and stores old + new hashes.
+- [x] Added sqlc queries for password history and login attempts to both `auth` and `admin` packages.
+- [x] Handlers map `ErrAccountLocked` to HTTP 429 and `ErrPasswordReused` to HTTP 400.
+- [x] OpenAPI skeleton updated with 429 response for login and password-history descriptions; TypeScript types regenerated.
+- [x] E2E smoke extended with reused-password rejection for change-password and admin reset-password, plus login lockout after 5 failures.
+
+### Decisions / notes
+
+- Lockout key is `(organization_id, username_normalized)` so different tenants cannot lock each other out.
+- Password history stores the previous password hash on change so the immediate old password cannot be reused.
+- Admin reset stores both the old and new hashes; reusing the just-reset temporary password on the next reset is rejected.
+
+## 2026-06-30 — ADR/docs: Huma evaluation and breached-password provider
+
+### Done
+
+- [x] Updated ADR-0010 with explicit Huma evaluation after sqlc coverage: auto OpenAPI benefits vs chi router/handler rewrite costs, and revisit threshold (~20–25 endpoints).
+- [x] Added ADR-0011 documenting breached-password provider (HIBP/external corpus) deferred pending a privacy/egress ADR; password history + lockout + blocklist are interim controls.
+- [x] Updated `14-implementation-roadmap.md` to mark Phase 1 items completed: audit log reader/UI, sqlc admin/auth/attempts migrations, generated types CI, cursor pagination, password history/lockout.
+- [x] Updated roadmap staged plan to reflect sqlc completed, Huma deferred with cost threshold, and breached-password provider deferred.
+
+### Decisions / notes
+
+- No runtime code or dependency changes in this batch.
+- Huma adoption is a cost/risk decision, not a technical blocker.
+- Breached-password checking requires a separate privacy/ops review before integration.
+
+## Change log
+
+| Date | Task | Files changed | Verification |
+|---|---|---|---|
+| 2026-06-30 | ADR/docs Huma + breach evaluation | `docs/backend/backend-technical-spec/adr/0010-huma-sqlc-staged-groundwork.md`, `docs/backend/backend-technical-spec/adr/0011-breached-password-provider.md`, `docs/backend/backend-technical-spec/14-implementation-roadmap.md`, `docs/implementation-audit.md` | Docs syntax/yaml reviewed; `pnpm check` xanh. |

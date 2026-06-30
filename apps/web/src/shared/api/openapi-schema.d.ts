@@ -79,7 +79,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** @description Requires Bearer access token and `X-CSRF-Token` header. Enforces password policy. */
+        /** @description Requires Bearer access token and `X-CSRF-Token` header. Enforces password policy and rejects recently used passwords. */
         post: operations["auth.changePassword"];
         delete?: never;
         options?: never;
@@ -240,6 +240,23 @@ export interface paths {
         patch: operations["organizations.updateCurrent"];
         trace?: never;
     };
+    "/audit-logs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Admin only. List audit logs for the current organization, optionally filtered. */
+        get: operations["auditLogs.list"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -318,24 +335,45 @@ export interface components {
             question_version_id: string;
             position: number;
             points: string;
-            prompt: Record<string, never>;
-            choices: Record<string, never>[];
+            prompt: {
+                text?: string;
+            } & {
+                [key: string]: unknown;
+            };
+            choices: ({
+                id?: string;
+                text?: string;
+            } & {
+                [key: string]: unknown;
+            })[];
             answer?: {
-                answer_payload: Record<string, never>;
+                answer_payload: {
+                    selected_option?: string;
+                } & {
+                    [key: string]: unknown;
+                };
                 revision: number;
                 /** Format: date-time */
                 answered_at: string;
             };
         };
         SaveAnswerRequest: {
-            answer_payload: Record<string, never>;
+            answer_payload: {
+                selected_option?: string;
+            } & {
+                [key: string]: unknown;
+            };
         };
         SaveAnswerResponse: {
             data: {
                 /** Format: uuid */
                 attempt_item_id: string;
                 revision: number;
-                answer_payload: Record<string, never>;
+                answer_payload: {
+                    selected_option?: string;
+                } & {
+                    [key: string]: unknown;
+                };
                 /** Format: date-time */
                 answered_at: string;
             };
@@ -357,6 +395,9 @@ export interface components {
         PageInfo: {
             limit: number;
             offset: number;
+            next_cursor?: string;
+            has_more: boolean;
+            total_count?: number;
         };
         AssessmentList: {
             data: components["schemas"]["AssessmentListItem"][];
@@ -397,6 +438,31 @@ export interface components {
         ResetPasswordRequest: {
             /** @description Must contain at least one uppercase letter, one lowercase letter, one digit, and not match a common blocklist. */
             temporary_password: string;
+        };
+        AuditLogList: {
+            data: components["schemas"]["AuditLog"][];
+            page?: components["schemas"]["PageInfo"];
+        };
+        AuditLog: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            actor_user_id: string;
+            action: string;
+            resource_type: string;
+            /** Format: uuid */
+            resource_id: string;
+            before?: {
+                [key: string]: unknown;
+            };
+            after?: {
+                [key: string]: unknown;
+            };
+            metadata?: {
+                [key: string]: unknown;
+            };
+            /** Format: date-time */
+            created_at: string;
         };
         Organization: {
             data: {
@@ -465,6 +531,15 @@ export interface components {
                 "application/problem+json": components["schemas"]["Problem"];
             };
         };
+        /** @description Rate limit or temporary account lockout exceeded */
+        TooManyRequests: {
+            headers: {
+                [name: string]: unknown;
+            };
+            content: {
+                "application/problem+json": components["schemas"]["Problem"];
+            };
+        };
     };
     parameters: {
         /** @description Case-insensitive search query. */
@@ -473,6 +548,10 @@ export interface components {
         ListLimit: number;
         /** @description Number of rows to skip. */
         ListOffset: number;
+        /** @description Opaque cursor for the next page. Resets offset to 0. */
+        ListCursor: string;
+        /** @description When true, include total_count in the page metadata. */
+        ListCount: boolean;
     };
     requestBodies: never;
     headers: never;
@@ -523,6 +602,7 @@ export interface operations {
                 };
             };
             401: components["responses"]["Unauthorized"];
+            429: components["responses"]["TooManyRequests"];
         };
     };
     "auth.refresh": {
@@ -705,6 +785,10 @@ export interface operations {
                 limit?: components["parameters"]["ListLimit"];
                 /** @description Number of rows to skip. */
                 offset?: components["parameters"]["ListOffset"];
+                /** @description Opaque cursor for the next page. Resets offset to 0. */
+                cursor?: components["parameters"]["ListCursor"];
+                /** @description When true, include total_count in the page metadata. */
+                count?: components["parameters"]["ListCount"];
             };
             header?: never;
             path?: never;
@@ -735,6 +819,10 @@ export interface operations {
                 limit?: components["parameters"]["ListLimit"];
                 /** @description Number of rows to skip. */
                 offset?: components["parameters"]["ListOffset"];
+                /** @description Opaque cursor for the next page. Resets offset to 0. */
+                cursor?: components["parameters"]["ListCursor"];
+                /** @description When true, include total_count in the page metadata. */
+                count?: components["parameters"]["ListCount"];
             };
             header?: never;
             path?: never;
@@ -886,6 +974,46 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Organization"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+        };
+    };
+    "auditLogs.list": {
+        parameters: {
+            query?: {
+                /** @description Filter by action name. */
+                action?: string;
+                /** @description Filter by actor user ID. */
+                actor_user_id?: string;
+                /** @description Start timestamp (RFC3339). */
+                from?: string;
+                /** @description End timestamp (RFC3339). */
+                to?: string;
+                /** @description Page size. When omitted the full list is returned. */
+                limit?: components["parameters"]["ListLimit"];
+                /** @description Number of rows to skip. */
+                offset?: components["parameters"]["ListOffset"];
+                /** @description Opaque cursor for the next page. Resets offset to 0. */
+                cursor?: components["parameters"]["ListCursor"];
+                /** @description When true, include total_count in the page metadata. */
+                count?: components["parameters"]["ListCount"];
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Audit logs for the current organization */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AuditLogList"];
                 };
             };
             400: components["responses"]["BadRequest"];

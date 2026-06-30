@@ -40,6 +40,8 @@ paths:
                 $ref: '#/components/schemas/LoginResponse'
         '401':
           $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
   /auth/refresh:
     post:
       operationId: auth.refresh
@@ -74,7 +76,7 @@ paths:
     post:
       operationId: auth.changePassword
       tags: [Auth]
-      description: Requires Bearer access token and `X-CSRF-Token` header. Enforces password policy.
+      description: Requires Bearer access token and `X-CSRF-Token` header. Enforces password policy and rejects recently used passwords.
       requestBody:
         required: true
         content:
@@ -196,6 +198,8 @@ paths:
         - $ref: '#/components/parameters/ListQuery'
         - $ref: '#/components/parameters/ListLimit'
         - $ref: '#/components/parameters/ListOffset'
+        - $ref: '#/components/parameters/ListCursor'
+        - $ref: '#/components/parameters/ListCount'
       responses:
         '200':
           description: Published/open assessments for the current organization
@@ -218,6 +222,8 @@ paths:
         - $ref: '#/components/parameters/ListQuery'
         - $ref: '#/components/parameters/ListLimit'
         - $ref: '#/components/parameters/ListOffset'
+        - $ref: '#/components/parameters/ListCursor'
+        - $ref: '#/components/parameters/ListCount'
       responses:
         '200':
           description: Users in the current organization
@@ -357,6 +363,45 @@ paths:
           $ref: '#/components/responses/Unauthorized'
         '403':
           $ref: '#/components/responses/Forbidden'
+  /audit-logs:
+    get:
+      operationId: auditLogs.list
+      tags: [Admin]
+      description: Admin only. List audit logs for the current organization, optionally filtered.
+      parameters:
+        - name: action
+          in: query
+          description: Filter by action name.
+          schema: { type: string }
+        - name: actor_user_id
+          in: query
+          description: Filter by actor user ID.
+          schema: { type: string, format: uuid }
+        - name: from
+          in: query
+          description: Start timestamp (RFC3339).
+          schema: { type: string, format: date-time }
+        - name: to
+          in: query
+          description: End timestamp (RFC3339).
+          schema: { type: string, format: date-time }
+        - $ref: '#/components/parameters/ListLimit'
+        - $ref: '#/components/parameters/ListOffset'
+        - $ref: '#/components/parameters/ListCursor'
+        - $ref: '#/components/parameters/ListCount'
+      responses:
+        '200':
+          description: Audit logs for the current organization
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuditLogList'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
 components:
   securitySchemes:
     bearerAuth:
@@ -379,6 +424,16 @@ components:
       in: query
       description: Number of rows to skip.
       schema: { type: integer, minimum: 0 }
+    ListCursor:
+      name: cursor
+      in: query
+      description: Opaque cursor for the next page. Resets offset to 0.
+      schema: { type: string }
+    ListCount:
+      name: count
+      in: query
+      description: When true, include total_count in the page metadata.
+      schema: { type: boolean }
   schemas:
     CsrfTokenResponse:
       type: object
@@ -477,13 +532,13 @@ components:
         question_version_id: { type: string, format: uuid }
         position: { type: integer, minimum: 1 }
         points: { type: string }
-        prompt: { type: object }
-        choices: { type: array, items: { type: object } }
+        prompt: { type: object, additionalProperties: true, properties: { text: { type: string } } }
+        choices: { type: array, items: { type: object, additionalProperties: true, properties: { id: { type: string }, text: { type: string } } } }
         answer:
           type: object
           required: [answer_payload, revision, answered_at]
           properties:
-            answer_payload: { type: object }
+            answer_payload: { type: object, additionalProperties: true, properties: { selected_option: { type: string } } }
             revision: { type: integer, minimum: 1 }
             answered_at: { type: string, format: date-time }
     SaveAnswerRequest:
@@ -491,7 +546,7 @@ components:
       additionalProperties: false
       required: [answer_payload]
       properties:
-        answer_payload: { type: object }
+        answer_payload: { type: object, additionalProperties: true, properties: { selected_option: { type: string } } }
     SaveAnswerResponse:
       type: object
       required: [data]
@@ -502,7 +557,7 @@ components:
           properties:
             attempt_item_id: { type: string, format: uuid }
             revision: { type: integer, minimum: 1 }
-            answer_payload: { type: object }
+            answer_payload: { type: object, additionalProperties: true, properties: { selected_option: { type: string } } }
             answered_at: { type: string, format: date-time }
     AttemptSubmitted:
       type: object
@@ -520,10 +575,13 @@ components:
             grading_status: { type: string, enum: [GRADED] }
     PageInfo:
       type: object
-      required: [limit, offset]
+      required: [limit, offset, has_more]
       properties:
         limit: { type: integer, minimum: 1 }
         offset: { type: integer, minimum: 0 }
+        next_cursor: { type: string }
+        has_more: { type: boolean }
+        total_count: { type: integer, minimum: 0 }
     AssessmentList:
       type: object
       required: [data]
@@ -590,6 +648,29 @@ components:
           type: string
           minLength: 8
           description: Must contain at least one uppercase letter, one lowercase letter, one digit, and not match a common blocklist.
+    AuditLogList:
+      type: object
+      required: [data]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/AuditLog'
+        page:
+          $ref: '#/components/schemas/PageInfo'
+    AuditLog:
+      type: object
+      required: [id, actor_user_id, action, resource_type, resource_id, created_at]
+      properties:
+        id: { type: string, format: uuid }
+        actor_user_id: { type: string, format: uuid }
+        action: { type: string }
+        resource_type: { type: string }
+        resource_id: { type: string, format: uuid }
+        before: { type: object, additionalProperties: true }
+        after: { type: object, additionalProperties: true }
+        metadata: { type: object, additionalProperties: true }
+        created_at: { type: string, format: date-time }
     Organization:
       type: object
       required: [data]
@@ -644,6 +725,12 @@ components:
             $ref: '#/components/schemas/Problem'
     Conflict:
       description: Resource conflict or attempt not in progress/expired
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+    TooManyRequests:
+      description: Rate limit or temporary account lockout exceeded
       content:
         application/problem+json:
           schema:

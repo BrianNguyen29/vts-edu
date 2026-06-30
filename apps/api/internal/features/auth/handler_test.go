@@ -135,6 +135,34 @@ func TestHandler_Login_InvalidCredentials(t *testing.T) {
 	}
 }
 
+func TestHandler_Login_AccountLocked(t *testing.T) {
+	svc := &fakeService{
+		loginFunc: func(ctx context.Context, req auth.LoginRequest) (*auth.LoginResult, error) {
+			return nil, auth.ErrAccountLocked
+		},
+	}
+	h := auth.NewHandler(svc)
+
+	body := strings.NewReader(`{"organization_code":"school-a","username":"hs001","password":"Password123!"}`)
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/auth/login", body)
+	addCSRF(req)
+	rec := httptest.NewRecorder()
+
+	h.Login(rec, req)
+
+	if rec.Code != http.StatusTooManyRequests {
+		t.Fatalf("status = %d, want %d", rec.Code, http.StatusTooManyRequests)
+	}
+
+	var resp auth.ErrorEnvelope
+	if err := json.NewDecoder(rec.Body).Decode(&resp); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if resp.Error.Code != "account_locked" {
+		t.Errorf("error code = %q, want account_locked", resp.Error.Code)
+	}
+}
+
 func TestHandler_Me_MissingToken(t *testing.T) {
 	svc := &fakeService{}
 	h := auth.NewHandler(svc)
@@ -379,6 +407,35 @@ func TestHandler_ChangePassword_InvalidCredentials(t *testing.T) {
 
 	if rec.Code != http.StatusUnauthorized {
 		t.Fatalf("status = %d, want %d", rec.Code, http.StatusUnauthorized)
+	}
+}
+
+func TestHandler_ChangePassword_ReusedPassword(t *testing.T) {
+	svc := &fakeService{
+		changePasswordFunc: func(ctx context.Context, token string, req auth.ChangePasswordRequest) error {
+			return auth.ErrPasswordReused
+		},
+	}
+	h := auth.NewHandler(svc)
+
+	body := strings.NewReader(`{"current_password":"Password123!","new_password":"OldPassword123!"}`)
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/auth/change-password", body)
+	req.Header.Set("Authorization", "Bearer valid-token")
+	addCSRF(req)
+	rec := httptest.NewRecorder()
+
+	h.ChangePassword(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want %d", rec.Code, http.StatusBadRequest)
+	}
+
+	var resp auth.ErrorEnvelope
+	if err := json.NewDecoder(rec.Body).Decode(&resp); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if resp.Error.Code != "bad_request" {
+		t.Errorf("error code = %q, want bad_request", resp.Error.Code)
 	}
 }
 

@@ -131,6 +131,7 @@ func main() {
 			r.Post("/users/{user_id}/reset-password", adminHandler.ResetPassword)
 			r.Get("/organizations/current", adminHandler.GetOrganization)
 			r.Patch("/organizations/current", adminHandler.UpdateOrganization)
+			r.Get("/audit-logs", adminHandler.ListAuditLogs)
 		} else {
 			r.Get("/users", srv.adminPlaceholderHandler)
 			r.Post("/users", srv.adminPlaceholderHandler)
@@ -138,6 +139,7 @@ func main() {
 			r.Post("/users/{user_id}/reset-password", srv.adminPlaceholderHandler)
 			r.Get("/organizations/current", srv.adminPlaceholderHandler)
 			r.Patch("/organizations/current", srv.adminPlaceholderHandler)
+			r.Get("/audit-logs", srv.adminPlaceholderHandler)
 		}
 	})
 

@@ -30,10 +30,14 @@ Exit criteria:
 - User/membership/roles (`membership_roles`).
 - Login, JWT, refresh rotation, CSRF.
 - Password policy (min 8, mixed case, digit, blocklist).
+- Password history (5 hashes) and login lockout (5 failures / 15 min).
 - Forced password change (`/auth/change-password`).
 - Admin user CRUD + org update.
 - Backward-compatible pagination/search for users and assessments.
-- Audit log writes for admin actions (create user, update roles, reset password, update org).
+- Cursor pagination + optional `count` for users, assessments, and audit logs.
+- Audit log writes and admin audit-log reader UI for admin actions (create user, update roles, reset password, update org).
+- sqlc migration for `assessments`, `admin`, `auth`, and `attempts` repositories, preserving `Repository` interfaces.
+- Generated OpenAPI TypeScript types CI check (`pnpm api:types`, `pnpm api:sqlc`).
 
 ### Phase 2 — Academic structure (2–3 tuần)
 
@@ -94,9 +98,10 @@ Exit criteria:
 ## 2.5 Staged Huma/sqlc/OpenAPI plan
 
 - **Current**: Hand-maintained OpenAPI skeleton covers the current API surface in `docs/backend/backend-technical-spec/openapi/openapi-skeleton.yaml`. TypeScript types are generated from it into `apps/web/src/shared/api/openapi-schema.d.ts` using `openapi-typescript` (type-only; no runtime client).
-- **Stage 1 — sqlc migration**: Introduce sqlc generated queries side-by-side with existing repository implementations; keep interfaces stable and migrate one feature at a time. No runtime handler/service rewrite. `assessments` repository has been migrated.
-- **Stage 2 — Huma migration (deferred)**: Add Huma operation definitions behind existing handlers or incrementally replace handler wiring while preserving response envelopes. OpenAPI generation becomes automatic. Deferred until sqlc migration and API contract stabilize.
+- **Stage 1 — sqlc migration (completed)**: `assessments`, `admin`, `auth`, and `attempts` repositories migrated to sqlc generated queries while keeping `Repository` interfaces stable. No runtime handler/service rewrite.
+- **Stage 2 — Huma migration (deferred)**: Add Huma operation definitions behind existing handlers or incrementally replace handler wiring while preserving response envelopes. OpenAPI generation becomes automatic. Deferred until OpenAPI maintenance cost exceeds chi router/handler rewrite cost, or until API contract stabilizes after more endpoints (threshold ~20–25 endpoints).
 - **Stage 3 — Client generation**: Generate frontend API client/types from the Huma/OpenAPI contract once it stabilizes.
+- **Breached-password provider (deferred)**: HIBP/external corpus integration deferred pending a privacy/egress ADR; password history + lockout + blocklist implemented as interim controls.
 
 ## 3. Effort estimate
 

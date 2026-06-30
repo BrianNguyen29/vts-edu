@@ -6,6 +6,7 @@ type Assessment struct {
 	Title           string
 	Status          string
 	DurationMinutes int
+	CreatedAt       string
 }
 
 // AssessmentListItem is the public list view for GET /api/v1/assessments.
@@ -21,12 +22,17 @@ type ListOptions struct {
 	Query  string
 	Limit  int
 	Offset int
+	Cursor string
+	Count  bool
 }
 
 // PageInfo is returned with paginated list responses.
 type PageInfo struct {
-	Limit  int `json:"limit"`
-	Offset int `json:"offset"`
+	Limit      int     `json:"limit"`
+	Offset     int     `json:"offset"`
+	NextCursor *string `json:"next_cursor,omitempty"`
+	HasMore    bool    `json:"has_more"`
+	TotalCount *int64  `json:"total_count,omitempty"`
 }
 
 // DataEnvelope wraps successful API responses.

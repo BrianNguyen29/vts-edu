@@ -1,57 +1,13 @@
 import { apiClient } from './api-client';
+import type { components } from './openapi-schema';
 
-export interface AttemptSnapshot {
-  id: string;
-  organization_id: string;
-  assessment_id: string;
-  publication_id?: string;
-  status: 'CREATED' | 'IN_PROGRESS' | 'SUBMITTED' | 'EXPIRED';
-  started_at?: string;
-  expires_at?: string;
-  submitted_at?: string;
-  items: AttemptItem[];
-}
-
-export interface AttemptItem {
-  id: string;
-  question_version_id: string;
-  position: number;
-  points: string;
-  prompt?: QuestionPrompt;
-  choices?: QuestionChoice[];
-  answer?: AnswerSnapshot;
-}
-
-export interface QuestionPrompt {
-  text?: string;
-}
-
-export interface QuestionChoice {
-  id: string;
-  text?: string;
-}
-
-export interface AnswerSnapshot {
-  answer_payload: unknown;
-  revision: number;
-  answered_at: string;
-}
-
-export interface AnswerSaved {
-  attempt_item_id: string;
-  revision: number;
-  answer_payload: unknown;
-  answered_at: string;
-}
-
-export interface AttemptSubmitted {
-  id: string;
-  status: string;
-  submitted_at: string;
-  score?: string;
-  max_score?: string;
-  grading_status?: string;
-}
+export type AttemptSnapshot = components['schemas']['AttemptSnapshot']['data'];
+export type AttemptItem = components['schemas']['AttemptItem'];
+export type QuestionPrompt = components['schemas']['AttemptItem']['prompt'];
+export type QuestionChoice = components['schemas']['AttemptItem']['choices'][number];
+export type AnswerSnapshot = NonNullable<components['schemas']['AttemptItem']['answer']>;
+export type AnswerSaved = components['schemas']['SaveAnswerResponse']['data'];
+export type AttemptSubmitted = components['schemas']['AttemptSubmitted']['data'];
 
 export interface ApiError {
   error: {
@@ -64,12 +20,11 @@ export interface ListOptions {
   q?: string;
   limit?: number;
   offset?: number;
+  cursor?: string;
+  count?: boolean;
 }
 
-export interface PageInfo {
-  limit: number;
-  offset: number;
-}
+export type PageInfo = components['schemas']['PageInfo'];
 
 export interface PagedList<T> {
   data: T[];

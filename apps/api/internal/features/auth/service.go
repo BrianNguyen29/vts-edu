@@ -19,6 +19,13 @@ var (
 	ErrInvalidCredentials = errors.New("invalid credentials")
 	ErrActorNotFound      = errors.New("actor not found")
 	ErrUnauthorized       = errors.New("unauthorized")
+	ErrAccountLocked      = errors.New("account temporarily locked due to failed login attempts")
+)
+
+// Login lockout configuration.
+const (
+	maxFailedLoginAttempts = 5
+	loginLockoutWindow     = 15 * time.Minute
 )
 
 // TransactionManager executes work inside a database transaction.
@@ -66,9 +73,24 @@ func (s *service) Login(ctx context.Context, req LoginRequest) (*LoginResult, er
 		return nil, err
 	}
 
+	recentFailures, err := s.repo.CountRecentFailedLoginAttempts(ctx, identity.OrgID, identity.Username, loginLockoutWindow)
+	if err != nil {
+		return nil, fmt.Errorf("check login lockout: %w", err)
+	}
+	if recentFailures >= maxFailedLoginAttempts {
+		return nil, ErrAccountLocked
+	}
+
 	ok, err := VerifyPassword(identity.PasswordHash, req.Password)
 	if err != nil || !ok {
+		if recordErr := s.repo.RecordFailedLoginAttempt(ctx, identity.OrgID, identity.Username); recordErr != nil {
+			return nil, fmt.Errorf("record failed login attempt: %w", recordErr)
+		}
 		return nil, ErrInvalidCredentials
+	}
+
+	if err := s.repo.ClearLoginAttempts(ctx, identity.OrgID, identity.Username); err != nil {
+		return nil, fmt.Errorf("clear login attempts: %w", err)
 	}
 
 	rawRefresh, err := randomURLToken()
@@ -260,7 +282,8 @@ func (s *service) Me(ctx context.Context, token string) (*MeResult, error) {
 
 // ChangePassword verifies the current password and sets a new one for the
 // authenticated actor. It bumps the user's auth_version, clears the forced
-// password-change flag, and revokes all refresh sessions for the user.
+// password-change flag, revokes all refresh sessions for the user, and stores
+// the new hash in the password history so it cannot be immediately reused.
 func (s *service) ChangePassword(ctx context.Context, token string, req ChangePasswordRequest) error {
 	if req.CurrentPassword == "" || req.NewPassword == "" {
 		return ErrInvalidCredentials
@@ -290,12 +313,20 @@ func (s *service) ChangePassword(ctx context.Context, token string, req ChangePa
 			return ErrPasswordUnchanged
 		}
 
+		if err := CheckPasswordHistory(ctx, s.repo, identity.UserID, req.NewPassword); err != nil {
+			return err
+		}
+
 		newHash, err := HashPassword(req.NewPassword)
 		if err != nil {
 			return fmt.Errorf("hash new password: %w", err)
 		}
 
 		if err := s.repo.UpdatePassword(ctx, tx, identity.UserID, identity.OrgID, newHash); err != nil {
+			return err
+		}
+
+		if err := StorePasswordHistory(ctx, s.repo, tx, identity.UserID, identity.PasswordHash, newHash); err != nil {
 			return err
 		}
 

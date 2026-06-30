@@ -1,6 +1,7 @@
 package assessments
 
 import (
+	"errors"
 	"net/http"
 	"strconv"
 	"strings"
@@ -37,14 +38,18 @@ func (h *Handler) ListAssessments(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	list, err := h.svc.ListAssessments(r.Context(), actor.OrgID, opts)
+	list, page, err := h.svc.ListAssessments(r.Context(), actor.OrgID, opts)
 	if err != nil {
+		if errors.Is(err, ErrInvalidCursor) {
+			writeError(w, http.StatusBadRequest, "bad_request", "invalid cursor")
+			return
+		}
 		writeError(w, http.StatusInternalServerError, "internal_error", "failed to list assessments")
 		return
 	}
 
 	if opts.Limit > 0 {
-		writePagedData(w, http.StatusOK, list, &PageInfo{Limit: opts.Limit, Offset: opts.Offset})
+		writePagedData(w, http.StatusOK, list, page)
 		return
 	}
 
@@ -70,6 +75,15 @@ func parseListOptions(w http.ResponseWriter, r *http.Request) (ListOptions, bool
 			return ListOptions{}, false
 		}
 		opts.Offset = val
+	}
+
+	if cursor := strings.TrimSpace(r.URL.Query().Get("cursor")); cursor != "" {
+		opts.Cursor = cursor
+		opts.Offset = 0
+	}
+
+	if r.URL.Query().Get("count") == "true" {
+		opts.Count = true
 	}
 
 	return opts, true

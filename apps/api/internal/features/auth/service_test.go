@@ -10,18 +10,24 @@ import (
 )
 
 type fakeRepository struct {
-	findFunc               func(ctx context.Context, orgCode, username string) (*LoginIdentity, error)
-	insertFunc             func(ctx context.Context, tx pgx.Tx, p InsertRefreshSessionParams) (string, error)
-	actorFunc              func(ctx context.Context, userID, orgID string) (*ActorInfo, error)
-	refreshFunc            func(ctx context.Context, tx pgx.Tx, tokenHash string) (*RefreshSession, error)
-	markReplaced           func(ctx context.Context, tx pgx.Tx, sessionID, replacedByTokenHash string) error
-	revokeSession          func(ctx context.Context, tx pgx.Tx, sessionID string) error
-	revokeFamily           func(ctx context.Context, tx pgx.Tx, familyID string) error
-	findByHashFunc         func(ctx context.Context, tokenHash string) (*RefreshSession, error)
-	rolesFunc              func(ctx context.Context, tx pgx.Tx, membershipID string) ([]string, error)
-	loginByUserIDFunc      func(ctx context.Context, tx pgx.Tx, userID, orgID string) (*LoginIdentity, error)
-	updatePasswordFunc     func(ctx context.Context, tx pgx.Tx, userID, orgID, passwordHash string) error
-	revokeUserSessionsFunc func(ctx context.Context, tx pgx.Tx, userID string) error
+	findFunc                     func(ctx context.Context, orgCode, username string) (*LoginIdentity, error)
+	insertFunc                   func(ctx context.Context, tx pgx.Tx, p InsertRefreshSessionParams) (string, error)
+	actorFunc                    func(ctx context.Context, userID, orgID string) (*ActorInfo, error)
+	refreshFunc                  func(ctx context.Context, tx pgx.Tx, tokenHash string) (*RefreshSession, error)
+	markReplaced                 func(ctx context.Context, tx pgx.Tx, sessionID, replacedByTokenHash string) error
+	revokeSession                func(ctx context.Context, tx pgx.Tx, sessionID string) error
+	revokeFamily                 func(ctx context.Context, tx pgx.Tx, familyID string) error
+	findByHashFunc               func(ctx context.Context, tokenHash string) (*RefreshSession, error)
+	rolesFunc                    func(ctx context.Context, tx pgx.Tx, membershipID string) ([]string, error)
+	loginByUserIDFunc            func(ctx context.Context, tx pgx.Tx, userID, orgID string) (*LoginIdentity, error)
+	updatePasswordFunc           func(ctx context.Context, tx pgx.Tx, userID, orgID, passwordHash string) error
+	revokeUserSessionsFunc       func(ctx context.Context, tx pgx.Tx, userID string) error
+	countFailedLoginAttemptsFunc func(ctx context.Context, orgID, username string, window time.Duration) (int64, error)
+	recordFailedLoginAttemptFunc func(ctx context.Context, orgID, username string) error
+	clearLoginAttemptsFunc       func(ctx context.Context, orgID, username string) error
+	listPasswordHistoryFunc      func(ctx context.Context, userID string, limit int) ([]string, error)
+	insertPasswordHistoryFunc    func(ctx context.Context, tx pgx.Tx, userID, passwordHash string) error
+	deleteOldPasswordHistoryFunc func(ctx context.Context, tx pgx.Tx, userID string, keep int) error
 }
 
 func (f *fakeRepository) FindLoginByCredentials(ctx context.Context, orgCode, username string) (*LoginIdentity, error) {
@@ -70,6 +76,48 @@ func (f *fakeRepository) UpdatePassword(ctx context.Context, tx pgx.Tx, userID, 
 
 func (f *fakeRepository) RevokeUserSessions(ctx context.Context, tx pgx.Tx, userID string) error {
 	return f.revokeUserSessionsFunc(ctx, tx, userID)
+}
+
+func (f *fakeRepository) CountRecentFailedLoginAttempts(ctx context.Context, orgID, username string, window time.Duration) (int64, error) {
+	if f.countFailedLoginAttemptsFunc != nil {
+		return f.countFailedLoginAttemptsFunc(ctx, orgID, username, window)
+	}
+	return 0, nil
+}
+
+func (f *fakeRepository) RecordFailedLoginAttempt(ctx context.Context, orgID, username string) error {
+	if f.recordFailedLoginAttemptFunc != nil {
+		return f.recordFailedLoginAttemptFunc(ctx, orgID, username)
+	}
+	return nil
+}
+
+func (f *fakeRepository) ClearLoginAttempts(ctx context.Context, orgID, username string) error {
+	if f.clearLoginAttemptsFunc != nil {
+		return f.clearLoginAttemptsFunc(ctx, orgID, username)
+	}
+	return nil
+}
+
+func (f *fakeRepository) ListPasswordHistory(ctx context.Context, userID string, limit int) ([]string, error) {
+	if f.listPasswordHistoryFunc != nil {
+		return f.listPasswordHistoryFunc(ctx, userID, limit)
+	}
+	return nil, nil
+}
+
+func (f *fakeRepository) InsertPasswordHistory(ctx context.Context, tx pgx.Tx, userID, passwordHash string) error {
+	if f.insertPasswordHistoryFunc != nil {
+		return f.insertPasswordHistoryFunc(ctx, tx, userID, passwordHash)
+	}
+	return nil
+}
+
+func (f *fakeRepository) DeleteOldPasswordHistory(ctx context.Context, tx pgx.Tx, userID string, keep int) error {
+	if f.deleteOldPasswordHistoryFunc != nil {
+		return f.deleteOldPasswordHistoryFunc(ctx, tx, userID, keep)
+	}
+	return nil
 }
 
 type stubTxManager struct{}
@@ -429,5 +477,142 @@ func TestService_ChangePassword_MissingFields(t *testing.T) {
 		NewPassword:     "NewPassword123!",
 	}); !errors.Is(err, ErrInvalidCredentials) {
 		t.Fatalf("expected ErrInvalidCredentials for missing current password, got %v", err)
+	}
+}
+
+func TestService_ChangePassword_ReusedPassword(t *testing.T) {
+	seedHash := "$argon2id$v=19$m=65536,t=3,p=4$1g6Ot1/Ps3bNRlWCAiM9mA$e194j5UoiFL4BHv+vjP4yL32dPhq6r8ybAfR4ekSsBE"
+	newPass := "NewPassword123!"
+	newHash, err := HashPassword(newPass)
+	if err != nil {
+		t.Fatalf("HashPassword failed: %v", err)
+	}
+
+	repo := &fakeRepository{
+		loginByUserIDFunc: func(ctx context.Context, tx pgx.Tx, userID, orgID string) (*LoginIdentity, error) {
+			return &LoginIdentity{
+				UserID:       userID,
+				OrgID:        orgID,
+				PasswordHash: seedHash,
+			}, nil
+		},
+		listPasswordHistoryFunc: func(ctx context.Context, userID string, limit int) ([]string, error) {
+			return []string{newHash}, nil
+		},
+	}
+
+	issuer := NewTokenIssuer("test-signing-key-minimum-32-bytes-long", "test-issuer", "test-audience", 15*time.Minute)
+	token, _, err := issuer.IssueAccessToken("user-id", "org-id", "session-id", []string{"student"}, 1, true)
+	if err != nil {
+		t.Fatalf("IssueAccessToken failed: %v", err)
+	}
+
+	svc := NewService(repo, stubTxManager{}, issuer, 7*24*time.Hour)
+	err = svc.ChangePassword(context.Background(), token, ChangePasswordRequest{
+		CurrentPassword: "Password123!",
+		NewPassword:     newPass,
+	})
+	if !errors.Is(err, ErrPasswordReused) {
+		t.Fatalf("expected ErrPasswordReused, got %v", err)
+	}
+}
+
+func TestService_Login_AccountLocked(t *testing.T) {
+	repo := &fakeRepository{
+		findFunc: func(ctx context.Context, orgCode, username string) (*LoginIdentity, error) {
+			return &LoginIdentity{
+				UserID:       "user-id",
+				MembershipID: "membership-id",
+				OrgID:        "org-id",
+				Username:     "hs001",
+				PasswordHash: "$argon2id$v=19$m=65536,t=3,p=4$1g6Ot1/Ps3bNRlWCAiM9mA$e194j5UoiFL4BHv+vjP4yL32dPhq6r8ybAfR4ekSsBE",
+			}, nil
+		},
+		countFailedLoginAttemptsFunc: func(ctx context.Context, orgID, username string, window time.Duration) (int64, error) {
+			return 5, nil
+		},
+	}
+
+	issuer := NewTokenIssuer("test-signing-key-minimum-32-bytes-long", "test-issuer", "test-audience", 15*time.Minute)
+	svc := NewService(repo, stubTxManager{}, issuer, 7*24*time.Hour)
+
+	_, err := svc.Login(context.Background(), LoginRequest{
+		OrganizationCode: "school-a",
+		Username:         "hs001",
+		Password:         "Password123!",
+	})
+	if !errors.Is(err, ErrAccountLocked) {
+		t.Fatalf("expected ErrAccountLocked, got %v", err)
+	}
+}
+
+func TestService_Login_RecordsFailedAttempt(t *testing.T) {
+	recorded := false
+	repo := &fakeRepository{
+		findFunc: func(ctx context.Context, orgCode, username string) (*LoginIdentity, error) {
+			return &LoginIdentity{
+				UserID:       "user-id",
+				MembershipID: "membership-id",
+				OrgID:        "org-id",
+				Username:     "hs001",
+				PasswordHash: "$argon2id$v=19$m=65536,t=3,p=4$1g6Ot1/Ps3bNRlWCAiM9mA$e194j5UoiFL4BHv+vjP4yL32dPhq6r8ybAfR4ekSsBE",
+			}, nil
+		},
+		recordFailedLoginAttemptFunc: func(ctx context.Context, orgID, username string) error {
+			recorded = true
+			return nil
+		},
+	}
+
+	issuer := NewTokenIssuer("test-signing-key-minimum-32-bytes-long", "test-issuer", "test-audience", 15*time.Minute)
+	svc := NewService(repo, stubTxManager{}, issuer, 7*24*time.Hour)
+
+	_, err := svc.Login(context.Background(), LoginRequest{
+		OrganizationCode: "school-a",
+		Username:         "hs001",
+		Password:         "WrongPassword123!",
+	})
+	if !errors.Is(err, ErrInvalidCredentials) {
+		t.Fatalf("expected ErrInvalidCredentials, got %v", err)
+	}
+	if !recorded {
+		t.Error("expected failed login attempt to be recorded")
+	}
+}
+
+func TestService_Login_ClearsAttemptsOnSuccess(t *testing.T) {
+	cleared := false
+	repo := &fakeRepository{
+		findFunc: func(ctx context.Context, orgCode, username string) (*LoginIdentity, error) {
+			return &LoginIdentity{
+				UserID:       "user-id",
+				MembershipID: "membership-id",
+				OrgID:        "org-id",
+				Username:     "hs001",
+				PasswordHash: "$argon2id$v=19$m=65536,t=3,p=4$1g6Ot1/Ps3bNRlWCAiM9mA$e194j5UoiFL4BHv+vjP4yL32dPhq6r8ybAfR4ekSsBE",
+			}, nil
+		},
+		insertFunc: func(ctx context.Context, tx pgx.Tx, p InsertRefreshSessionParams) (string, error) {
+			return "session-id", nil
+		},
+		clearLoginAttemptsFunc: func(ctx context.Context, orgID, username string) error {
+			cleared = true
+			return nil
+		},
+	}
+
+	issuer := NewTokenIssuer("test-signing-key-minimum-32-bytes-long", "test-issuer", "test-audience", 15*time.Minute)
+	svc := NewService(repo, stubTxManager{}, issuer, 7*24*time.Hour)
+
+	_, err := svc.Login(context.Background(), LoginRequest{
+		OrganizationCode: "school-a",
+		Username:         "hs001",
+		Password:         "Password123!",
+	})
+	if err != nil {
+		t.Fatalf("Login failed: %v", err)
+	}
+	if !cleared {
+		t.Error("expected login attempts to be cleared on success")
 	}
 }

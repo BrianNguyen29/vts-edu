@@ -59,6 +59,38 @@ jobs:
       - name: Build
         run: pnpm --filter @vts-edu/web build
 
+  generated-code-check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.25.0'
+
+      - name: Regenerate OpenAPI types
+        run: pnpm api:types
+
+      - name: Regenerate sqlc code
+        run: pnpm api:sqlc
+
+      - name: Verify generated code is up to date
+        run: git diff --exit-code -- apps/web/src/shared/api/openapi-schema.d.ts apps/api/internal/features/*/sqlc/
+
   migration-validation:
     runs-on: ubuntu-latest
     services:

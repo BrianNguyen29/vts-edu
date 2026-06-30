@@ -646,6 +646,32 @@ label {
 }
 
 /* Admin dashboard */
+.admin-tabs {
+  display: flex;
+  gap: 0.5rem;
+  margin-top: 1.25rem;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.admin-tabs button {
+  padding: 0.5rem 1rem;
+  background: transparent;
+  border: none;
+  border-bottom: 2px solid transparent;
+  border-radius: 0;
+  font-weight: 500;
+  color: var(--color-muted);
+}
+
+.admin-tabs button:hover {
+  color: var(--color-text);
+}
+
+.admin-tabs button.active {
+  color: var(--color-primary);
+  border-bottom-color: var(--color-primary);
+}
+
 .admin-section {
   margin-top: 1.5rem;
 }
@@ -760,6 +786,60 @@ label {
 .row-actions button {
   padding: 0.25rem 0.5rem;
   font-size: 0.75rem;
+}
+
+/* Audit logs */
+.audit-filters {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(12rem, 1fr));
+  gap: 1rem;
+  margin-bottom: 1rem;
+}
+
+.audit-filters .field input,
+.audit-filters .field select {
+  width: 100%;
+  padding: 0.5rem 0.75rem;
+  border: 1px solid var(--color-border);
+  border-radius: 0.375rem;
+  font-size: 1rem;
+  line-height: 1.5rem;
+  background-color: var(--color-bg);
+}
+
+.audit-logs-table-wrapper {
+  overflow-x: auto;
+}
+
+.audit-logs-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.875rem;
+}
+
+.audit-logs-table th,
+.audit-logs-table td {
+  padding: 0.75rem;
+  text-align: left;
+  border-bottom: 1px solid var(--color-border);
+  vertical-align: top;
+}
+
+.audit-logs-table th {
+  font-weight: 600;
+  background-color: #f9fafb;
+  white-space: nowrap;
+}
+
+.audit-logs-table td {
+  max-width: 24rem;
+}
+
+.audit-meta {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 0.75rem;
+  color: var(--color-muted);
+  word-break: break-word;
 }
 
 @media (max-width: 640px) {

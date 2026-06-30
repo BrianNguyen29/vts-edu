@@ -6,7 +6,9 @@ import (
 	"fmt"
 	"time"
 
+	authsqlc "github.com/BrianNguyen29/vts-edu/apps/api/internal/features/auth/sqlc"
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -70,267 +72,245 @@ type Repository interface {
 	GetLoginByUserID(ctx context.Context, tx pgx.Tx, userID, orgID string) (*LoginIdentity, error)
 	UpdatePassword(ctx context.Context, tx pgx.Tx, userID, orgID, passwordHash string) error
 	RevokeUserSessions(ctx context.Context, tx pgx.Tx, userID string) error
+
+	CountRecentFailedLoginAttempts(ctx context.Context, orgID, username string, window time.Duration) (int64, error)
+	RecordFailedLoginAttempt(ctx context.Context, orgID, username string) error
+	ClearLoginAttempts(ctx context.Context, orgID, username string) error
+	ListPasswordHistory(ctx context.Context, userID string, limit int) ([]string, error)
+	InsertPasswordHistory(ctx context.Context, tx pgx.Tx, userID, passwordHash string) error
+	DeleteOldPasswordHistory(ctx context.Context, tx pgx.Tx, userID string, keep int) error
 }
 
-type repository struct {
-	pool *pgxpool.Pool
+type sqlcRepository struct {
+	queries *authsqlc.Queries
 }
 
-// NewRepository creates a new auth repository backed by a pgx connection pool.
+// NewRepository creates a new auth repository backed by generated sqlc queries.
+// It preserves the existing Repository interface.
 func NewRepository(pool *pgxpool.Pool) Repository {
-	return &repository{pool: pool}
+	return &sqlcRepository{queries: authsqlc.New(pool)}
 }
 
-func (r *repository) FindLoginByCredentials(ctx context.Context, orgCode, username string) (*LoginIdentity, error) {
-	query := `
-		SELECT
-			u.id,
-			m.id,
-			o.id,
-			ln.username_normalized,
-			ln.password_hash,
-			u.auth_version,
-			u.must_change_password,
-			array_agg(mr.role) FILTER (WHERE mr.role IS NOT NULL)
-		FROM membership_login_names ln
-		JOIN organizations o ON o.id = ln.organization_id
-		JOIN organization_memberships m
-			ON m.organization_id = ln.organization_id AND m.user_id = ln.user_id
-		JOIN users u ON u.id = ln.user_id
-		LEFT JOIN membership_roles mr ON mr.membership_id = m.id
-		WHERE lower(o.code) = $1
-		  AND lower(ln.username_normalized) = $2
-		  AND o.status = 'ACTIVE'
-		  AND m.status = 'ACTIVE'
-		  AND ln.status = 'ACTIVE'
-		GROUP BY u.id, m.id, o.id, ln.username_normalized, ln.password_hash, u.auth_version, u.must_change_password
-		LIMIT 1
-	`
+func toUUID(s string) (pgtype.UUID, error) {
+	var u pgtype.UUID
+	if err := u.Scan(s); err != nil {
+		return pgtype.UUID{}, err
+	}
+	return u, nil
+}
 
-	var id LoginIdentity
-	err := r.pool.QueryRow(ctx, query, orgCode, username).Scan(
-		&id.UserID,
-		&id.MembershipID,
-		&id.OrgID,
-		&id.Username,
-		&id.PasswordHash,
-		&id.AuthVersion,
-		&id.MustChangePassword,
-		&id.Roles,
-	)
+func toText(s string) pgtype.Text {
+	return pgtype.Text{String: s, Valid: s != ""}
+}
+
+func textPtr(t pgtype.Text) *string {
+	if t.Valid {
+		return &t.String
+	}
+	return nil
+}
+
+func tsPtr(t pgtype.Timestamptz) *time.Time {
+	if t.Valid {
+		return &t.Time
+	}
+	return nil
+}
+
+func toStringSlice(v interface{}) []string {
+	if v == nil {
+		return []string{}
+	}
+	arr, ok := v.([]interface{})
+	if !ok {
+		return []string{}
+	}
+	out := make([]string, 0, len(arr))
+	for _, item := range arr {
+		if s, ok := item.(string); ok {
+			out = append(out, s)
+		}
+	}
+	return out
+}
+
+func (r *sqlcRepository) FindLoginByCredentials(ctx context.Context, orgCode, username string) (*LoginIdentity, error) {
+	row, err := r.queries.FindLoginByCredentials(ctx, authsqlc.FindLoginByCredentialsParams{
+		Lower:   orgCode,
+		Lower_2: username,
+	})
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, ErrInvalidCredentials
 	}
 	if err != nil {
 		return nil, fmt.Errorf("find login: %w", err)
 	}
-	if id.Roles == nil {
-		id.Roles = []string{}
-	}
-	return &id, nil
+
+	roles := toStringSlice(row.ArrayAgg)
+	return &LoginIdentity{
+		UserID:             row.ID.String(),
+		MembershipID:       row.ID_2.String(),
+		OrgID:              row.ID_3.String(),
+		Username:           row.UsernameNormalized,
+		PasswordHash:       row.PasswordHash.String,
+		AuthVersion:        row.AuthVersion,
+		MustChangePassword: row.MustChangePassword,
+		Roles:              roles,
+	}, nil
 }
 
-func (r *repository) InsertRefreshSession(ctx context.Context, tx pgx.Tx, p InsertRefreshSessionParams) (string, error) {
-	query := `
-		INSERT INTO refresh_sessions (
-			user_id,
-			membership_id,
-			organization_id,
-			token_hash,
-			family_id,
-			auth_version,
-			device_metadata_json,
-			expires_at
-		) VALUES ($1, $2, $3, $4, $5, $6, '{}', $7)
-		RETURNING id
-	`
+func (r *sqlcRepository) InsertRefreshSession(ctx context.Context, tx pgx.Tx, p InsertRefreshSessionParams) (string, error) {
+	userUUID, err := toUUID(p.UserID)
+	if err != nil {
+		return "", fmt.Errorf("invalid user id: %w", err)
+	}
+	membershipUUID, err := toUUID(p.MembershipID)
+	if err != nil {
+		return "", fmt.Errorf("invalid membership id: %w", err)
+	}
+	orgUUID, err := toUUID(p.OrgID)
+	if err != nil {
+		return "", fmt.Errorf("invalid organization id: %w", err)
+	}
+	familyUUID, err := toUUID(p.FamilyID)
+	if err != nil {
+		return "", fmt.Errorf("invalid family id: %w", err)
+	}
 
-	var id string
-	err := tx.QueryRow(ctx, query,
-		p.UserID,
-		p.MembershipID,
-		p.OrgID,
-		p.TokenHash,
-		p.FamilyID,
-		p.AuthVersion,
-		p.ExpiresAt,
-	).Scan(&id)
+	id, err := r.queries.WithTx(tx).InsertRefreshSession(ctx, authsqlc.InsertRefreshSessionParams{
+		UserID:         userUUID,
+		MembershipID:   membershipUUID,
+		OrganizationID: orgUUID,
+		TokenHash:      p.TokenHash,
+		FamilyID:       familyUUID,
+		AuthVersion:    p.AuthVersion,
+		ExpiresAt:      pgtype.Timestamptz{Time: p.ExpiresAt, Valid: true},
+	})
 	if err != nil {
 		return "", fmt.Errorf("insert refresh session: %w", err)
 	}
-	return id, nil
+	return id.String(), nil
 }
 
-func (r *repository) GetActorByUserID(ctx context.Context, userID, orgID string) (*ActorInfo, error) {
-	query := `
-		SELECT ln.user_id, ln.organization_id, ln.username_normalized, u.must_change_password
-		FROM membership_login_names ln
-		JOIN users u ON u.id = ln.user_id
-		WHERE ln.user_id = $1
-		  AND ln.organization_id = $2
-		  AND ln.status = 'ACTIVE'
-		LIMIT 1
-	`
+func (r *sqlcRepository) GetActorByUserID(ctx context.Context, userID, orgID string) (*ActorInfo, error) {
+	userUUID, err := toUUID(userID)
+	if err != nil {
+		return nil, fmt.Errorf("invalid user id: %w", err)
+	}
+	orgUUID, err := toUUID(orgID)
+	if err != nil {
+		return nil, fmt.Errorf("invalid organization id: %w", err)
+	}
 
-	var a ActorInfo
-	err := r.pool.QueryRow(ctx, query, userID, orgID).Scan(&a.UserID, &a.OrgID, &a.Username, &a.MustChangePassword)
+	row, err := r.queries.GetActorByUserID(ctx, authsqlc.GetActorByUserIDParams{
+		UserID:         userUUID,
+		OrganizationID: orgUUID,
+	})
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, ErrActorNotFound
 	}
 	if err != nil {
 		return nil, fmt.Errorf("get actor: %w", err)
 	}
-	return &a, nil
+
+	return &ActorInfo{
+		UserID:             row.UserID.String(),
+		OrgID:              row.OrganizationID.String(),
+		Username:           row.UsernameNormalized,
+		MustChangePassword: row.MustChangePassword,
+	}, nil
 }
 
-func (r *repository) GetRefreshSessionWithContext(ctx context.Context, tx pgx.Tx, tokenHash string) (*RefreshSession, error) {
-	query := `
-		SELECT
-			rs.id,
-			rs.user_id,
-			rs.membership_id,
-			rs.organization_id,
-			rs.family_id,
-			rs.auth_version,
-			rs.expires_at,
-			rs.revoked_at,
-			rs.replaced_by_token_hash
-		FROM refresh_sessions rs
-		JOIN organizations o ON o.id = rs.organization_id
-		JOIN organization_memberships m ON m.id = rs.membership_id
-		JOIN users u ON u.id = rs.user_id
-		WHERE rs.token_hash = $1
-		  AND o.status = 'ACTIVE'
-		  AND m.status = 'ACTIVE'
-		  AND u.status = 'ACTIVE'
-		  AND u.auth_version = rs.auth_version
-		FOR UPDATE
-	`
-
-	var s RefreshSession
-	err := tx.QueryRow(ctx, query, tokenHash).Scan(
-		&s.ID,
-		&s.UserID,
-		&s.MembershipID,
-		&s.OrgID,
-		&s.FamilyID,
-		&s.AuthVersion,
-		&s.ExpiresAt,
-		&s.RevokedAt,
-		&s.ReplacedByTokenHash,
-	)
+func (r *sqlcRepository) GetRefreshSessionWithContext(ctx context.Context, tx pgx.Tx, tokenHash string) (*RefreshSession, error) {
+	row, err := r.queries.WithTx(tx).GetRefreshSessionWithContext(ctx, tokenHash)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, ErrUnauthorized
 	}
 	if err != nil {
 		return nil, fmt.Errorf("get refresh session: %w", err)
 	}
-	return &s, nil
+	return toRefreshSession(row), nil
 }
 
-func (r *repository) MarkSessionReplaced(ctx context.Context, tx pgx.Tx, sessionID, replacedByTokenHash string) error {
-	query := `
-		UPDATE refresh_sessions
-		SET replaced_by_token_hash = $2
-		WHERE id = $1
-	`
-	_, err := tx.Exec(ctx, query, sessionID, replacedByTokenHash)
+func (r *sqlcRepository) MarkSessionReplaced(ctx context.Context, tx pgx.Tx, sessionID, replacedByTokenHash string) error {
+	sessionUUID, err := toUUID(sessionID)
 	if err != nil {
+		return fmt.Errorf("invalid session id: %w", err)
+	}
+	if err := r.queries.WithTx(tx).MarkSessionReplaced(ctx, authsqlc.MarkSessionReplacedParams{
+		ID:                  sessionUUID,
+		ReplacedByTokenHash: toText(replacedByTokenHash),
+	}); err != nil {
 		return fmt.Errorf("mark session replaced: %w", err)
 	}
 	return nil
 }
 
-func (r *repository) RevokeSession(ctx context.Context, tx pgx.Tx, sessionID string) error {
-	query := `
-		UPDATE refresh_sessions
-		SET revoked_at = now()
-		WHERE id = $1
-		  AND revoked_at IS NULL
-	`
-	_, err := tx.Exec(ctx, query, sessionID)
+func (r *sqlcRepository) RevokeSession(ctx context.Context, tx pgx.Tx, sessionID string) error {
+	sessionUUID, err := toUUID(sessionID)
 	if err != nil {
+		return fmt.Errorf("invalid session id: %w", err)
+	}
+	if err := r.queries.WithTx(tx).RevokeSession(ctx, sessionUUID); err != nil {
 		return fmt.Errorf("revoke session: %w", err)
 	}
 	return nil
 }
 
-func (r *repository) RevokeFamily(ctx context.Context, tx pgx.Tx, familyID string) error {
-	query := `
-		UPDATE refresh_sessions
-		SET revoked_at = now()
-		WHERE family_id = $1
-		  AND revoked_at IS NULL
-	`
-	_, err := tx.Exec(ctx, query, familyID)
+func (r *sqlcRepository) RevokeFamily(ctx context.Context, tx pgx.Tx, familyID string) error {
+	familyUUID, err := toUUID(familyID)
 	if err != nil {
+		return fmt.Errorf("invalid family id: %w", err)
+	}
+	if err := r.queries.WithTx(tx).RevokeFamily(ctx, familyUUID); err != nil {
 		return fmt.Errorf("revoke family: %w", err)
 	}
 	return nil
 }
 
-func (r *repository) FindRefreshSessionByTokenHash(ctx context.Context, tokenHash string) (*RefreshSession, error) {
-	query := `
-		SELECT
-			id,
-			user_id,
-			membership_id,
-			organization_id,
-			family_id,
-			auth_version,
-			expires_at,
-			revoked_at,
-			replaced_by_token_hash
-		FROM refresh_sessions
-		WHERE token_hash = $1
-		LIMIT 1
-	`
-
-	var s RefreshSession
-	err := r.pool.QueryRow(ctx, query, tokenHash).Scan(
-		&s.ID,
-		&s.UserID,
-		&s.MembershipID,
-		&s.OrgID,
-		&s.FamilyID,
-		&s.AuthVersion,
-		&s.ExpiresAt,
-		&s.RevokedAt,
-		&s.ReplacedByTokenHash,
-	)
+func (r *sqlcRepository) FindRefreshSessionByTokenHash(ctx context.Context, tokenHash string) (*RefreshSession, error) {
+	row, err := r.queries.FindRefreshSessionByTokenHash(ctx, tokenHash)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, nil
 	}
 	if err != nil {
 		return nil, fmt.Errorf("find refresh session: %w", err)
 	}
-	return &s, nil
+	return &RefreshSession{
+		ID:                  row.ID.String(),
+		UserID:              row.UserID.String(),
+		MembershipID:        row.MembershipID.String(),
+		OrgID:               row.OrganizationID.String(),
+		FamilyID:            row.FamilyID.String(),
+		AuthVersion:         row.AuthVersion,
+		ExpiresAt:           row.ExpiresAt.Time,
+		RevokedAt:           tsPtr(row.RevokedAt),
+		ReplacedByTokenHash: textPtr(row.ReplacedByTokenHash),
+	}, nil
 }
 
-func (r *repository) GetRolesByMembershipID(ctx context.Context, tx pgx.Tx, membershipID string) ([]string, error) {
-	query := `
-		SELECT role
-		FROM membership_roles
-		WHERE membership_id = $1
-		ORDER BY role
-	`
+func toRefreshSession(row authsqlc.GetRefreshSessionWithContextRow) *RefreshSession {
+	return &RefreshSession{
+		ID:                  row.ID.String(),
+		UserID:              row.UserID.String(),
+		MembershipID:        row.MembershipID.String(),
+		OrgID:               row.OrganizationID.String(),
+		FamilyID:            row.FamilyID.String(),
+		AuthVersion:         row.AuthVersion,
+		ExpiresAt:           row.ExpiresAt.Time,
+		RevokedAt:           tsPtr(row.RevokedAt),
+		ReplacedByTokenHash: textPtr(row.ReplacedByTokenHash),
+	}
+}
 
-	rows, err := tx.Query(ctx, query, membershipID)
+func (r *sqlcRepository) GetRolesByMembershipID(ctx context.Context, tx pgx.Tx, membershipID string) ([]string, error) {
+	membershipUUID, err := toUUID(membershipID)
+	if err != nil {
+		return nil, fmt.Errorf("invalid membership id: %w", err)
+	}
+	roles, err := r.queries.WithTx(tx).GetRolesByMembershipID(ctx, membershipUUID)
 	if err != nil {
 		return nil, fmt.Errorf("get roles: %w", err)
-	}
-	defer rows.Close()
-
-	var roles []string
-	for rows.Next() {
-		var role string
-		if err := rows.Scan(&role); err != nil {
-			return nil, fmt.Errorf("scan role: %w", err)
-		}
-		roles = append(roles, role)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("read roles: %w", err)
 	}
 	if roles == nil {
 		roles = []string{}
@@ -338,90 +318,167 @@ func (r *repository) GetRolesByMembershipID(ctx context.Context, tx pgx.Tx, memb
 	return roles, nil
 }
 
-func (r *repository) GetLoginByUserID(ctx context.Context, tx pgx.Tx, userID, orgID string) (*LoginIdentity, error) {
-	query := `
-		SELECT
-			u.id,
-			m.id,
-			o.id,
-			ln.username_normalized,
-			ln.password_hash,
-			u.auth_version,
-			u.must_change_password,
-			array_agg(mr.role) FILTER (WHERE mr.role IS NOT NULL)
-		FROM membership_login_names ln
-		JOIN organizations o ON o.id = ln.organization_id
-		JOIN organization_memberships m
-			ON m.organization_id = ln.organization_id AND m.user_id = ln.user_id
-		JOIN users u ON u.id = ln.user_id
-		LEFT JOIN membership_roles mr ON mr.membership_id = m.id
-		WHERE u.id = $1
-		  AND o.id = $2
-		  AND o.status = 'ACTIVE'
-		  AND m.status = 'ACTIVE'
-		  AND ln.status = 'ACTIVE'
-		GROUP BY u.id, m.id, o.id, ln.username_normalized, ln.password_hash, u.auth_version, u.must_change_password
-		LIMIT 1
-	`
+func (r *sqlcRepository) GetLoginByUserID(ctx context.Context, tx pgx.Tx, userID, orgID string) (*LoginIdentity, error) {
+	userUUID, err := toUUID(userID)
+	if err != nil {
+		return nil, fmt.Errorf("invalid user id: %w", err)
+	}
+	orgUUID, err := toUUID(orgID)
+	if err != nil {
+		return nil, fmt.Errorf("invalid organization id: %w", err)
+	}
 
-	var id LoginIdentity
-	err := tx.QueryRow(ctx, query, userID, orgID).Scan(
-		&id.UserID,
-		&id.MembershipID,
-		&id.OrgID,
-		&id.Username,
-		&id.PasswordHash,
-		&id.AuthVersion,
-		&id.MustChangePassword,
-		&id.Roles,
-	)
+	row, err := r.queries.WithTx(tx).GetLoginByUserID(ctx, authsqlc.GetLoginByUserIDParams{
+		ID:   userUUID,
+		ID_2: orgUUID,
+	})
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, ErrActorNotFound
 	}
 	if err != nil {
 		return nil, fmt.Errorf("get login by user id: %w", err)
 	}
-	if id.Roles == nil {
-		id.Roles = []string{}
-	}
-	return &id, nil
+
+	roles := toStringSlice(row.ArrayAgg)
+	return &LoginIdentity{
+		UserID:             row.ID.String(),
+		MembershipID:       row.ID_2.String(),
+		OrgID:              row.ID_3.String(),
+		Username:           row.UsernameNormalized,
+		PasswordHash:       row.PasswordHash.String,
+		AuthVersion:        row.AuthVersion,
+		MustChangePassword: row.MustChangePassword,
+		Roles:              roles,
+	}, nil
 }
 
-func (r *repository) UpdatePassword(ctx context.Context, tx pgx.Tx, userID, orgID, passwordHash string) error {
-	_, err := tx.Exec(ctx, `
-		UPDATE users
-		SET auth_version = auth_version + 1,
-		    must_change_password = false
-		WHERE id = $1
-	`, userID)
+func (r *sqlcRepository) UpdatePassword(ctx context.Context, tx pgx.Tx, userID, orgID, passwordHash string) error {
+	q := r.queries.WithTx(tx)
+
+	userUUID, err := toUUID(userID)
 	if err != nil {
+		return fmt.Errorf("invalid user id: %w", err)
+	}
+	orgUUID, err := toUUID(orgID)
+	if err != nil {
+		return fmt.Errorf("invalid organization id: %w", err)
+	}
+
+	if err := q.BumpUserAuthVersion(ctx, userUUID); err != nil {
 		return fmt.Errorf("update user auth version: %w", err)
 	}
 
-	tag, err := tx.Exec(ctx, `
-		UPDATE membership_login_names
-		SET password_hash = $1
-		WHERE user_id = $2
-		  AND organization_id = $3
-	`, passwordHash, userID, orgID)
+	rows, err := q.UpdateLoginPassword(ctx, authsqlc.UpdateLoginPasswordParams{
+		PasswordHash:   toText(passwordHash),
+		UserID:         userUUID,
+		OrganizationID: orgUUID,
+	})
 	if err != nil {
 		return fmt.Errorf("update password hash: %w", err)
 	}
-	if tag.RowsAffected() == 0 {
+	if rows == 0 {
 		return ErrActorNotFound
 	}
 	return nil
 }
 
-func (r *repository) RevokeUserSessions(ctx context.Context, tx pgx.Tx, userID string) error {
-	_, err := tx.Exec(ctx, `
-		UPDATE refresh_sessions
-		SET revoked_at = now()
-		WHERE user_id = $1
-		  AND revoked_at IS NULL
-	`, userID)
+func (r *sqlcRepository) RevokeUserSessions(ctx context.Context, tx pgx.Tx, userID string) error {
+	userUUID, err := toUUID(userID)
 	if err != nil {
+		return fmt.Errorf("invalid user id: %w", err)
+	}
+	if err := r.queries.WithTx(tx).RevokeUserSessions(ctx, userUUID); err != nil {
 		return fmt.Errorf("revoke user sessions: %w", err)
+	}
+	return nil
+}
+
+func (r *sqlcRepository) CountRecentFailedLoginAttempts(ctx context.Context, orgID, username string, window time.Duration) (int64, error) {
+	orgUUID, err := toUUID(orgID)
+	if err != nil {
+		return 0, fmt.Errorf("invalid organization id: %w", err)
+	}
+	count, err := r.queries.CountFailedLoginAttempts(ctx, authsqlc.CountFailedLoginAttemptsParams{
+		OrganizationID: orgUUID,
+		Lower:          username,
+		Column3:        pgtype.Interval{Microseconds: window.Microseconds(), Valid: true},
+	})
+	if err != nil {
+		return 0, fmt.Errorf("count failed login attempts: %w", err)
+	}
+	return count, nil
+}
+
+func (r *sqlcRepository) RecordFailedLoginAttempt(ctx context.Context, orgID, username string) error {
+	orgUUID, err := toUUID(orgID)
+	if err != nil {
+		return fmt.Errorf("invalid organization id: %w", err)
+	}
+	if err := r.queries.InsertFailedLoginAttempt(ctx, authsqlc.InsertFailedLoginAttemptParams{
+		OrganizationID: orgUUID,
+		Lower:          username,
+	}); err != nil {
+		return fmt.Errorf("record failed login attempt: %w", err)
+	}
+	return nil
+}
+
+func (r *sqlcRepository) ClearLoginAttempts(ctx context.Context, orgID, username string) error {
+	orgUUID, err := toUUID(orgID)
+	if err != nil {
+		return fmt.Errorf("invalid organization id: %w", err)
+	}
+	if err := r.queries.ClearLoginAttempts(ctx, authsqlc.ClearLoginAttemptsParams{
+		OrganizationID: orgUUID,
+		Lower:          username,
+	}); err != nil {
+		return fmt.Errorf("clear login attempts: %w", err)
+	}
+	return nil
+}
+
+func (r *sqlcRepository) ListPasswordHistory(ctx context.Context, userID string, limit int) ([]string, error) {
+	userUUID, err := toUUID(userID)
+	if err != nil {
+		return nil, fmt.Errorf("invalid user id: %w", err)
+	}
+	hashes, err := r.queries.ListPasswordHistory(ctx, authsqlc.ListPasswordHistoryParams{
+		UserID: userUUID,
+		Limit:  int32(limit),
+	})
+	if err != nil {
+		return nil, fmt.Errorf("list password history: %w", err)
+	}
+	if hashes == nil {
+		hashes = []string{}
+	}
+	return hashes, nil
+}
+
+func (r *sqlcRepository) InsertPasswordHistory(ctx context.Context, tx pgx.Tx, userID, passwordHash string) error {
+	userUUID, err := toUUID(userID)
+	if err != nil {
+		return fmt.Errorf("invalid user id: %w", err)
+	}
+	if err := r.queries.WithTx(tx).InsertPasswordHistory(ctx, authsqlc.InsertPasswordHistoryParams{
+		UserID:       userUUID,
+		PasswordHash: passwordHash,
+	}); err != nil {
+		return fmt.Errorf("insert password history: %w", err)
+	}
+	return nil
+}
+
+func (r *sqlcRepository) DeleteOldPasswordHistory(ctx context.Context, tx pgx.Tx, userID string, keep int) error {
+	userUUID, err := toUUID(userID)
+	if err != nil {
+		return fmt.Errorf("invalid user id: %w", err)
+	}
+	if err := r.queries.WithTx(tx).DeleteOldPasswordHistory(ctx, authsqlc.DeleteOldPasswordHistoryParams{
+		UserID: userUUID,
+		Offset: int32(keep),
+	}); err != nil {
+		return fmt.Errorf("delete old password history: %w", err)
 	}
 	return nil
 }
