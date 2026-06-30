@@ -14,11 +14,11 @@ import (
 )
 
 type fakeService struct {
-	listFunc func(ctx context.Context, orgID string) ([]assessments.AssessmentListItem, error)
+	listFunc func(ctx context.Context, orgID string, opts assessments.ListOptions) ([]assessments.AssessmentListItem, error)
 }
 
-func (f *fakeService) ListAssessments(ctx context.Context, orgID string) ([]assessments.AssessmentListItem, error) {
-	return f.listFunc(ctx, orgID)
+func (f *fakeService) ListAssessments(ctx context.Context, orgID string, opts assessments.ListOptions) ([]assessments.AssessmentListItem, error) {
+	return f.listFunc(ctx, orgID, opts)
 }
 
 func tokenWithRoles(roles []string) string {
@@ -32,7 +32,7 @@ func tokenWithRoles(roles []string) string {
 
 func TestHandler_ListAssessments_TeacherAllowed(t *testing.T) {
 	svc := &fakeService{
-		listFunc: func(ctx context.Context, orgID string) ([]assessments.AssessmentListItem, error) {
+		listFunc: func(ctx context.Context, orgID string, opts assessments.ListOptions) ([]assessments.AssessmentListItem, error) {
 			return []assessments.AssessmentListItem{
 				{ID: "a1", Title: "Demo", Status: "PUBLISHED", DurationMinutes: 45},
 			}, nil
@@ -65,9 +65,57 @@ func TestHandler_ListAssessments_TeacherAllowed(t *testing.T) {
 	}
 }
 
+func TestHandler_ListAssessments_PaginationQuery(t *testing.T) {
+	svc := &fakeService{
+		listFunc: func(ctx context.Context, orgID string, opts assessments.ListOptions) ([]assessments.AssessmentListItem, error) {
+			if opts.Query != "mid" {
+				t.Errorf("query = %q, want mid", opts.Query)
+			}
+			if opts.Limit != 2 {
+				t.Errorf("limit = %d, want 2", opts.Limit)
+			}
+			if opts.Offset != 5 {
+				t.Errorf("offset = %d, want 5", opts.Offset)
+			}
+			return []assessments.AssessmentListItem{
+				{ID: "a2", Title: "Midterm", Status: "PUBLISHED", DurationMinutes: 60},
+			}, nil
+		},
+	}
+	issuer := auth.NewTokenIssuer("test-signing-key-minimum-32-bytes-long", "test-issuer", "test-audience", 15*time.Minute)
+	h := assessments.NewHandler(svc, issuer)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/assessments?q=mid&limit=2&offset=5", nil)
+	req.Header.Set("Authorization", "Bearer "+tokenWithRoles([]string{"teacher"}))
+	rec := httptest.NewRecorder()
+
+	h.ListAssessments(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", rec.Code, http.StatusOK)
+	}
+
+	var resp struct {
+		Data []assessments.AssessmentListItem `json:"data"`
+		Page *struct {
+			Limit  int `json:"limit"`
+			Offset int `json:"offset"`
+		} `json:"page"`
+	}
+	if err := json.NewDecoder(rec.Body).Decode(&resp); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if len(resp.Data) != 1 {
+		t.Fatalf("expected 1 assessment, got %d", len(resp.Data))
+	}
+	if resp.Page == nil || resp.Page.Limit != 2 || resp.Page.Offset != 5 {
+		t.Fatalf("expected page {limit:2 offset:5}, got %+v", resp.Page)
+	}
+}
+
 func TestHandler_ListAssessments_AdminAllowed(t *testing.T) {
 	svc := &fakeService{
-		listFunc: func(ctx context.Context, orgID string) ([]assessments.AssessmentListItem, error) {
+		listFunc: func(ctx context.Context, orgID string, opts assessments.ListOptions) ([]assessments.AssessmentListItem, error) {
 			return []assessments.AssessmentListItem{}, nil
 		},
 	}
@@ -118,7 +166,7 @@ func TestHandler_ListAssessments_MissingToken(t *testing.T) {
 
 func TestHandler_ListAssessments_ServiceError(t *testing.T) {
 	svc := &fakeService{
-		listFunc: func(ctx context.Context, orgID string) ([]assessments.AssessmentListItem, error) {
+		listFunc: func(ctx context.Context, orgID string, opts assessments.ListOptions) ([]assessments.AssessmentListItem, error) {
 			return nil, errors.New("boom")
 		},
 	}

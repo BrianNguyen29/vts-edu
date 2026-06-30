@@ -4,51 +4,50 @@ import (
 	"context"
 	"fmt"
 
+	assessmentsqlc "github.com/BrianNguyen29/vts-edu/apps/api/internal/features/assessments/sqlc"
+	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 // Repository defines persistence operations for the assessments feature.
 type Repository interface {
-	ListPublishedByOrganization(ctx context.Context, orgID string) ([]Assessment, error)
+	ListPublishedByOrganization(ctx context.Context, orgID string, opts ListOptions) ([]Assessment, error)
 }
 
-type repository struct {
-	pool *pgxpool.Pool
+type sqlcRepository struct {
+	queries *assessmentsqlc.Queries
 }
 
-// NewRepository creates a new assessments repository backed by a pgx pool.
+// NewRepository creates a new assessments repository backed by generated sqlc
+// queries. It preserves the existing Repository interface.
 func NewRepository(pool *pgxpool.Pool) Repository {
-	return &repository{pool: pool}
+	return &sqlcRepository{queries: assessmentsqlc.New(pool)}
 }
 
-func (r *repository) ListPublishedByOrganization(ctx context.Context, orgID string) ([]Assessment, error) {
-	query := `
-		SELECT id, title, status, duration_minutes
-		FROM assessments
-		WHERE organization_id = $1
-		  AND status IN ('OPEN', 'PUBLISHED')
-		ORDER BY created_at DESC
-	`
+func (r *sqlcRepository) ListPublishedByOrganization(ctx context.Context, orgID string, opts ListOptions) ([]Assessment, error) {
+	var orgUUID pgtype.UUID
+	if err := orgUUID.Scan(orgID); err != nil {
+		return nil, fmt.Errorf("invalid organization id: %w", err)
+	}
 
-	rows, err := r.pool.Query(ctx, query, orgID)
+	rows, err := r.queries.ListPublishedByOrganization(ctx, assessmentsqlc.ListPublishedByOrganizationParams{
+		OrganizationID: orgUUID,
+		Column2:        opts.Query,
+		Column3:        int32(opts.Limit),
+		Column4:        int32(opts.Offset),
+	})
 	if err != nil {
 		return nil, fmt.Errorf("list assessments: %w", err)
 	}
-	defer rows.Close()
 
-	var list []Assessment
-	for rows.Next() {
-		var a Assessment
-		if err := rows.Scan(&a.ID, &a.Title, &a.Status, &a.DurationMinutes); err != nil {
-			return nil, fmt.Errorf("scan assessment: %w", err)
+	list := make([]Assessment, len(rows))
+	for i, row := range rows {
+		list[i] = Assessment{
+			ID:              row.ID.String(),
+			Title:           row.Title,
+			Status:          row.Status,
+			DurationMinutes: int(row.DurationMinutes),
 		}
-		list = append(list, a)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("iterate assessments: %w", err)
-	}
-	if list == nil {
-		list = []Assessment{}
 	}
 	return list, nil
 }

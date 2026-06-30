@@ -11,9 +11,9 @@ Backend đã có các feature slices ổn định (auth, attempts, assessments, 
 
 Tiếp cận từng giai đoạn:
 
-1. **Hiện tại**: Duy trì OpenAPI skeleton bằng tay (`docs/backend/backend-technical-spec/openapi/openapi-skeleton.yaml`) phản ánh đúng API surface đã implement. Các `Repository` interfaces trong từng feature package (`auth`, `attempts`, `assessments`, `admin`) là seam ổn định để sau này thay thế implementation.
-2. **Stage 1 — sqlc**: Tạo sqlc generated queries và một repository implementation mới cho từng feature, chạy song song với implementation cũ. Di chuyển từng feature một qua test coverage đầy đủ. Không thay đổi service/handler contracts.
-3. **Stage 2 — Huma**: Khi sqlc đã ổn, định nghĩa Huma operations cho từng endpoint hoặc thay thế dần handler wiring. OpenAPI spec sẽ được generate tự động từ Huma và đồng bộ với skeleton.
+1. **Hiện tại**: Duy trì OpenAPI skeleton bằng tay (`docs/backend/backend-technical-spec/openapi/openapi-skeleton.yaml`) phản ánh đúng API surface đã implement. Sinh TypeScript types từ skeleton (`apps/web/src/shared/api/openapi-schema.d.ts`) dùng `openapi-typescript`, type-only, không thay thế runtime `apiClient`.
+2. **Stage 1 — sqlc (đang tiến hành)**: Đã migrate `assessments` repository sang sqlc generated queries (`apps/api/internal/features/assessments/sqlc/`) qua wrapper giữ nguyên `assessments.Repository` interface. Các feature còn lại (`auth`, `attempts`, `admin`) vẫn dùng implementation hiện tại và sẽ migrate từng bước khi có test coverage đầy đủ. Không thay đổi service/handler contracts.
+3. **Stage 2 — Huma (deferred)**: Huma vẫn tạm hoãn cho đến khi sqlc/API contract ổn định hơn. OpenAPI skeleton vẫn được duy trì thủ công trong giai đoạn này.
 4. **Stage 3 — Client generation**: Sinh frontend API client/types từ OpenAPI contract sau khi spec ổn định.
 
 ## Consequences

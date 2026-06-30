@@ -1,6 +1,8 @@
 import { useState, type FormEvent } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '@/app/providers/auth-provider';
+import { PasswordPolicyHints } from '@/shared/components/password-policy-hints';
+import { validatePassword } from '@/shared/lib/password-policy';
 
 function getRoleHomePath(roles: string[]): string {
   if (roles.includes('admin')) return '/app/admin';
@@ -24,8 +26,9 @@ export function ChangePasswordPage() {
     setError(null);
     setSuccess(false);
 
-    if (newPassword.length < 8) {
-      setError('Mật khẩu mới phải có ít nhất 8 ký tự.');
+    const passwordCheck = validatePassword(newPassword);
+    if (!passwordCheck.valid) {
+      setError('Mật khẩu mới chưa đáp ứng yêu cầu bảo mật.');
       return;
     }
 
@@ -116,6 +119,7 @@ export function ChangePasswordPage() {
             value={newPassword}
             onChange={(e) => setNewPassword(e.target.value)}
           />
+          <PasswordPolicyHints password={newPassword} />
         </div>
 
         <div className="field">

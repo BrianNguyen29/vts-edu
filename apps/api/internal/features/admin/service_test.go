@@ -5,11 +5,12 @@ import (
 	"errors"
 	"testing"
 
+	"github.com/BrianNguyen29/vts-edu/apps/api/internal/features/auth"
 	"github.com/jackc/pgx/v5"
 )
 
 type fakeRepository struct {
-	listFunc          func(ctx context.Context, orgID string) ([]User, error)
+	listFunc          func(ctx context.Context, orgID string, opts ListOptions) ([]User, error)
 	loginExistsFunc   func(ctx context.Context, orgID, loginName string) (bool, error)
 	createFunc        func(ctx context.Context, tx pgx.Tx, orgID, displayName, email, loginName, passwordHash string, roles []string) (User, error)
 	membershipFunc    func(ctx context.Context, orgID, userID string) (string, error)
@@ -17,12 +18,15 @@ type fakeRepository struct {
 	bumpAuthFunc      func(ctx context.Context, tx pgx.Tx, userID string) error
 	resetPasswordFunc func(ctx context.Context, tx pgx.Tx, userID, orgID, passwordHash string) error
 	revokeFunc        func(ctx context.Context, tx pgx.Tx, userID string) error
+	insertAuditFunc   func(ctx context.Context, tx pgx.Tx, p AuditLogParams) error
 	getOrgFunc        func(ctx context.Context, orgID string) (Organization, error)
 	updateOrgFunc     func(ctx context.Context, tx pgx.Tx, orgID, name string) error
+
+	auditLogs []AuditLogParams
 }
 
-func (f *fakeRepository) ListUsers(ctx context.Context, orgID string) ([]User, error) {
-	return f.listFunc(ctx, orgID)
+func (f *fakeRepository) ListUsers(ctx context.Context, orgID string, opts ListOptions) ([]User, error) {
+	return f.listFunc(ctx, orgID, opts)
 }
 
 func (f *fakeRepository) LoginExists(ctx context.Context, orgID, loginName string) (bool, error) {
@@ -53,6 +57,14 @@ func (f *fakeRepository) RevokeUserSessions(ctx context.Context, tx pgx.Tx, user
 	return f.revokeFunc(ctx, tx, userID)
 }
 
+func (f *fakeRepository) InsertAuditLog(ctx context.Context, tx pgx.Tx, p AuditLogParams) error {
+	if f.insertAuditFunc != nil {
+		return f.insertAuditFunc(ctx, tx, p)
+	}
+	f.auditLogs = append(f.auditLogs, p)
+	return nil
+}
+
 func (f *fakeRepository) GetOrganization(ctx context.Context, orgID string) (Organization, error) {
 	return f.getOrgFunc(ctx, orgID)
 }
@@ -65,6 +77,32 @@ type stubTxManager struct{}
 
 func (stubTxManager) WithinTx(ctx context.Context, fn func(ctx context.Context, tx pgx.Tx) error) error {
 	return fn(ctx, nil)
+}
+
+func TestService_ListUsers(t *testing.T) {
+	repo := &fakeRepository{
+		listFunc: func(ctx context.Context, orgID string, opts ListOptions) ([]User, error) {
+			if opts.Query != "alice" {
+				t.Errorf("query = %q, want alice", opts.Query)
+			}
+			if opts.Limit != 5 {
+				t.Errorf("limit = %d, want 5", opts.Limit)
+			}
+			if opts.Offset != 10 {
+				t.Errorf("offset = %d, want 10", opts.Offset)
+			}
+			return []User{{ID: "u1", LoginName: "alice01"}}, nil
+		},
+	}
+
+	svc := NewService(repo, stubTxManager{})
+	users, err := svc.ListUsers(context.Background(), "org-id", ListOptions{Query: "alice", Limit: 5, Offset: 10})
+	if err != nil {
+		t.Fatalf("ListUsers failed: %v", err)
+	}
+	if len(users) != 1 || users[0].LoginName != "alice01" {
+		t.Errorf("users = %v", users)
+	}
 }
 
 func TestService_CreateUser_OK(t *testing.T) {
@@ -80,7 +118,7 @@ func TestService_CreateUser_OK(t *testing.T) {
 	}
 
 	svc := NewService(repo, stubTxManager{})
-	user, err := svc.CreateUser(context.Background(), "org-id", CreateUserRequest{
+	user, err := svc.CreateUser(context.Background(), "org-id", "actor-1", CreateUserRequest{
 		LoginName:         "newuser",
 		DisplayName:       "New User",
 		TemporaryPassword: "TempPass123!",
@@ -101,6 +139,23 @@ func TestService_CreateUser_OK(t *testing.T) {
 	if !user.MustChangePassword {
 		t.Error("expected must_change_password = true")
 	}
+
+	if len(repo.auditLogs) != 1 || repo.auditLogs[0].Action != "user.create" {
+		t.Errorf("expected audit log user.create, got %v", repo.auditLogs)
+	}
+}
+
+func TestService_CreateUser_WeakPassword(t *testing.T) {
+	svc := NewService(&fakeRepository{}, stubTxManager{})
+	_, err := svc.CreateUser(context.Background(), "org-id", "actor-1", CreateUserRequest{
+		LoginName:         "newuser",
+		DisplayName:       "New User",
+		TemporaryPassword: "password",
+		Roles:             []string{"student"},
+	})
+	if !errors.Is(err, auth.ErrWeakPassword) {
+		t.Fatalf("expected ErrWeakPassword, got %v", err)
+	}
 }
 
 func TestService_CreateUser_DuplicateLogin(t *testing.T) {
@@ -111,7 +166,7 @@ func TestService_CreateUser_DuplicateLogin(t *testing.T) {
 	}
 
 	svc := NewService(repo, stubTxManager{})
-	_, err := svc.CreateUser(context.Background(), "org-id", CreateUserRequest{
+	_, err := svc.CreateUser(context.Background(), "org-id", "actor-1", CreateUserRequest{
 		LoginName:         "existing",
 		DisplayName:       "Existing",
 		TemporaryPassword: "TempPass123!",
@@ -124,7 +179,7 @@ func TestService_CreateUser_DuplicateLogin(t *testing.T) {
 
 func TestService_CreateUser_InvalidInput(t *testing.T) {
 	svc := NewService(&fakeRepository{}, stubTxManager{})
-	_, err := svc.CreateUser(context.Background(), "org-id", CreateUserRequest{
+	_, err := svc.CreateUser(context.Background(), "org-id", "actor-1", CreateUserRequest{
 		LoginName:         "",
 		DisplayName:       "Missing Login",
 		TemporaryPassword: "TempPass123!",
@@ -142,7 +197,7 @@ func TestService_CreateUser_InvalidRole(t *testing.T) {
 		},
 	}
 	svc := NewService(repo, stubTxManager{})
-	_, err := svc.CreateUser(context.Background(), "org-id", CreateUserRequest{
+	_, err := svc.CreateUser(context.Background(), "org-id", "actor-1", CreateUserRequest{
 		LoginName:         "newuser",
 		DisplayName:       "New User",
 		TemporaryPassword: "TempPass123!",
@@ -176,11 +231,14 @@ func TestService_UpdateRoles_OK(t *testing.T) {
 	}
 
 	svc := NewService(repo, stubTxManager{})
-	if err := svc.UpdateRoles(context.Background(), "org-id", "user-id", UpdateRolesRequest{Roles: []string{"teacher"}}); err != nil {
+	if err := svc.UpdateRoles(context.Background(), "org-id", "actor-1", "user-id", UpdateRolesRequest{Roles: []string{"teacher"}}); err != nil {
 		t.Fatalf("UpdateRoles failed: %v", err)
 	}
 	if !replaced || !bumped || !revoked {
 		t.Error("expected roles replaced, auth version bumped, and sessions revoked")
+	}
+	if len(repo.auditLogs) != 1 || repo.auditLogs[0].Action != "user.update_roles" {
+		t.Errorf("expected audit log user.update_roles, got %v", repo.auditLogs)
 	}
 }
 
@@ -191,7 +249,7 @@ func TestService_UpdateRoles_UserNotFound(t *testing.T) {
 		},
 	}
 	svc := NewService(repo, stubTxManager{})
-	err := svc.UpdateRoles(context.Background(), "org-id", "user-id", UpdateRolesRequest{Roles: []string{"teacher"}})
+	err := svc.UpdateRoles(context.Background(), "org-id", "actor-1", "user-id", UpdateRolesRequest{Roles: []string{"teacher"}})
 	if !errors.Is(err, ErrUserNotFound) {
 		t.Fatalf("expected ErrUserNotFound, got %v", err)
 	}
@@ -212,19 +270,30 @@ func TestService_ResetPassword_OK(t *testing.T) {
 	}
 
 	svc := NewService(repo, stubTxManager{})
-	if err := svc.ResetPassword(context.Background(), "org-id", "user-id", ResetPasswordRequest{TemporaryPassword: "ResetPass123!"}); err != nil {
+	if err := svc.ResetPassword(context.Background(), "org-id", "actor-1", "user-id", ResetPasswordRequest{TemporaryPassword: "ResetPass123!"}); err != nil {
 		t.Fatalf("ResetPassword failed: %v", err)
 	}
 	if !reset || !revoked {
 		t.Error("expected password reset and sessions revoked")
 	}
+	if len(repo.auditLogs) != 1 || repo.auditLogs[0].Action != "user.reset_password" {
+		t.Errorf("expected audit log user.reset_password, got %v", repo.auditLogs)
+	}
 }
 
 func TestService_ResetPassword_MissingPassword(t *testing.T) {
 	svc := NewService(&fakeRepository{}, stubTxManager{})
-	err := svc.ResetPassword(context.Background(), "org-id", "user-id", ResetPasswordRequest{TemporaryPassword: ""})
+	err := svc.ResetPassword(context.Background(), "org-id", "actor-1", "user-id", ResetPasswordRequest{TemporaryPassword: ""})
 	if !errors.Is(err, ErrInvalidInput) {
 		t.Fatalf("expected ErrInvalidInput, got %v", err)
+	}
+}
+
+func TestService_ResetPassword_WeakPassword(t *testing.T) {
+	svc := NewService(&fakeRepository{}, stubTxManager{})
+	err := svc.ResetPassword(context.Background(), "org-id", "actor-1", "user-id", ResetPasswordRequest{TemporaryPassword: "password"})
+	if !errors.Is(err, auth.ErrWeakPassword) {
+		t.Fatalf("expected ErrWeakPassword, got %v", err)
 	}
 }
 
@@ -241,7 +310,7 @@ func TestService_UpdateOrganization_OK(t *testing.T) {
 	}
 
 	svc := NewService(repo, stubTxManager{})
-	org, err := svc.UpdateOrganization(context.Background(), "org-id", UpdateOrganizationRequest{Name: "New Name"})
+	org, err := svc.UpdateOrganization(context.Background(), "org-id", "actor-1", UpdateOrganizationRequest{Name: "New Name"})
 	if err != nil {
 		t.Fatalf("UpdateOrganization failed: %v", err)
 	}
@@ -250,5 +319,8 @@ func TestService_UpdateOrganization_OK(t *testing.T) {
 	}
 	if org.Name != "New Name" {
 		t.Errorf("name = %q, want New Name", org.Name)
+	}
+	if len(repo.auditLogs) != 1 || repo.auditLogs[0].Action != "organization.update" {
+		t.Errorf("expected audit log organization.update, got %v", repo.auditLogs)
 	}
 }

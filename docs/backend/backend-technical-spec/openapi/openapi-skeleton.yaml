@@ -74,7 +74,7 @@ paths:
     post:
       operationId: auth.changePassword
       tags: [Auth]
-      description: Requires Bearer access token and `X-CSRF-Token` header.
+      description: Requires Bearer access token and `X-CSRF-Token` header. Enforces password policy.
       requestBody:
         required: true
         content:
@@ -88,6 +88,8 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/SuccessResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
         '401':
           $ref: '#/components/responses/Unauthorized'
         '403':
@@ -189,7 +191,11 @@ paths:
     get:
       operationId: assessments.list
       tags: [Assessments]
-      description: Teacher or admin only.
+      description: Teacher or admin only. Optional case-insensitive title search and pagination.
+      parameters:
+        - $ref: '#/components/parameters/ListQuery'
+        - $ref: '#/components/parameters/ListLimit'
+        - $ref: '#/components/parameters/ListOffset'
       responses:
         '200':
           description: Published/open assessments for the current organization
@@ -197,6 +203,8 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/AssessmentList'
+        '400':
+          $ref: '#/components/responses/BadRequest'
         '401':
           $ref: '#/components/responses/Unauthorized'
         '403':
@@ -205,7 +213,11 @@ paths:
     get:
       operationId: users.list
       tags: [Admin]
-      description: Admin only.
+      description: Admin only. Optional case-insensitive search on login name, display name, or email, plus pagination.
+      parameters:
+        - $ref: '#/components/parameters/ListQuery'
+        - $ref: '#/components/parameters/ListLimit'
+        - $ref: '#/components/parameters/ListOffset'
       responses:
         '200':
           description: Users in the current organization
@@ -213,6 +225,8 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/UserList'
+        '400':
+          $ref: '#/components/responses/BadRequest'
         '401':
           $ref: '#/components/responses/Unauthorized'
         '403':
@@ -349,6 +363,22 @@ components:
       type: http
       scheme: bearer
       bearerFormat: JWT
+  parameters:
+    ListQuery:
+      name: q
+      in: query
+      description: Case-insensitive search query.
+      schema: { type: string }
+    ListLimit:
+      name: limit
+      in: query
+      description: Page size. When omitted the full list is returned.
+      schema: { type: integer, minimum: 1 }
+    ListOffset:
+      name: offset
+      in: query
+      description: Number of rows to skip.
+      schema: { type: integer, minimum: 0 }
   schemas:
     CsrfTokenResponse:
       type: object
@@ -401,7 +431,10 @@ components:
       required: [current_password, new_password]
       properties:
         current_password: { type: string, minLength: 1 }
-        new_password: { type: string, minLength: 1 }
+        new_password:
+          type: string
+          minLength: 8
+          description: Must contain at least one uppercase letter, one lowercase letter, one digit, and not match a common blocklist.
     MeResponse:
       type: object
       required: [data]
@@ -485,6 +518,12 @@ components:
             score: { type: string }
             max_score: { type: string }
             grading_status: { type: string, enum: [GRADED] }
+    PageInfo:
+      type: object
+      required: [limit, offset]
+      properties:
+        limit: { type: integer, minimum: 1 }
+        offset: { type: integer, minimum: 0 }
     AssessmentList:
       type: object
       required: [data]
@@ -493,6 +532,8 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/AssessmentListItem'
+        page:
+          $ref: '#/components/schemas/PageInfo'
     AssessmentListItem:
       type: object
       required: [id, title, status, duration_minutes]
@@ -509,6 +550,8 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/User'
+        page:
+          $ref: '#/components/schemas/PageInfo'
     User:
       type: object
       required: [id, display_name, email, login_name, roles, must_change_password]
@@ -527,7 +570,10 @@ components:
         login_name: { type: string, minLength: 1, maxLength: 128 }
         display_name: { type: string, minLength: 1 }
         email: { type: string, nullable: true }
-        temporary_password: { type: string, minLength: 1 }
+        temporary_password:
+          type: string
+          minLength: 8
+          description: Must contain at least one uppercase letter, one lowercase letter, one digit, and not match a common blocklist.
         roles: { type: array, items: { type: string, enum: [student, teacher, admin] } }
     UpdateRolesRequest:
       type: object
@@ -540,7 +586,10 @@ components:
       additionalProperties: false
       required: [temporary_password]
       properties:
-        temporary_password: { type: string, minLength: 1 }
+        temporary_password:
+          type: string
+          minLength: 8
+          description: Must contain at least one uppercase letter, one lowercase letter, one digit, and not match a common blocklist.
     Organization:
       type: object
       required: [data]

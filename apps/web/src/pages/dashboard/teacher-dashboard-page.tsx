@@ -29,15 +29,20 @@ export function TeacherDashboardPage() {
   const [assessments, setAssessments] = useState<AssessmentListItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [searchInput, setSearchInput] = useState('');
+  const [searchQuery, setSearchQuery] = useState('');
 
   useEffect(() => {
     let cancelled = false;
 
     async function load() {
       try {
-        const data = await listAssessments();
+        const response = await listAssessments({
+          q: searchQuery || undefined,
+          limit: 50,
+        });
         if (cancelled) return;
-        setAssessments(data);
+        setAssessments(response.data);
       } catch (err) {
         if (cancelled) return;
         setError(formatFriendlyError(err));
@@ -51,7 +56,14 @@ export function TeacherDashboardPage() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [searchQuery]);
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setSearchQuery(searchInput.trim());
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [searchInput]);
 
   return (
     <div className="dashboard-page">
@@ -63,6 +75,15 @@ export function TeacherDashboardPage() {
       <section className="dashboard-section">
         <h2>Đề thi</h2>
 
+        <div className="search-bar">
+          <input
+            type="search"
+            placeholder="Tìm theo tên đề thi…"
+            value={searchInput}
+            onChange={(e) => setSearchInput(e.target.value)}
+          />
+        </div>
+
         {loading && <p className="dashboard-status">Đang tải danh sách đề thi…</p>}
 
         {error && (
@@ -71,9 +92,14 @@ export function TeacherDashboardPage() {
           </div>
         )}
 
-        {!loading && !error && assessments.length === 0 && (
-          <p className="dashboard-status">Chưa có đề thi nào.</p>
-        )}
+        {!loading &&
+          !error &&
+          assessments.length === 0 &&
+          (searchQuery ? (
+            <p className="dashboard-status">Không tìm thấy đề thi phù hợp.</p>
+          ) : (
+            <p className="dashboard-status">Chưa có đề thi nào.</p>
+          ))}
 
         {!loading && !error && assessments.length > 0 && (
           <ul className="assessment-list">

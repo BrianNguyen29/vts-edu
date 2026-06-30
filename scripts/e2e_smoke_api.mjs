@@ -1,3 +1,7 @@
+import { exec } from 'node:child_process';
+import { promisify } from 'node:util';
+
+const execAsync = promisify(exec);
 const API_BASE = 'http://localhost:8080';
 const API_PREFIX = `${API_BASE}/api/v1`;
 const ATTEMPT_ID = '00000000-0000-4000-8000-000000000001';
@@ -73,6 +77,18 @@ async function changePassword(token, currentPassword, newPassword) {
   console.log('  change password success:', json.data.success);
 }
 
+async function assertChangePasswordRejected(token, currentPassword, newPassword) {
+  const r = await fetch(`${API_PREFIX}/auth/change-password`, {
+    method: 'POST',
+    headers: headers(token, true),
+    body: JSON.stringify({ current_password: currentPassword, new_password: newPassword }),
+  });
+  if (r.status !== 400) {
+    throw new Error(`expected weak password change to return 400, got ${r.status}`);
+  }
+  console.log('  change-password weak rejected:', r.status);
+}
+
 async function listAssessments(token) {
   const r = await fetch(`${API_PREFIX}/assessments`, { headers: headers(token) });
   if (!r.ok) throw new Error(`list assessments failed: ${r.status}`);
@@ -80,6 +96,23 @@ async function listAssessments(token) {
   console.log('  assessments:', json.data.length);
   if (!Array.isArray(json.data) || json.data.length === 0) {
     throw new Error('expected non-empty assessment list for teacher');
+  }
+  return json.data;
+}
+
+async function listAssessmentsSearch(token, query, limit) {
+  const url = new URL(`${API_PREFIX}/assessments`);
+  url.searchParams.set('q', query);
+  url.searchParams.set('limit', String(limit));
+  const r = await fetch(url, { headers: headers(token) });
+  if (!r.ok) throw new Error(`list assessments search failed: ${r.status}`);
+  const json = await r.json();
+  console.log('  assessments search:', json.data.length, '| page:', json.page);
+  if (!Array.isArray(json.data)) {
+    throw new Error('expected data array in paginated assessment response');
+  }
+  if (!json.page || json.page.limit !== limit) {
+    throw new Error(`expected page.limit=${limit}, got ${JSON.stringify(json.page)}`);
   }
   return json.data;
 }
@@ -100,6 +133,23 @@ async function listUsers(token) {
   return json.data;
 }
 
+async function listUsersSearchAndLimit(token, query, limit) {
+  const url = new URL(`${API_PREFIX}/users`);
+  url.searchParams.set('q', query);
+  url.searchParams.set('limit', String(limit));
+  const r = await fetch(url, { headers: headers(token) });
+  if (!r.ok) throw new Error(`list users search failed: ${r.status}`);
+  const json = await r.json();
+  console.log('  users search:', json.data.length, '| page:', json.page);
+  if (!Array.isArray(json.data)) {
+    throw new Error('expected data array in paginated user response');
+  }
+  if (!json.page || json.page.limit !== limit) {
+    throw new Error(`expected page.limit=${limit}, got ${JSON.stringify(json.page)}`);
+  }
+  return json.data;
+}
+
 async function createUser(token, loginName, displayName, roles, temporaryPassword) {
   const r = await fetch(`${API_PREFIX}/users`, {
     method: 'POST',
@@ -110,6 +160,18 @@ async function createUser(token, loginName, displayName, roles, temporaryPasswor
   const json = await r.json();
   console.log('  created user:', json.data.login_name, json.data.id);
   return json.data;
+}
+
+async function assertCreateUserRejected(token, loginName, displayName, roles, temporaryPassword) {
+  const r = await fetch(`${API_PREFIX}/users`, {
+    method: 'POST',
+    headers: headers(token, true),
+    body: JSON.stringify({ login_name: loginName, display_name: displayName, roles, temporary_password: temporaryPassword }),
+  });
+  if (r.status !== 400) {
+    throw new Error(`expected weak password create user to return 400, got ${r.status}`);
+  }
+  console.log('  create-user weak rejected:', r.status);
 }
 
 async function updateUserRoles(token, userID, roles) {
@@ -130,6 +192,18 @@ async function resetUserPassword(token, userID, temporaryPassword) {
   });
   if (!r.ok) throw new Error(`reset password failed: ${r.status}`);
   console.log('  reset password for user:', userID);
+}
+
+async function assertResetPasswordRejected(token, userID, temporaryPassword) {
+  const r = await fetch(`${API_PREFIX}/users/${userID}/reset-password`, {
+    method: 'POST',
+    headers: headers(token, true),
+    body: JSON.stringify({ temporary_password: temporaryPassword }),
+  });
+  if (r.status !== 400) {
+    throw new Error(`expected weak password reset to return 400, got ${r.status}`);
+  }
+  console.log('  reset-password weak rejected:', r.status);
 }
 
 async function getCurrentOrg(token) {
@@ -157,6 +231,21 @@ async function assertNonAdminCannotAccessAdmin(token, label) {
     throw new Error(`expected ${label} /users to return 403, got ${r.status}`);
   }
   console.log(`  ${label} /users correctly rejected:`, r.status);
+}
+
+async function assertAuditLogs(orgID, expectedActions) {
+  const { stdout } = await execAsync(
+    `docker exec vts-e2e-postgres psql -U postgres -v ON_ERROR_STOP=1 -t -c "` +
+      `SELECT action FROM audit_logs WHERE organization_id = '${orgID}' ORDER BY created_at DESC` +
+    `"`
+  );
+  const rows = stdout.split('\n').map((s) => s.trim()).filter(Boolean);
+  console.log('  audit log actions:', rows);
+  for (const action of expectedActions) {
+    if (!rows.includes(action)) {
+      throw new Error(`expected audit log action ${action} not found; got ${JSON.stringify(rows)}`);
+    }
+  }
 }
 
 async function getAttemptItems(token) {
@@ -232,6 +321,7 @@ async function main() {
 
   console.log('Checking forced password change flow...');
   const teacher = await loginWith('gv001', 'Password123!');
+  await assertChangePasswordRejected(teacher.data.access_token, 'Password123!', 'password');
   await changePassword(teacher.data.access_token, 'Password123!', 'NewPassword123!');
   const teacherAfter = await loginWith('gv001', 'NewPassword123!');
   if (teacherAfter.data.must_change_password) {
@@ -244,11 +334,18 @@ async function main() {
   console.log('Checking teacher assessment list...');
   await listAssessments(teacherAfter.data.access_token);
 
+  console.log('Checking teacher assessment search/limit...');
+  const searchedAssessments = await listAssessmentsSearch(teacherAfter.data.access_token, 'Demo', 1);
+  if (searchedAssessments.length > 1) {
+    throw new Error(`expected at most 1 assessment with limit=1, got ${searchedAssessments.length}`);
+  }
+
   console.log('Checking student cannot list assessments...');
   await assertStudentCannotListAssessments(token);
 
   console.log('Checking admin user management flow...');
   const admin = await loginWith('admin001', 'Password123!');
+  await assertChangePasswordRejected(admin.data.access_token, 'Password123!', '12345678');
   await changePassword(admin.data.access_token, 'Password123!', 'AdminPass123!');
   const adminAfter = await loginWith('admin001', 'AdminPass123!');
   if (!adminAfter.data.roles.includes('admin')) {
@@ -259,6 +356,14 @@ async function main() {
   if (users.length < 3) {
     throw new Error(`expected at least 3 seeded users, got ${users.length}`);
   }
+
+  console.log('Checking user search/limit...');
+  const searchedUsers = await listUsersSearchAndLimit(adminAfter.data.access_token, 'hs', 1);
+  if (searchedUsers.length > 1) {
+    throw new Error(`expected at most 1 user with limit=1, got ${searchedUsers.length}`);
+  }
+
+  await assertCreateUserRejected(adminAfter.data.access_token, 'weakuser', 'Weak User', ['student'], 'password');
 
   const newUser = await createUser(adminAfter.data.access_token, 'testuser', 'Test User', ['student'], 'TempPass123!');
   if (!newUser.must_change_password) {
@@ -271,6 +376,7 @@ async function main() {
   }
 
   await updateUserRoles(adminAfter.data.access_token, newUser.id, ['student', 'teacher']);
+  await assertResetPasswordRejected(adminAfter.data.access_token, newUser.id, 'password123');
   await resetUserPassword(adminAfter.data.access_token, newUser.id, 'ResetPass123!');
   const resetLogin = await loginWith('testuser', 'ResetPass123!');
   if (!resetLogin.data.must_change_password) {
@@ -280,8 +386,11 @@ async function main() {
     throw new Error(`roles after update mismatch: ${resetLogin.data.roles}`);
   }
 
-  await getCurrentOrg(adminAfter.data.access_token);
+  const org = await getCurrentOrg(adminAfter.data.access_token);
   await updateCurrentOrg(adminAfter.data.access_token, 'Trường THPT Demo A Updated');
+
+  console.log('Checking audit logs...');
+  await assertAuditLogs(org.id, ['organization.update', 'user.reset_password', 'user.update_roles', 'user.create']);
 
   await assertNonAdminCannotAccessAdmin(token, 'student');
   await assertNonAdminCannotAccessAdmin(teacherAfter.data.access_token, 'teacher');

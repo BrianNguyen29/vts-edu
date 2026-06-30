@@ -6,7 +6,7 @@ import (
 
 // Service is the assessments application service contract.
 type Service interface {
-	ListAssessments(ctx context.Context, orgID string) ([]AssessmentListItem, error)
+	ListAssessments(ctx context.Context, orgID string, opts ListOptions) ([]AssessmentListItem, error)
 }
 
 type service struct {
@@ -19,8 +19,8 @@ func NewService(repo Repository) Service {
 }
 
 // ListAssessments returns the tenant-scoped published/open assessment list.
-func (s *service) ListAssessments(ctx context.Context, orgID string) ([]AssessmentListItem, error) {
-	rows, err := s.repo.ListPublishedByOrganization(ctx, orgID)
+func (s *service) ListAssessments(ctx context.Context, orgID string, opts ListOptions) ([]AssessmentListItem, error) {
+	rows, err := s.repo.ListPublishedByOrganization(ctx, orgID, opts)
 	if err != nil {
 		return nil, err
 	}

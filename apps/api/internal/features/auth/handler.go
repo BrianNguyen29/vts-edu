@@ -161,15 +161,16 @@ func (h *Handler) ChangePassword(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := h.svc.ChangePassword(r.Context(), token, req); err != nil {
-		if errors.Is(err, ErrInvalidCredentials) {
+		switch {
+		case errors.Is(err, ErrInvalidCredentials):
 			writeError(w, http.StatusUnauthorized, "invalid_credentials", "current password is incorrect")
-			return
-		}
-		if errors.Is(err, ErrUnauthorized) {
+		case errors.Is(err, ErrUnauthorized):
 			writeError(w, http.StatusUnauthorized, "unauthorized", "invalid or expired token")
-			return
+		case errors.Is(err, ErrWeakPassword), errors.Is(err, ErrPasswordUnchanged):
+			writeError(w, http.StatusBadRequest, "bad_request", err.Error())
+		default:
+			writeError(w, http.StatusInternalServerError, "internal_error", "change password failed")
 		}
-		writeError(w, http.StatusInternalServerError, "internal_error", "change password failed")
 		return
 	}
 

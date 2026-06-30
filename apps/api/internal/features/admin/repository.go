@@ -12,7 +12,7 @@ import (
 
 // Repository defines persistence operations for the admin feature.
 type Repository interface {
-	ListUsers(ctx context.Context, orgID string) ([]User, error)
+	ListUsers(ctx context.Context, orgID string, opts ListOptions) ([]User, error)
 	LoginExists(ctx context.Context, orgID, loginName string) (bool, error)
 	CreateUser(ctx context.Context, tx pgx.Tx, orgID, displayName, email, loginName, passwordHash string, roles []string) (User, error)
 	GetMembershipID(ctx context.Context, orgID, userID string) (string, error)
@@ -20,6 +20,7 @@ type Repository interface {
 	BumpAuthVersion(ctx context.Context, tx pgx.Tx, userID string) error
 	ResetPassword(ctx context.Context, tx pgx.Tx, userID, orgID, passwordHash string) error
 	RevokeUserSessions(ctx context.Context, tx pgx.Tx, userID string) error
+	InsertAuditLog(ctx context.Context, tx pgx.Tx, p AuditLogParams) error
 	GetOrganization(ctx context.Context, orgID string) (Organization, error)
 	UpdateOrganization(ctx context.Context, tx pgx.Tx, orgID, name string) error
 }
@@ -33,8 +34,10 @@ func NewRepository(pool *pgxpool.Pool) Repository {
 	return &repository{pool: pool}
 }
 
-func (r *repository) ListUsers(ctx context.Context, orgID string) ([]User, error) {
-	query := `
+func (r *repository) ListUsers(ctx context.Context, orgID string, opts ListOptions) ([]User, error) {
+	var b strings.Builder
+	args := []any{orgID}
+	b.WriteString(`
 		SELECT
 			u.id,
 			u.display_name,
@@ -52,11 +55,34 @@ func (r *repository) ListUsers(ctx context.Context, orgID string) ([]User, error
 		WHERE m.organization_id = $1
 		  AND m.status = 'ACTIVE'
 		  AND ln.status = 'ACTIVE'
+	`)
+
+	if opts.Query != "" {
+		args = append(args, "%"+opts.Query+"%")
+		b.WriteString(fmt.Sprintf(`
+		  AND (
+			  ln.username_normalized ILIKE $%d
+			  OR u.display_name ILIKE $%d
+			  OR u.email ILIKE $%d
+		  )
+		`, len(args), len(args), len(args)))
+	}
+
+	b.WriteString(`
 		GROUP BY u.id, u.display_name, u.email, ln.username_normalized, u.must_change_password
 		ORDER BY ln.username_normalized
-	`
+	`)
 
-	rows, err := r.pool.Query(ctx, query, orgID)
+	if opts.Limit > 0 {
+		args = append(args, opts.Limit)
+		b.WriteString(fmt.Sprintf(` LIMIT $%d`, len(args)))
+		if opts.Offset > 0 {
+			args = append(args, opts.Offset)
+			b.WriteString(fmt.Sprintf(` OFFSET $%d`, len(args)))
+		}
+	}
+
+	rows, err := r.pool.Query(ctx, b.String(), args...)
 	if err != nil {
 		return nil, fmt.Errorf("list users: %w", err)
 	}
@@ -87,6 +113,25 @@ func (r *repository) ListUsers(ctx context.Context, orgID string) ([]User, error
 		users = []User{}
 	}
 	return users, nil
+}
+
+func (r *repository) InsertAuditLog(ctx context.Context, tx pgx.Tx, p AuditLogParams) error {
+	_, err := tx.Exec(ctx, `
+		INSERT INTO audit_logs (
+			organization_id,
+			actor_user_id,
+			action,
+			resource_type,
+			resource_id,
+			before_json,
+			after_json,
+			metadata_json
+		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+	`, p.OrganizationID, p.ActorUserID, p.Action, p.ResourceType, p.ResourceID, p.BeforeJSON, p.AfterJSON, p.MetadataJSON)
+	if err != nil {
+		return fmt.Errorf("insert audit log: %w", err)
+	}
+	return nil
 }
 
 func (r *repository) LoginExists(ctx context.Context, orgID, loginName string) (bool, error) {

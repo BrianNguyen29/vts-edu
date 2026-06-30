@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"strconv"
+	"strings"
 
 	"github.com/BrianNguyen29/vts-edu/apps/api/internal/features/auth"
 	"github.com/go-chi/chi/v5"
@@ -44,9 +46,19 @@ func (h *Handler) ListUsers(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	users, err := h.svc.ListUsers(r.Context(), actor.OrgID)
+	opts, ok := parseListOptions(w, r)
+	if !ok {
+		return
+	}
+
+	users, err := h.svc.ListUsers(r.Context(), actor.OrgID, opts)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "internal_error", "failed to list users")
+		return
+	}
+
+	if opts.Limit > 0 {
+		writePagedData(w, http.StatusOK, users, &PageInfo{Limit: opts.Limit, Offset: opts.Offset})
 		return
 	}
 
@@ -66,12 +78,12 @@ func (h *Handler) CreateUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	user, err := h.svc.CreateUser(r.Context(), actor.OrgID, req)
+	user, err := h.svc.CreateUser(r.Context(), actor.OrgID, actor.UserID, req)
 	if err != nil {
 		switch {
 		case errors.Is(err, ErrDuplicateLogin):
 			writeError(w, http.StatusConflict, "duplicate_login", err.Error())
-		case errors.Is(err, ErrInvalidInput):
+		case errors.Is(err, ErrInvalidInput), errors.Is(err, auth.ErrWeakPassword):
 			writeError(w, http.StatusBadRequest, "bad_request", err.Error())
 		default:
 			writeError(w, http.StatusInternalServerError, "internal_error", "failed to create user")
@@ -96,7 +108,7 @@ func (h *Handler) UpdateRoles(w http.ResponseWriter, r *http.Request) {
 	}
 
 	userID := chi.URLParam(r, "user_id")
-	if err := h.svc.UpdateRoles(r.Context(), actor.OrgID, userID, req); err != nil {
+	if err := h.svc.UpdateRoles(r.Context(), actor.OrgID, actor.UserID, userID, req); err != nil {
 		switch {
 		case errors.Is(err, ErrUserNotFound):
 			writeError(w, http.StatusNotFound, "not_found", err.Error())
@@ -125,11 +137,11 @@ func (h *Handler) ResetPassword(w http.ResponseWriter, r *http.Request) {
 	}
 
 	userID := chi.URLParam(r, "user_id")
-	if err := h.svc.ResetPassword(r.Context(), actor.OrgID, userID, req); err != nil {
+	if err := h.svc.ResetPassword(r.Context(), actor.OrgID, actor.UserID, userID, req); err != nil {
 		switch {
 		case errors.Is(err, ErrUserNotFound):
 			writeError(w, http.StatusNotFound, "not_found", err.Error())
-		case errors.Is(err, ErrInvalidInput):
+		case errors.Is(err, ErrInvalidInput), errors.Is(err, auth.ErrWeakPassword):
 			writeError(w, http.StatusBadRequest, "bad_request", err.Error())
 		default:
 			writeError(w, http.StatusInternalServerError, "internal_error", "failed to reset password")
@@ -169,7 +181,7 @@ func (h *Handler) UpdateOrganization(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	org, err := h.svc.UpdateOrganization(r.Context(), actor.OrgID, req)
+	org, err := h.svc.UpdateOrganization(r.Context(), actor.OrgID, actor.UserID, req)
 	if err != nil {
 		switch {
 		case errors.Is(err, ErrOrganizationNotFound):
@@ -183,4 +195,28 @@ func (h *Handler) UpdateOrganization(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeData(w, http.StatusOK, org)
+}
+
+func parseListOptions(w http.ResponseWriter, r *http.Request) (ListOptions, bool) {
+	opts := ListOptions{Query: strings.TrimSpace(r.URL.Query().Get("q"))}
+
+	if l := r.URL.Query().Get("limit"); l != "" {
+		val, err := strconv.Atoi(l)
+		if err != nil || val < 1 {
+			writeError(w, http.StatusBadRequest, "bad_request", "invalid limit")
+			return ListOptions{}, false
+		}
+		opts.Limit = val
+	}
+
+	if o := r.URL.Query().Get("offset"); o != "" {
+		val, err := strconv.Atoi(o)
+		if err != nil || val < 0 {
+			writeError(w, http.StatusBadRequest, "bad_request", "invalid offset")
+			return ListOptions{}, false
+		}
+		opts.Offset = val
+	}
+
+	return opts, true
 }

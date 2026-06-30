@@ -2,6 +2,8 @@ package assessments
 
 import (
 	"net/http"
+	"strconv"
+	"strings"
 
 	"github.com/BrianNguyen29/vts-edu/apps/api/internal/features/auth"
 )
@@ -30,13 +32,47 @@ func (h *Handler) ListAssessments(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	list, err := h.svc.ListAssessments(r.Context(), actor.OrgID)
+	opts, ok := parseListOptions(w, r)
+	if !ok {
+		return
+	}
+
+	list, err := h.svc.ListAssessments(r.Context(), actor.OrgID, opts)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "internal_error", "failed to list assessments")
 		return
 	}
 
+	if opts.Limit > 0 {
+		writePagedData(w, http.StatusOK, list, &PageInfo{Limit: opts.Limit, Offset: opts.Offset})
+		return
+	}
+
 	writeData(w, http.StatusOK, list)
+}
+
+func parseListOptions(w http.ResponseWriter, r *http.Request) (ListOptions, bool) {
+	opts := ListOptions{Query: strings.TrimSpace(r.URL.Query().Get("q"))}
+
+	if l := r.URL.Query().Get("limit"); l != "" {
+		val, err := strconv.Atoi(l)
+		if err != nil || val < 1 {
+			writeError(w, http.StatusBadRequest, "bad_request", "invalid limit")
+			return ListOptions{}, false
+		}
+		opts.Limit = val
+	}
+
+	if o := r.URL.Query().Get("offset"); o != "" {
+		val, err := strconv.Atoi(o)
+		if err != nil || val < 0 {
+			writeError(w, http.StatusBadRequest, "bad_request", "invalid offset")
+			return ListOptions{}, false
+		}
+		opts.Offset = val
+	}
+
+	return opts, true
 }
 
 func hasRequiredRole(roles []string, required []string) bool {

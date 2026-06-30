@@ -26,6 +26,9 @@
     "supabase:version": "pnpm exec supabase --version",
     "supabase:start": "pnpm exec supabase start",
     "supabase:stop": "pnpm exec supabase stop",
+    "api:types": "openapi-typescript docs/backend/backend-technical-spec/openapi/openapi-skeleton.yaml -o apps/web/src/shared/api/openapi-schema.d.ts",
+    "api:sqlc": "cd apps/api && go run github.com/sqlc-dev/sqlc/cmd/sqlc@latest generate",
+
     "supabase:status": "pnpm exec supabase status",
     "supabase:db:reset": "pnpm exec supabase db reset",
     "supabase:db:push:local": "pnpm exec supabase db push --local",
@@ -34,6 +37,7 @@
     "supabase:link": "pnpm exec supabase link"
   },
   "devDependencies": {
+    "openapi-typescript": "^7.0.0",
     "supabase": "^2.0.0",
     "typescript": "^5.6.0",
     "vercel": "^41.0.0"

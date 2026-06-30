@@ -266,6 +266,10 @@ func (s *service) ChangePassword(ctx context.Context, token string, req ChangePa
 		return ErrInvalidCredentials
 	}
 
+	if err := ValidatePasswordStrength(req.NewPassword); err != nil {
+		return err
+	}
+
 	claims, err := s.issuer.ValidateAccessToken(token)
 	if err != nil {
 		return ErrUnauthorized
@@ -280,6 +284,10 @@ func (s *service) ChangePassword(ctx context.Context, token string, req ChangePa
 		ok, err := VerifyPassword(identity.PasswordHash, req.CurrentPassword)
 		if err != nil || !ok {
 			return ErrInvalidCredentials
+		}
+
+		if req.NewPassword == req.CurrentPassword {
+			return ErrPasswordUnchanged
 		}
 
 		newHash, err := HashPassword(req.NewPassword)

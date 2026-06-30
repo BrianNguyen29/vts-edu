@@ -41,9 +41,35 @@ type UpdateOrganizationRequest struct {
 	Name string `json:"name"`
 }
 
+// AuditLogParams is the persistence input for an audit log row.
+type AuditLogParams struct {
+	OrganizationID string
+	ActorUserID    string
+	Action         string
+	ResourceType   string
+	ResourceID     string
+	BeforeJSON     []byte
+	AfterJSON      []byte
+	MetadataJSON   []byte
+}
+
+// ListOptions is the optional pagination/search input for list endpoints.
+type ListOptions struct {
+	Query  string
+	Limit  int
+	Offset int
+}
+
+// PageInfo is returned with paginated list responses.
+type PageInfo struct {
+	Limit  int `json:"limit"`
+	Offset int `json:"offset"`
+}
+
 // DataEnvelope wraps successful API responses.
 type DataEnvelope struct {
-	Data any `json:"data"`
+	Data any       `json:"data"`
+	Page *PageInfo `json:"page,omitempty"`
 }
 
 // ErrorEnvelope wraps API error responses.

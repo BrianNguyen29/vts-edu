@@ -2,6 +2,7 @@ package admin
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"strings"
 
@@ -16,12 +17,12 @@ type TransactionManager interface {
 
 // Service is the admin application service contract.
 type Service interface {
-	ListUsers(ctx context.Context, orgID string) ([]User, error)
-	CreateUser(ctx context.Context, orgID string, req CreateUserRequest) (User, error)
-	UpdateRoles(ctx context.Context, orgID, userID string, req UpdateRolesRequest) error
-	ResetPassword(ctx context.Context, orgID, userID string, req ResetPasswordRequest) error
+	ListUsers(ctx context.Context, orgID string, opts ListOptions) ([]User, error)
+	CreateUser(ctx context.Context, orgID, actorID string, req CreateUserRequest) (User, error)
+	UpdateRoles(ctx context.Context, orgID, actorID, userID string, req UpdateRolesRequest) error
+	ResetPassword(ctx context.Context, orgID, actorID, userID string, req ResetPasswordRequest) error
 	GetOrganization(ctx context.Context, orgID string) (Organization, error)
-	UpdateOrganization(ctx context.Context, orgID string, req UpdateOrganizationRequest) (Organization, error)
+	UpdateOrganization(ctx context.Context, orgID, actorID string, req UpdateOrganizationRequest) (Organization, error)
 }
 
 type service struct {
@@ -34,17 +35,21 @@ func NewService(repo Repository, tm TransactionManager) Service {
 	return &service{repo: repo, tm: tm}
 }
 
-func (s *service) ListUsers(ctx context.Context, orgID string) ([]User, error) {
-	return s.repo.ListUsers(ctx, orgID)
+func (s *service) ListUsers(ctx context.Context, orgID string, opts ListOptions) ([]User, error) {
+	return s.repo.ListUsers(ctx, orgID, opts)
 }
 
-func (s *service) CreateUser(ctx context.Context, orgID string, req CreateUserRequest) (User, error) {
+func (s *service) CreateUser(ctx context.Context, orgID, actorID string, req CreateUserRequest) (User, error) {
 	loginName := strings.ToLower(strings.TrimSpace(req.LoginName))
 	displayName := strings.TrimSpace(req.DisplayName)
 	email := strings.TrimSpace(req.Email)
 
 	if loginName == "" || displayName == "" || req.TemporaryPassword == "" {
 		return User{}, ErrInvalidInput
+	}
+
+	if err := auth.ValidatePasswordStrength(req.TemporaryPassword); err != nil {
+		return User{}, err
 	}
 
 	roles, err := normalizeRoles(req.Roles)
@@ -72,7 +77,25 @@ func (s *service) CreateUser(ctx context.Context, orgID string, req CreateUserRe
 			return err
 		}
 		created = u
-		return nil
+
+		after, _ := json.Marshal(map[string]any{
+			"id":           u.ID,
+			"login_name":   u.LoginName,
+			"display_name": u.DisplayName,
+			"roles":        u.Roles,
+		})
+		meta, _ := json.Marshal(map[string]any{
+			"temporary_password": true,
+		})
+		return s.repo.InsertAuditLog(ctx, tx, AuditLogParams{
+			OrganizationID: orgID,
+			ActorUserID:    actorID,
+			Action:         "user.create",
+			ResourceType:   "user",
+			ResourceID:     u.ID,
+			AfterJSON:      after,
+			MetadataJSON:   meta,
+		})
 	}); err != nil {
 		return User{}, err
 	}
@@ -80,7 +103,7 @@ func (s *service) CreateUser(ctx context.Context, orgID string, req CreateUserRe
 	return created, nil
 }
 
-func (s *service) UpdateRoles(ctx context.Context, orgID, userID string, req UpdateRolesRequest) error {
+func (s *service) UpdateRoles(ctx context.Context, orgID, actorID, userID string, req UpdateRolesRequest) error {
 	roles, err := normalizeRoles(req.Roles)
 	if err != nil {
 		return err
@@ -98,13 +121,35 @@ func (s *service) UpdateRoles(ctx context.Context, orgID, userID string, req Upd
 		if err := s.repo.BumpAuthVersion(ctx, tx, userID); err != nil {
 			return err
 		}
-		return s.repo.RevokeUserSessions(ctx, tx, userID)
+		if err := s.repo.RevokeUserSessions(ctx, tx, userID); err != nil {
+			return err
+		}
+
+		after, _ := json.Marshal(map[string]any{
+			"roles": roles,
+		})
+		meta, _ := json.Marshal(map[string]any{
+			"membership_id": membershipID,
+		})
+		return s.repo.InsertAuditLog(ctx, tx, AuditLogParams{
+			OrganizationID: orgID,
+			ActorUserID:    actorID,
+			Action:         "user.update_roles",
+			ResourceType:   "user",
+			ResourceID:     userID,
+			AfterJSON:      after,
+			MetadataJSON:   meta,
+		})
 	})
 }
 
-func (s *service) ResetPassword(ctx context.Context, orgID, userID string, req ResetPasswordRequest) error {
+func (s *service) ResetPassword(ctx context.Context, orgID, actorID, userID string, req ResetPasswordRequest) error {
 	if req.TemporaryPassword == "" {
 		return ErrInvalidInput
+	}
+
+	if err := auth.ValidatePasswordStrength(req.TemporaryPassword); err != nil {
+		return err
 	}
 
 	hash, err := auth.HashPassword(req.TemporaryPassword)
@@ -116,7 +161,21 @@ func (s *service) ResetPassword(ctx context.Context, orgID, userID string, req R
 		if err := s.repo.ResetPassword(ctx, tx, userID, orgID, hash); err != nil {
 			return err
 		}
-		return s.repo.RevokeUserSessions(ctx, tx, userID)
+		if err := s.repo.RevokeUserSessions(ctx, tx, userID); err != nil {
+			return err
+		}
+
+		meta, _ := json.Marshal(map[string]any{
+			"admin_initiated": true,
+		})
+		return s.repo.InsertAuditLog(ctx, tx, AuditLogParams{
+			OrganizationID: orgID,
+			ActorUserID:    actorID,
+			Action:         "user.reset_password",
+			ResourceType:   "user",
+			ResourceID:     userID,
+			MetadataJSON:   meta,
+		})
 	})
 }
 
@@ -124,14 +183,37 @@ func (s *service) GetOrganization(ctx context.Context, orgID string) (Organizati
 	return s.repo.GetOrganization(ctx, orgID)
 }
 
-func (s *service) UpdateOrganization(ctx context.Context, orgID string, req UpdateOrganizationRequest) (Organization, error) {
+func (s *service) UpdateOrganization(ctx context.Context, orgID, actorID string, req UpdateOrganizationRequest) (Organization, error) {
 	name := strings.TrimSpace(req.Name)
 	if name == "" {
 		return Organization{}, ErrInvalidInput
 	}
 
+	before, err := s.repo.GetOrganization(ctx, orgID)
+	if err != nil {
+		return Organization{}, err
+	}
+
 	if err := s.tm.WithinTx(ctx, func(ctx context.Context, tx pgx.Tx) error {
-		return s.repo.UpdateOrganization(ctx, tx, orgID, name)
+		if err := s.repo.UpdateOrganization(ctx, tx, orgID, name); err != nil {
+			return err
+		}
+
+		beforeJSON, _ := json.Marshal(map[string]any{
+			"name": before.Name,
+		})
+		afterJSON, _ := json.Marshal(map[string]any{
+			"name": name,
+		})
+		return s.repo.InsertAuditLog(ctx, tx, AuditLogParams{
+			OrganizationID: orgID,
+			ActorUserID:    actorID,
+			Action:         "organization.update",
+			ResourceType:   "organization",
+			ResourceID:     orgID,
+			BeforeJSON:     beforeJSON,
+			AfterJSON:      afterJSON,
+		})
 	}); err != nil {
 		return Organization{}, err
 	}

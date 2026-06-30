@@ -29,9 +29,11 @@ Exit criteria:
 - Organization.
 - User/membership/roles (`membership_roles`).
 - Login, JWT, refresh rotation, CSRF.
+- Password policy (min 8, mixed case, digit, blocklist).
 - Forced password change (`/auth/change-password`).
 - Admin user CRUD + org update.
-- Audit schema baseline (chưa ghi log).
+- Backward-compatible pagination/search for users and assessments.
+- Audit log writes for admin actions (create user, update roles, reset password, update org).
 
 ### Phase 2 — Academic structure (2–3 tuần)
 
@@ -91,9 +93,9 @@ Exit criteria:
 
 ## 2.5 Staged Huma/sqlc/OpenAPI plan
 
-- **Current**: Hand-maintained OpenAPI skeleton covers the current API surface in `docs/backend/backend-technical-spec/openapi/openapi-skeleton.yaml`. Repository interfaces in each feature package are the migration seam.
-- **Stage 1 — sqlc migration**: Introduce sqlc generated queries side-by-side with existing repository implementations; keep interfaces stable and migrate one feature at a time. No runtime handler/service rewrite.
-- **Stage 2 — Huma migration**: Add Huma operation definitions behind existing handlers or incrementally replace handler wiring while preserving response envelopes. OpenAPI generation becomes automatic.
+- **Current**: Hand-maintained OpenAPI skeleton covers the current API surface in `docs/backend/backend-technical-spec/openapi/openapi-skeleton.yaml`. TypeScript types are generated from it into `apps/web/src/shared/api/openapi-schema.d.ts` using `openapi-typescript` (type-only; no runtime client).
+- **Stage 1 — sqlc migration**: Introduce sqlc generated queries side-by-side with existing repository implementations; keep interfaces stable and migrate one feature at a time. No runtime handler/service rewrite. `assessments` repository has been migrated.
+- **Stage 2 — Huma migration (deferred)**: Add Huma operation definitions behind existing handlers or incrementally replace handler wiring while preserving response envelopes. OpenAPI generation becomes automatic. Deferred until sqlc migration and API contract stabilize.
 - **Stage 3 — Client generation**: Generate frontend API client/types from the Huma/OpenAPI contract once it stabilizes.
 
 ## 3. Effort estimate

@@ -10,6 +10,8 @@ import {
   type User,
 } from '@/shared/api/admin';
 import { ApiResponseError } from '@/shared/api/attempts';
+import { PasswordPolicyHints } from '@/shared/components/password-policy-hints';
+import { validatePassword } from '@/shared/lib/password-policy';
 
 const AVAILABLE_ROLES = ['student', 'teacher', 'admin'] as const;
 
@@ -45,6 +47,8 @@ export function AdminDashboardPage() {
 
   const [users, setUsers] = useState<User[]>([]);
   const [usersLoading, setUsersLoading] = useState(true);
+  const [searchInput, setSearchInput] = useState('');
+  const [searchQuery, setSearchQuery] = useState('');
 
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
@@ -75,12 +79,12 @@ export function AdminDashboardPage() {
       try {
         const [orgData, usersData] = await Promise.all([
           getOrganization(),
-          listUsers(),
+          listUsers({ q: searchQuery || undefined, limit: 50 }),
         ]);
         if (cancelled) return;
         setOrgName(orgData.name);
         setOrgCode(orgData.code);
-        setUsers(usersData);
+        setUsers(usersData.data);
       } catch (err) {
         if (cancelled) return;
         setError(formatFriendlyError(err));
@@ -97,7 +101,14 @@ export function AdminDashboardPage() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [searchQuery]);
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setSearchQuery(searchInput.trim());
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [searchInput]);
 
   function clearMessages() {
     setError(null);
@@ -126,6 +137,12 @@ export function AdminDashboardPage() {
 
     if (newUserRoles.length === 0) {
       setError('Vui lòng chọn ít nhất một vai trò.');
+      return;
+    }
+
+    const passwordCheck = validatePassword(tempPassword);
+    if (!passwordCheck.valid) {
+      setError('Mật khẩu tạm chưa đáp ứng yêu cầu bảo mật.');
       return;
     }
 
@@ -176,6 +193,12 @@ export function AdminDashboardPage() {
     e.preventDefault();
     if (!selectedUser) return;
     clearMessages();
+
+    const passwordCheck = validatePassword(resetPassword);
+    if (!passwordCheck.valid) {
+      setError('Mật khẩu tạm mới chưa đáp ứng yêu cầu bảo mật.');
+      return;
+    }
 
     try {
       await resetUserPassword(selectedUser.id, {
@@ -295,7 +318,7 @@ export function AdminDashboardPage() {
 
       <section className="admin-section">
         <div className="section-header">
-          <h2>Người dùng</h2>
+          <h2>Ngườii dùng</h2>
           {mode === 'list' && (
             <button
               type="button"
@@ -305,10 +328,21 @@ export function AdminDashboardPage() {
                 setMode('create');
               }}
             >
-              Thêm người dùng
+              Thêm ngườii dùng
             </button>
           )}
         </div>
+
+        {mode === 'list' && (
+          <div className="search-bar">
+            <input
+              type="search"
+              placeholder="Tìm theo tên đăng nhập hoặc email…"
+              value={searchInput}
+              onChange={(e) => setSearchInput(e.target.value)}
+            />
+          </div>
+        )}
 
         {mode === 'create' && (
           <form onSubmit={handleCreateUser} className="admin-form">
@@ -351,6 +385,7 @@ export function AdminDashboardPage() {
                 value={tempPassword}
                 onChange={(e) => setTempPassword(e.target.value)}
               />
+              <PasswordPolicyHints password={tempPassword} />
             </div>
             <div className="field">
               <label>Vai trò</label>
@@ -409,6 +444,7 @@ export function AdminDashboardPage() {
                 value={resetPassword}
                 onChange={(e) => setResetPassword(e.target.value)}
               />
+              <PasswordPolicyHints password={resetPassword} />
             </div>
             <div className="form-actions">
               <button type="submit" className="primary">
@@ -431,7 +467,11 @@ export function AdminDashboardPage() {
         {mode === 'list' && (
           <>
             {users.length === 0 ? (
-              <p className="dashboard-status">Chưa có người dùng nào.</p>
+              <p className="dashboard-status">
+                {searchQuery
+                  ? 'Không tìm thấy ngườii dùng phù hợp.'
+                  : 'Chưa có ngườii dùng nào.'}
+              </p>
             ) : (
               <div className="users-table-wrapper">
                 <table className="users-table">

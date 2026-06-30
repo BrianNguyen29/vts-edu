@@ -60,6 +60,22 @@ export interface ApiError {
   };
 }
 
+export interface ListOptions {
+  q?: string;
+  limit?: number;
+  offset?: number;
+}
+
+export interface PageInfo {
+  limit: number;
+  offset: number;
+}
+
+export interface PagedList<T> {
+  data: T[];
+  page?: PageInfo;
+}
+
 export class ApiResponseError extends Error {
   constructor(
     public readonly status: number,

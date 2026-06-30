@@ -137,6 +137,54 @@ Repo-wide implementation tracking. Append-only; do not delete historical entries
 - OpenAPI skeleton is hand-maintained until Huma is adopted; it covers current endpoints sufficiently for frontend client generation planning.
 - All admin endpoints require `admin` role; teacher endpoints require `teacher` or `admin`.
 
+## 2026-06-30 — Backend hardening (hardening-backend-policy-pagination-audit)
+
+### Done
+
+- [x] Stronger password policy (`auth.ValidatePasswordStrength`): min 8 chars, uppercase, lowercase, digit, short blocklist; enforced on `/auth/change-password`, admin create user, and admin reset password.
+- [x] Same-as-current password rejection on `/auth/change-password`.
+- [x] Backward-compatible pagination/search for `GET /api/v1/users` and `GET /api/v1/assessments` (`q`, `limit`, `offset`); no-param responses keep the original `{data:[...]}` shape.
+- [x] Audit log writes for admin actions: `user.create`, `user.update_roles`, `user.reset_password`, `organization.update`.
+- [x] Unit tests for password policy, weak-password rejections, list pagination/search, and audit log calls.
+- [x] E2E smoke extended to assert weak-password rejections, search/limit behavior, and audit log rows via direct DB query.
+- [x] OpenAPI skeleton updated with query params, page metadata, and password-policy error responses.
+
+### Deferred / not in scope
+
+- Audit log read endpoint.
+- sqlc/Huma runtime wiring and generated client.
+- Frontend role redirects, change-password guard, and generated API client.
+- Full assessment builder, academics, resources, gradebook.
+
+### Decisions / notes
+
+- `Repository` interfaces remain the stable seam; no runtime handler/service rewrite.
+- Pagination metadata is additive (`page` object) and only present when `limit` is supplied.
+- Audit logs capture actor, action, resource, before/after where feasible, and metadata; sensitive values like password hashes are never logged.
+
+## 2026-06-30 — Generated types + sqlc assessments groundwork (hardening-openapi-sqlc-groundwork)
+
+### Done
+
+- [x] Added `openapi-typescript` dev dependency and root scripts `pnpm api:types` / `pnpm api:sqlc`.
+- [x] Generated TypeScript types from OpenAPI skeleton to `apps/web/src/shared/api/openapi-schema.d.ts`.
+- [x] Used generated types type-only in `apps/web/src/shared/api/assessments.ts` (response and list item shapes); existing `apiClient` runtime unchanged.
+- [x] Added `apps/api/sqlc.yaml` configured for `pgx/v5` and generated sqlc code under `apps/api/internal/features/assessments/sqlc/`.
+- [x] Migrated `assessments.Repository` implementation to a sqlc wrapper (`apps/api/internal/features/assessments/repository.go`) while preserving the existing interface and service/handler contracts.
+- [x] Updated ADR-0010 and backend roadmap to record generated types, sqlc `assessments` migration, and deferred Huma.
+
+### Deferred / not in scope
+
+- sqlc migration for `auth`, `attempts`, `admin` repositories.
+- Huma runtime migration and automatic OpenAPI generation.
+- Runtime OpenAPI client (`openapi-fetch`) replacing `apiClient`.
+
+### Decisions / notes
+
+- sqlc wrapper maps `pgtype.UUID` to/from string; the public repository interface keeps `string` IDs.
+- `pnpm api:sqlc` uses `go run github.com/sqlc-dev/sqlc/cmd/sqlc@latest` so no global install is required.
+- Generated sqlc files are committed because the project does not yet have CI generation.
+
 ## Change log
 
 | Date | Task | Files changed | Verification |
@@ -146,3 +194,5 @@ Repo-wide implementation tracking. Append-only; do not delete historical entries
 | 2026-06-30 | Docs/DX batch | `.github/workflows/ci.yml`, `apps/api/koyeb.yaml` (deleted), `config/koyeb.env.example` (deleted), `config/README.md`, `README.md`, `docs/e2e-local-run.md`, `docs/deployment-cli.md`, `docs/implementation-audit.md` | Go checks, `pnpm web:typecheck`, `pnpm web:build` pass. |
 | 2026-06-30 | DX hardening | `package.json`, `apps/web/package.json`, `.github/workflows/ci.yml`, `scripts/e2e_*.sh`, `scripts/e2e_smoke_api.mjs`, `docs/e2e-local-run.md`, `docs/implementation-audit.md`, `AGENTS.md` | `pnpm check` passes; `pnpm e2e:smoke` passes against local Postgres container; CI includes migration validation. |
 | 2026-06-30 | Product slices S1–S3 backend | `apps/api/internal/features/auth/*`, `apps/api/internal/features/attempts/*`, `apps/api/internal/features/assessments/*`, `apps/api/internal/features/admin/*`, `apps/api/cmd/server/main.go`, `supabase/migrations/000008_*` to `000012_*`, `docs/backend/backend-technical-spec/openapi/openapi-skeleton.yaml`, `docs/backend/backend-technical-spec/adr/0010-huma-sqlc-staged-groundwork.md`, `docs/e2e-local-run.md`, `docs/implementation-audit.md`, `README.md`, `AGENTS.md` | `pnpm check` passes; `pnpm e2e:smoke` passes covering roles, change password, attempt grading, assessment list, and admin user/org flow. |
+| 2026-06-30 | Backend hardening (policy, pagination, audit) | `apps/api/internal/features/auth/password_policy.go`, `apps/api/internal/features/auth/*`, `apps/api/internal/features/admin/*`, `apps/api/internal/features/assessments/*`, `scripts/e2e_smoke_api.mjs`, `docs/backend/backend-technical-spec/openapi/openapi-skeleton.yaml`, `docs/backend/backend-technical-spec/14-implementation-roadmap.md`, `docs/implementation-audit.md` | `pnpm check` passes; `pnpm e2e:smoke` passes with weak-password rejections, search/limit assertions, and audit log verification. |
+| 2026-06-30 | Generated types + sqlc assessments groundwork | `package.json`, `apps/web/src/shared/api/openapi-schema.d.ts`, `apps/web/src/shared/api/assessments.ts`, `apps/api/sqlc.yaml`, `apps/api/internal/features/assessments/queries.sql`, `apps/api/internal/features/assessments/sqlc/*`, `apps/api/internal/features/assessments/repository.go`, `docs/backend/backend-technical-spec/adr/0010-huma-sqlc-staged-groundwork.md`, `docs/backend/backend-technical-spec/14-implementation-roadmap.md`, `docs/implementation-audit.md` | `pnpm check` passes; `pnpm e2e:smoke` passes với assessment list/search sử dụng sqlc wrapper. |

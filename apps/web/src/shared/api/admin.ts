@@ -1,5 +1,5 @@
 import { apiClient } from './api-client';
-import { createApiError } from './attempts';
+import { createApiError, type ListOptions, type PagedList } from './attempts';
 
 export interface Organization {
   id: string;
@@ -36,6 +36,15 @@ export interface UpdateOrganizationRequest {
   name: string;
 }
 
+function buildQueryString(opts: ListOptions): string {
+  const params = new URLSearchParams();
+  if (opts.q) params.set('q', opts.q);
+  if (opts.limit !== undefined) params.set('limit', String(opts.limit));
+  if (opts.offset !== undefined) params.set('offset', String(opts.offset));
+  const query = params.toString();
+  return query ? `?${query}` : '';
+}
+
 export async function getOrganization(): Promise<Organization> {
   const res = await apiClient('/organizations/current');
   const json = (await res.json()) as unknown;
@@ -59,13 +68,13 @@ export async function updateOrganization(
   return (json as { data: Organization }).data;
 }
 
-export async function listUsers(): Promise<User[]> {
-  const res = await apiClient('/users');
+export async function listUsers(opts: ListOptions = {}): Promise<PagedList<User>> {
+  const res = await apiClient(`/users${buildQueryString(opts)}`);
   const json = (await res.json()) as unknown;
   if (!res.ok) {
     throw createApiError(res.status, json);
   }
-  return (json as { data: User[] }).data;
+  return json as PagedList<User>;
 }
 
 export async function createUser(req: CreateUserRequest): Promise<User> {

@@ -16,36 +16,36 @@ import (
 )
 
 type fakeService struct {
-	listFunc          func(ctx context.Context, orgID string) ([]admin.User, error)
-	createFunc        func(ctx context.Context, orgID string, req admin.CreateUserRequest) (admin.User, error)
-	updateRolesFunc   func(ctx context.Context, orgID, userID string, req admin.UpdateRolesRequest) error
-	resetPasswordFunc func(ctx context.Context, orgID, userID string, req admin.ResetPasswordRequest) error
+	listFunc          func(ctx context.Context, orgID string, opts admin.ListOptions) ([]admin.User, error)
+	createFunc        func(ctx context.Context, orgID, actorID string, req admin.CreateUserRequest) (admin.User, error)
+	updateRolesFunc   func(ctx context.Context, orgID, actorID, userID string, req admin.UpdateRolesRequest) error
+	resetPasswordFunc func(ctx context.Context, orgID, actorID, userID string, req admin.ResetPasswordRequest) error
 	getOrgFunc        func(ctx context.Context, orgID string) (admin.Organization, error)
-	updateOrgFunc     func(ctx context.Context, orgID string, req admin.UpdateOrganizationRequest) (admin.Organization, error)
+	updateOrgFunc     func(ctx context.Context, orgID, actorID string, req admin.UpdateOrganizationRequest) (admin.Organization, error)
 }
 
-func (f *fakeService) ListUsers(ctx context.Context, orgID string) ([]admin.User, error) {
-	return f.listFunc(ctx, orgID)
+func (f *fakeService) ListUsers(ctx context.Context, orgID string, opts admin.ListOptions) ([]admin.User, error) {
+	return f.listFunc(ctx, orgID, opts)
 }
 
-func (f *fakeService) CreateUser(ctx context.Context, orgID string, req admin.CreateUserRequest) (admin.User, error) {
-	return f.createFunc(ctx, orgID, req)
+func (f *fakeService) CreateUser(ctx context.Context, orgID, actorID string, req admin.CreateUserRequest) (admin.User, error) {
+	return f.createFunc(ctx, orgID, actorID, req)
 }
 
-func (f *fakeService) UpdateRoles(ctx context.Context, orgID, userID string, req admin.UpdateRolesRequest) error {
-	return f.updateRolesFunc(ctx, orgID, userID, req)
+func (f *fakeService) UpdateRoles(ctx context.Context, orgID, actorID, userID string, req admin.UpdateRolesRequest) error {
+	return f.updateRolesFunc(ctx, orgID, actorID, userID, req)
 }
 
-func (f *fakeService) ResetPassword(ctx context.Context, orgID, userID string, req admin.ResetPasswordRequest) error {
-	return f.resetPasswordFunc(ctx, orgID, userID, req)
+func (f *fakeService) ResetPassword(ctx context.Context, orgID, actorID, userID string, req admin.ResetPasswordRequest) error {
+	return f.resetPasswordFunc(ctx, orgID, actorID, userID, req)
 }
 
 func (f *fakeService) GetOrganization(ctx context.Context, orgID string) (admin.Organization, error) {
 	return f.getOrgFunc(ctx, orgID)
 }
 
-func (f *fakeService) UpdateOrganization(ctx context.Context, orgID string, req admin.UpdateOrganizationRequest) (admin.Organization, error) {
-	return f.updateOrgFunc(ctx, orgID, req)
+func (f *fakeService) UpdateOrganization(ctx context.Context, orgID, actorID string, req admin.UpdateOrganizationRequest) (admin.Organization, error) {
+	return f.updateOrgFunc(ctx, orgID, actorID, req)
 }
 
 func tokenWithRoles(roles []string) string {
@@ -59,7 +59,7 @@ func tokenWithRoles(roles []string) string {
 
 func TestHandler_ListUsers_AdminAllowed(t *testing.T) {
 	svc := &fakeService{
-		listFunc: func(ctx context.Context, orgID string) ([]admin.User, error) {
+		listFunc: func(ctx context.Context, orgID string, opts admin.ListOptions) ([]admin.User, error) {
 			return []admin.User{
 				{ID: "u1", LoginName: "admin001", Roles: []string{"admin"}},
 			}, nil
@@ -89,6 +89,52 @@ func TestHandler_ListUsers_AdminAllowed(t *testing.T) {
 	}
 }
 
+func TestHandler_ListUsers_PaginationQuery(t *testing.T) {
+	svc := &fakeService{
+		listFunc: func(ctx context.Context, orgID string, opts admin.ListOptions) ([]admin.User, error) {
+			if opts.Query != "alice" {
+				t.Errorf("query = %q, want alice", opts.Query)
+			}
+			if opts.Limit != 5 {
+				t.Errorf("limit = %d, want 5", opts.Limit)
+			}
+			if opts.Offset != 10 {
+				t.Errorf("offset = %d, want 10", opts.Offset)
+			}
+			return []admin.User{{ID: "u1", LoginName: "alice01"}}, nil
+		},
+	}
+	issuer := auth.NewTokenIssuer("test-signing-key-minimum-32-bytes-long", "test-issuer", "test-audience", 15*time.Minute)
+	h := admin.NewHandler(svc, issuer)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/users?q=alice&limit=5&offset=10", nil)
+	req.Header.Set("Authorization", "Bearer "+tokenWithRoles([]string{"admin"}))
+	rec := httptest.NewRecorder()
+
+	h.ListUsers(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", rec.Code, http.StatusOK)
+	}
+
+	var resp struct {
+		Data []admin.User `json:"data"`
+		Page *struct {
+			Limit  int `json:"limit"`
+			Offset int `json:"offset"`
+		} `json:"page"`
+	}
+	if err := json.NewDecoder(rec.Body).Decode(&resp); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if len(resp.Data) != 1 {
+		t.Fatalf("expected 1 user, got %d", len(resp.Data))
+	}
+	if resp.Page == nil || resp.Page.Limit != 5 || resp.Page.Offset != 10 {
+		t.Fatalf("expected page {limit:5 offset:10}, got %+v", resp.Page)
+	}
+}
+
 func TestHandler_ListUsers_StudentForbidden(t *testing.T) {
 	svc := &fakeService{}
 	issuer := auth.NewTokenIssuer("test-signing-key-minimum-32-bytes-long", "test-issuer", "test-audience", 15*time.Minute)
@@ -107,7 +153,7 @@ func TestHandler_ListUsers_StudentForbidden(t *testing.T) {
 
 func TestHandler_CreateUser_OK(t *testing.T) {
 	svc := &fakeService{
-		createFunc: func(ctx context.Context, orgID string, req admin.CreateUserRequest) (admin.User, error) {
+		createFunc: func(ctx context.Context, orgID, actorID string, req admin.CreateUserRequest) (admin.User, error) {
 			return admin.User{
 				ID:                 "new-id",
 				LoginName:          req.LoginName,
@@ -147,7 +193,7 @@ func TestHandler_CreateUser_OK(t *testing.T) {
 
 func TestHandler_CreateUser_DuplicateLogin(t *testing.T) {
 	svc := &fakeService{
-		createFunc: func(ctx context.Context, orgID string, req admin.CreateUserRequest) (admin.User, error) {
+		createFunc: func(ctx context.Context, orgID, actorID string, req admin.CreateUserRequest) (admin.User, error) {
 			return admin.User{}, admin.ErrDuplicateLogin
 		},
 	}
@@ -168,7 +214,7 @@ func TestHandler_CreateUser_DuplicateLogin(t *testing.T) {
 
 func TestHandler_UpdateRoles_OK(t *testing.T) {
 	svc := &fakeService{
-		updateRolesFunc: func(ctx context.Context, orgID, userID string, req admin.UpdateRolesRequest) error {
+		updateRolesFunc: func(ctx context.Context, orgID, actorID, userID string, req admin.UpdateRolesRequest) error {
 			return nil
 		},
 	}
@@ -193,7 +239,7 @@ func TestHandler_UpdateRoles_OK(t *testing.T) {
 
 func TestHandler_UpdateRoles_UserNotFound(t *testing.T) {
 	svc := &fakeService{
-		updateRolesFunc: func(ctx context.Context, orgID, userID string, req admin.UpdateRolesRequest) error {
+		updateRolesFunc: func(ctx context.Context, orgID, actorID, userID string, req admin.UpdateRolesRequest) error {
 			return admin.ErrUserNotFound
 		},
 	}
@@ -218,7 +264,7 @@ func TestHandler_UpdateRoles_UserNotFound(t *testing.T) {
 
 func TestHandler_ResetPassword_OK(t *testing.T) {
 	svc := &fakeService{
-		resetPasswordFunc: func(ctx context.Context, orgID, userID string, req admin.ResetPasswordRequest) error {
+		resetPasswordFunc: func(ctx context.Context, orgID, actorID, userID string, req admin.ResetPasswordRequest) error {
 			return nil
 		},
 	}
@@ -273,7 +319,7 @@ func TestHandler_GetOrganization_OK(t *testing.T) {
 
 func TestHandler_UpdateOrganization_OK(t *testing.T) {
 	svc := &fakeService{
-		updateOrgFunc: func(ctx context.Context, orgID string, req admin.UpdateOrganizationRequest) (admin.Organization, error) {
+		updateOrgFunc: func(ctx context.Context, orgID, actorID string, req admin.UpdateOrganizationRequest) (admin.Organization, error) {
 			return admin.Organization{ID: orgID, Code: "school-a", Name: req.Name}, nil
 		},
 	}
@@ -304,7 +350,7 @@ func TestHandler_UpdateOrganization_OK(t *testing.T) {
 
 func TestHandler_ServiceError(t *testing.T) {
 	svc := &fakeService{
-		listFunc: func(ctx context.Context, orgID string) ([]admin.User, error) {
+		listFunc: func(ctx context.Context, orgID string, opts admin.ListOptions) ([]admin.User, error) {
 			return nil, errors.New("boom")
 		},
 	}
