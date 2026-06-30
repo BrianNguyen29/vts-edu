@@ -11,6 +11,112 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const countStudentAttempts = `-- name: CountStudentAttempts :one
+SELECT COUNT(*)
+FROM attempts
+WHERE organization_id = $1
+  AND student_user_id = $2
+  AND assessment_id = $3
+`
+
+type CountStudentAttemptsParams struct {
+	OrganizationID pgtype.UUID `json:"organization_id"`
+	StudentUserID  pgtype.UUID `json:"student_user_id"`
+	AssessmentID   pgtype.UUID `json:"assessment_id"`
+}
+
+func (q *Queries) CountStudentAttempts(ctx context.Context, arg CountStudentAttemptsParams) (int64, error) {
+	row := q.db.QueryRow(ctx, countStudentAttempts, arg.OrganizationID, arg.StudentUserID, arg.AssessmentID)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
+const createAttempt = `-- name: CreateAttempt :one
+INSERT INTO attempts (organization_id, assessment_id, student_user_id, publication_id, status, started_at, expires_at)
+VALUES ($1, $2, $3, $4, 'IN_PROGRESS', $5, $6)
+RETURNING id, organization_id, assessment_id, publication_id, status, started_at, expires_at, submitted_at, score, max_score, grading_status
+`
+
+type CreateAttemptParams struct {
+	OrganizationID pgtype.UUID        `json:"organization_id"`
+	AssessmentID   pgtype.UUID        `json:"assessment_id"`
+	StudentUserID  pgtype.UUID        `json:"student_user_id"`
+	PublicationID  pgtype.UUID        `json:"publication_id"`
+	StartedAt      pgtype.Timestamptz `json:"started_at"`
+	ExpiresAt      pgtype.Timestamptz `json:"expires_at"`
+}
+
+type CreateAttemptRow struct {
+	ID             pgtype.UUID        `json:"id"`
+	OrganizationID pgtype.UUID        `json:"organization_id"`
+	AssessmentID   pgtype.UUID        `json:"assessment_id"`
+	PublicationID  pgtype.UUID        `json:"publication_id"`
+	Status         string             `json:"status"`
+	StartedAt      pgtype.Timestamptz `json:"started_at"`
+	ExpiresAt      pgtype.Timestamptz `json:"expires_at"`
+	SubmittedAt    pgtype.Timestamptz `json:"submitted_at"`
+	Score          pgtype.Numeric     `json:"score"`
+	MaxScore       pgtype.Numeric     `json:"max_score"`
+	GradingStatus  pgtype.Text        `json:"grading_status"`
+}
+
+func (q *Queries) CreateAttempt(ctx context.Context, arg CreateAttemptParams) (CreateAttemptRow, error) {
+	row := q.db.QueryRow(ctx, createAttempt,
+		arg.OrganizationID,
+		arg.AssessmentID,
+		arg.StudentUserID,
+		arg.PublicationID,
+		arg.StartedAt,
+		arg.ExpiresAt,
+	)
+	var i CreateAttemptRow
+	err := row.Scan(
+		&i.ID,
+		&i.OrganizationID,
+		&i.AssessmentID,
+		&i.PublicationID,
+		&i.Status,
+		&i.StartedAt,
+		&i.ExpiresAt,
+		&i.SubmittedAt,
+		&i.Score,
+		&i.MaxScore,
+		&i.GradingStatus,
+	)
+	return i, err
+}
+
+const createAttemptItem = `-- name: CreateAttemptItem :exec
+INSERT INTO attempt_items (organization_id, attempt_id, question_version_id, position, points, prompt_json, choices_json, answer_key_json)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+`
+
+type CreateAttemptItemParams struct {
+	OrganizationID    pgtype.UUID    `json:"organization_id"`
+	AttemptID         pgtype.UUID    `json:"attempt_id"`
+	QuestionVersionID pgtype.UUID    `json:"question_version_id"`
+	Position          int32          `json:"position"`
+	Points            pgtype.Numeric `json:"points"`
+	PromptJson        []byte         `json:"prompt_json"`
+	ChoicesJson       []byte         `json:"choices_json"`
+	AnswerKeyJson     []byte         `json:"answer_key_json"`
+}
+
+func (q *Queries) CreateAttemptItem(ctx context.Context, arg CreateAttemptItemParams) error {
+	_, err := q.db.Exec(ctx, createAttemptItem,
+		arg.OrganizationID,
+		arg.AttemptID,
+		arg.QuestionVersionID,
+		arg.Position,
+		arg.Points,
+		arg.PromptJson,
+		arg.ChoicesJson,
+		arg.AnswerKeyJson,
+	)
+	return err
+}
+
 const getAttempt = `-- name: GetAttempt :one
 SELECT
     a.id,
@@ -200,6 +306,82 @@ func (q *Queries) GetAttemptItems(ctx context.Context, arg GetAttemptItemsParams
 	return items, nil
 }
 
+const getInProgressAttempt = `-- name: GetInProgressAttempt :one
+SELECT id, organization_id, assessment_id, publication_id, status, started_at, expires_at, submitted_at, score, max_score, grading_status
+FROM attempts
+WHERE organization_id = $1
+  AND student_user_id = $2
+  AND assessment_id = $3
+  AND status = 'IN_PROGRESS'
+LIMIT 1
+`
+
+type GetInProgressAttemptParams struct {
+	OrganizationID pgtype.UUID `json:"organization_id"`
+	StudentUserID  pgtype.UUID `json:"student_user_id"`
+	AssessmentID   pgtype.UUID `json:"assessment_id"`
+}
+
+type GetInProgressAttemptRow struct {
+	ID             pgtype.UUID        `json:"id"`
+	OrganizationID pgtype.UUID        `json:"organization_id"`
+	AssessmentID   pgtype.UUID        `json:"assessment_id"`
+	PublicationID  pgtype.UUID        `json:"publication_id"`
+	Status         string             `json:"status"`
+	StartedAt      pgtype.Timestamptz `json:"started_at"`
+	ExpiresAt      pgtype.Timestamptz `json:"expires_at"`
+	SubmittedAt    pgtype.Timestamptz `json:"submitted_at"`
+	Score          pgtype.Numeric     `json:"score"`
+	MaxScore       pgtype.Numeric     `json:"max_score"`
+	GradingStatus  pgtype.Text        `json:"grading_status"`
+}
+
+func (q *Queries) GetInProgressAttempt(ctx context.Context, arg GetInProgressAttemptParams) (GetInProgressAttemptRow, error) {
+	row := q.db.QueryRow(ctx, getInProgressAttempt, arg.OrganizationID, arg.StudentUserID, arg.AssessmentID)
+	var i GetInProgressAttemptRow
+	err := row.Scan(
+		&i.ID,
+		&i.OrganizationID,
+		&i.AssessmentID,
+		&i.PublicationID,
+		&i.Status,
+		&i.StartedAt,
+		&i.ExpiresAt,
+		&i.SubmittedAt,
+		&i.Score,
+		&i.MaxScore,
+		&i.GradingStatus,
+	)
+	return i, err
+}
+
+const getLatestPublication = `-- name: GetLatestPublication :one
+SELECT id, snapshot_json, published_at
+FROM assessment_publications
+WHERE organization_id = $1
+  AND assessment_id = $2
+ORDER BY version DESC
+LIMIT 1
+`
+
+type GetLatestPublicationParams struct {
+	OrganizationID pgtype.UUID `json:"organization_id"`
+	AssessmentID   pgtype.UUID `json:"assessment_id"`
+}
+
+type GetLatestPublicationRow struct {
+	ID           pgtype.UUID        `json:"id"`
+	SnapshotJson []byte             `json:"snapshot_json"`
+	PublishedAt  pgtype.Timestamptz `json:"published_at"`
+}
+
+func (q *Queries) GetLatestPublication(ctx context.Context, arg GetLatestPublicationParams) (GetLatestPublicationRow, error) {
+	row := q.db.QueryRow(ctx, getLatestPublication, arg.OrganizationID, arg.AssessmentID)
+	var i GetLatestPublicationRow
+	err := row.Scan(&i.ID, &i.SnapshotJson, &i.PublishedAt)
+	return i, err
+}
+
 const itemExists = `-- name: ItemExists :one
 SELECT EXISTS (
     SELECT 1
@@ -221,6 +403,72 @@ func (q *Queries) ItemExists(ctx context.Context, arg ItemExistsParams) (bool, e
 	var exists bool
 	err := row.Scan(&exists)
 	return exists, err
+}
+
+const listAssignedAssessments = `-- name: ListAssignedAssessments :many
+SELECT a.id, a.title, a.status, a.duration_minutes, a.max_attempts, a.revision, ap.id AS publication_id, ap.published_at
+FROM assessments a
+JOIN assessment_targets t ON t.assessment_id = a.id AND t.status = 'ACTIVE'
+JOIN class_sections cs ON cs.id = t.class_section_id AND cs.status = 'ACTIVE'
+JOIN enrollments e ON e.class_section_id = t.class_section_id AND e.status = 'ACTIVE'
+JOIN organization_memberships m ON m.id = e.membership_id AND m.user_id = $1 AND m.organization_id = $2 AND m.status = 'ACTIVE'
+LEFT JOIN LATERAL (
+    SELECT id, published_at
+    FROM assessment_publications
+    WHERE assessment_id = a.id AND organization_id = $2
+    ORDER BY version DESC
+    LIMIT 1
+) ap ON true
+WHERE a.organization_id = $2
+  AND a.status IN ('OPEN', 'PUBLISHED')
+  AND (a.opens_at IS NULL OR a.opens_at <= now())
+  AND (a.closes_at IS NULL OR a.closes_at > now())
+ORDER BY a.created_at DESC
+`
+
+type ListAssignedAssessmentsParams struct {
+	UserID         pgtype.UUID `json:"user_id"`
+	OrganizationID pgtype.UUID `json:"organization_id"`
+}
+
+type ListAssignedAssessmentsRow struct {
+	ID              pgtype.UUID        `json:"id"`
+	Title           string             `json:"title"`
+	Status          string             `json:"status"`
+	DurationMinutes int32              `json:"duration_minutes"`
+	MaxAttempts     int32              `json:"max_attempts"`
+	Revision        int32              `json:"revision"`
+	PublicationID   pgtype.UUID        `json:"publication_id"`
+	PublishedAt     pgtype.Timestamptz `json:"published_at"`
+}
+
+func (q *Queries) ListAssignedAssessments(ctx context.Context, arg ListAssignedAssessmentsParams) ([]ListAssignedAssessmentsRow, error) {
+	rows, err := q.db.Query(ctx, listAssignedAssessments, arg.UserID, arg.OrganizationID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListAssignedAssessmentsRow
+	for rows.Next() {
+		var i ListAssignedAssessmentsRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Title,
+			&i.Status,
+			&i.DurationMinutes,
+			&i.MaxAttempts,
+			&i.Revision,
+			&i.PublicationID,
+			&i.PublishedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const markAttemptExpired = `-- name: MarkAttemptExpired :exec

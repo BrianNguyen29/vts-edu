@@ -115,10 +115,16 @@ func main() {
 		// Attempt runtime endpoints.
 		// Request-time expiration reconciliation happens inside submit/save handlers.
 		if attemptsHandler != nil {
+			r.Get("/me/assessments", attemptsHandler.ListAssignedAssessments)
+			r.Post("/assessments/{assessment_id}/attempts", attemptsHandler.StartAttempt)
+
 			r.Get("/attempts/{attempt_id}", attemptsHandler.GetAttempt)
 			r.Put("/attempts/{attempt_id}/answers/{attempt_item_id}", attemptsHandler.SaveAnswer)
 			r.Post("/attempts/{attempt_id}/submit", attemptsHandler.SubmitAttempt)
 		} else {
+			r.Get("/me/assessments", srv.meAssessmentsPlaceholderHandler)
+			r.Post("/assessments/{assessment_id}/attempts", srv.startAttemptPlaceholderHandler)
+
 			r.Get("/attempts/{attempt_id}", srv.getAttemptPlaceholderHandler)
 			r.Put("/attempts/{attempt_id}/answers/{attempt_item_id}", srv.saveAnswerPlaceholderHandler)
 			r.Post("/attempts/{attempt_id}/submit", srv.submitPlaceholderHandler)
@@ -133,10 +139,20 @@ func main() {
 			r.Get("/assessments/{id}", assessmentsHandler.GetAssessment)
 			r.Patch("/assessments/{id}", assessmentsHandler.UpdateAssessment)
 			r.Post("/assessments/{id}/sections", assessmentsHandler.CreateSection)
+			r.Patch("/assessment-sections/{section_id}", assessmentsHandler.UpdateSection)
+			r.Delete("/assessment-sections/{section_id}", assessmentsHandler.DeleteSection)
+			r.Post("/assessments/{id}/sections/reorder", assessmentsHandler.ReorderSections)
 			r.Post("/assessment-sections/{section_id}/items", assessmentsHandler.CreateItem)
+			r.Patch("/assessment-items/{item_id}", assessmentsHandler.UpdateItem)
+			r.Delete("/assessment-items/{item_id}", assessmentsHandler.DeleteItem)
+			r.Post("/assessment-sections/{section_id}/items/reorder", assessmentsHandler.ReorderItems)
 			r.Post("/assessments/{id}/targets", assessmentsHandler.CreateTarget)
+			r.Delete("/assessments/{id}/targets/{target_id}", assessmentsHandler.DeleteTarget)
 			r.Post("/assessments/{id}/validate", assessmentsHandler.ValidateAssessment)
 			r.Post("/assessments/{id}/publish", assessmentsHandler.PublishAssessment)
+			r.Get("/assessments/{id}/publications", assessmentsHandler.ListPublications)
+
+			r.Get("/questions", assessmentsHandler.ListQuestions)
 		} else {
 			r.Get("/assessments", srv.listAssessmentsPlaceholderHandler)
 
@@ -174,18 +190,22 @@ func main() {
 		if academicsHandler != nil {
 			r.Get("/academic-terms", academicsHandler.ListTerms)
 			r.Post("/academic-terms", academicsHandler.CreateTerm)
+			r.Patch("/academic-terms/{term_id}", academicsHandler.UpdateTerm)
 			r.Delete("/academic-terms/{term_id}", academicsHandler.ArchiveTerm)
 
 			r.Get("/subjects", academicsHandler.ListSubjects)
 			r.Post("/subjects", academicsHandler.CreateSubject)
+			r.Patch("/subjects/{subject_id}", academicsHandler.UpdateSubject)
 			r.Delete("/subjects/{subject_id}", academicsHandler.ArchiveSubject)
 
 			r.Get("/courses", academicsHandler.ListCourses)
 			r.Post("/courses", academicsHandler.CreateCourse)
+			r.Patch("/courses/{course_id}", academicsHandler.UpdateCourse)
 			r.Delete("/courses/{course_id}", academicsHandler.ArchiveCourse)
 
 			r.Get("/classes", academicsHandler.ListClasses)
 			r.Post("/classes", academicsHandler.CreateClass)
+			r.Patch("/classes/{class_id}", academicsHandler.UpdateClass)
 			r.Delete("/classes/{class_id}", academicsHandler.ArchiveClass)
 			r.Get("/classes/{class_id}/teachers", academicsHandler.ListClassTeachers)
 			r.Post("/classes/{class_id}/teachers", academicsHandler.AddClassTeacher)
@@ -318,6 +338,14 @@ func (s *server) adminPlaceholderHandler(w http.ResponseWriter, r *http.Request)
 
 func (s *server) academicsPlaceholderHandler(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusServiceUnavailable, map[string]string{"message": "academics placeholder; database unavailable"})
+}
+
+func (s *server) meAssessmentsPlaceholderHandler(w http.ResponseWriter, r *http.Request) {
+	writeJSON(w, http.StatusServiceUnavailable, map[string]string{"message": "me assessments placeholder; database unavailable"})
+}
+
+func (s *server) startAttemptPlaceholderHandler(w http.ResponseWriter, r *http.Request) {
+	writeJSON(w, http.StatusServiceUnavailable, map[string]string{"message": "start attempt placeholder; database unavailable"})
 }
 
 func (s *server) getAttemptPlaceholderHandler(w http.ResponseWriter, r *http.Request) {

@@ -20,6 +20,8 @@ type Service interface {
 	GetAttempt(ctx context.Context, actor auth.Actor, attemptID string) (*AttemptSnapshot, error)
 	SaveAnswer(ctx context.Context, actor auth.Actor, attemptID, itemID string, payload json.RawMessage) (*AnswerSaved, error)
 	SubmitAttempt(ctx context.Context, actor auth.Actor, attemptID string) (*AttemptSubmitted, error)
+	ListAssignedAssessments(ctx context.Context, actor auth.Actor) ([]AssignedAssessment, error)
+	StartAttempt(ctx context.Context, actor auth.Actor, assessmentID string) (*AttemptSnapshot, error)
 }
 
 type service struct {
@@ -53,6 +55,7 @@ func (s *service) GetAttempt(ctx context.Context, actor auth.Actor, attemptID st
 		StartedAt:      attempt.StartedAt,
 		ExpiresAt:      attempt.ExpiresAt,
 		SubmittedAt:    attempt.SubmittedAt,
+		ServerTime:     time.Now().UTC(),
 		Items:          make([]AttemptItem, len(items)),
 	}
 
@@ -221,4 +224,129 @@ func defaultString(s *string, fallback string) string {
 		return fallback
 	}
 	return *s
+}
+
+// ListAssignedAssessments returns the published/open assessments available to the current student.
+func (s *service) ListAssignedAssessments(ctx context.Context, actor auth.Actor) ([]AssignedAssessment, error) {
+	if !hasRole(actor.Roles, "student") {
+		return nil, auth.ErrUnauthorized
+	}
+	return s.repo.ListAssignedAssessments(ctx, actor.OrgID, actor.UserID)
+}
+
+// StartAttempt begins a new attempt or resumes an existing in-progress attempt for an assigned assessment.
+func (s *service) StartAttempt(ctx context.Context, actor auth.Actor, assessmentID string) (*AttemptSnapshot, error) {
+	if !hasRole(actor.Roles, "student") {
+		return nil, auth.ErrUnauthorized
+	}
+
+	assigned, err := s.repo.ListAssignedAssessments(ctx, actor.OrgID, actor.UserID)
+	if err != nil {
+		return nil, err
+	}
+	var target *AssignedAssessment
+	for i := range assigned {
+		if assigned[i].ID == assessmentID {
+			target = &assigned[i]
+			break
+		}
+	}
+	if target == nil {
+		return nil, ErrAssessmentUnavailable
+	}
+
+	if target.PublicationID == "" {
+		return nil, ErrNoPublication
+	}
+
+	existing, err := s.repo.GetInProgressAttempt(ctx, actor.OrgID, actor.UserID, assessmentID)
+	if err != nil {
+		return nil, err
+	}
+	if existing != nil {
+		return s.GetAttempt(ctx, actor, existing.ID)
+	}
+
+	count, err := s.repo.CountStudentAttempts(ctx, actor.OrgID, actor.UserID, assessmentID)
+	if err != nil {
+		return nil, err
+	}
+	if count >= int64(target.MaxAttempts) {
+		return nil, ErrAttemptLimitReached
+	}
+
+	snap, pubID, _, err := s.repo.GetLatestPublication(ctx, actor.OrgID, assessmentID)
+	if err != nil {
+		return nil, err
+	}
+	if snap == nil {
+		return nil, ErrNoPublication
+	}
+	if pubID != target.PublicationID {
+		return nil, ErrNoPublication
+	}
+
+	now := time.Now().UTC()
+	expiresAt := now.Add(time.Duration(snap.DurationMinutes) * time.Minute)
+
+	var attempt *Attempt
+	err = s.tm.WithinTx(ctx, func(ctx context.Context, tx pgx.Tx) error {
+		attempt, err = s.repo.CreateAttempt(ctx, tx, actor.OrgID, actor.UserID, assessmentID, pubID, now, expiresAt)
+		if err != nil {
+			return err
+		}
+
+		items := flattenSnapshotItems(snap)
+		if len(items) > 0 {
+			if err := s.repo.CreateAttemptItems(ctx, tx, actor.OrgID, attempt.ID, items); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	return s.GetAttempt(ctx, actor, attempt.ID)
+}
+
+func flattenSnapshotItems(snap *PublicationSnapshot) []AttemptItemInput {
+	var inputs []AttemptItemInput
+	pos := 1
+	for _, section := range snap.Sections {
+		for _, item := range section.Items {
+			prompt := item.Prompt
+			if prompt == nil {
+				prompt = json.RawMessage("{}")
+			}
+			choices := item.Choices
+			if choices == nil {
+				choices = json.RawMessage("{}")
+			}
+			answerKey := item.AnswerKey
+			if answerKey == nil {
+				answerKey = json.RawMessage("{}")
+			}
+			inputs = append(inputs, AttemptItemInput{
+				QuestionVersionID: item.QuestionVersionID,
+				Position:          pos,
+				Points:            item.Points,
+				Prompt:            prompt,
+				Choices:           choices,
+				AnswerKey:         answerKey,
+			})
+			pos++
+		}
+	}
+	return inputs
+}
+
+func hasRole(roles []string, target string) bool {
+	for _, r := range roles {
+		if r == target {
+			return true
+		}
+	}
+	return false
 }

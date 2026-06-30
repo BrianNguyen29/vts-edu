@@ -25,6 +25,10 @@ func (f *fakeRepository) CreateTerm(ctx context.Context, tx pgx.Tx, orgID, name 
 	return Term{}, nil
 }
 
+func (f *fakeRepository) UpdateTerm(ctx context.Context, tx pgx.Tx, orgID, termID, name string, startDate, endDate time.Time) (Term, error) {
+	return Term{}, nil
+}
+
 func (f *fakeRepository) ArchiveTerm(ctx context.Context, tx pgx.Tx, orgID, termID string) error {
 	return nil
 }
@@ -34,6 +38,10 @@ func (f *fakeRepository) ListSubjects(ctx context.Context, orgID string) ([]Subj
 }
 
 func (f *fakeRepository) CreateSubject(ctx context.Context, tx pgx.Tx, orgID, code, name, description string) (Subject, error) {
+	return Subject{}, nil
+}
+
+func (f *fakeRepository) UpdateSubject(ctx context.Context, tx pgx.Tx, orgID, subjectID, code, name, description string) (Subject, error) {
 	return Subject{}, nil
 }
 
@@ -49,6 +57,10 @@ func (f *fakeRepository) CreateCourse(ctx context.Context, tx pgx.Tx, orgID, sub
 	return Course{}, nil
 }
 
+func (f *fakeRepository) UpdateCourse(ctx context.Context, tx pgx.Tx, orgID, courseID, subjectID, termID, code, name string) (Course, error) {
+	return Course{}, nil
+}
+
 func (f *fakeRepository) ArchiveCourse(ctx context.Context, tx pgx.Tx, orgID, courseID string) error {
 	return nil
 }
@@ -61,6 +73,10 @@ func (f *fakeRepository) ListClasses(ctx context.Context, orgID, membershipID st
 }
 
 func (f *fakeRepository) CreateClass(ctx context.Context, tx pgx.Tx, orgID, courseID, name string) (ClassSection, error) {
+	return ClassSection{}, nil
+}
+
+func (f *fakeRepository) UpdateClass(ctx context.Context, tx pgx.Tx, orgID, classID, courseID, name string) (ClassSection, error) {
 	return ClassSection{}, nil
 }
 
@@ -236,5 +252,45 @@ func TestService_ListEnrollments_TeacherNotAssigned(t *testing.T) {
 	_, err := svc.ListEnrollments(context.Background(), "org-1", "teacher-user", []string{"teacher"}, "class-1")
 	if !errors.Is(err, ErrUnauthorized) {
 		t.Fatalf("expected ErrUnauthorized, got %v", err)
+	}
+}
+
+func TestService_UpdateTerm_Unauthorized(t *testing.T) {
+	svc := NewService(&fakeRepository{}, stubTxManager{})
+	_, err := svc.UpdateTerm(context.Background(), "org-1", []string{"teacher"}, "term-1", UpdateTermRequest{Name: "HK1", StartDate: "2026-09-01", EndDate: "2027-01-31"})
+	if !errors.Is(err, ErrUnauthorized) {
+		t.Fatalf("expected ErrUnauthorized, got %v", err)
+	}
+}
+
+func TestService_UpdateTerm_InvalidInput(t *testing.T) {
+	svc := NewService(&fakeRepository{}, stubTxManager{})
+	_, err := svc.UpdateTerm(context.Background(), "org-1", []string{"admin"}, "term-1", UpdateTermRequest{Name: "", StartDate: "2026-09-01", EndDate: "2027-01-31"})
+	if !errors.Is(err, ErrInvalidInput) {
+		t.Fatalf("expected ErrInvalidInput, got %v", err)
+	}
+}
+
+func TestService_UpdateSubject_InvalidInput(t *testing.T) {
+	svc := NewService(&fakeRepository{}, stubTxManager{})
+	_, err := svc.UpdateSubject(context.Background(), "org-1", []string{"admin"}, "subject-1", UpdateSubjectRequest{Code: "", Name: "Math"})
+	if !errors.Is(err, ErrInvalidInput) {
+		t.Fatalf("expected ErrInvalidInput, got %v", err)
+	}
+}
+
+func TestService_UpdateCourse_InvalidInput(t *testing.T) {
+	svc := NewService(&fakeRepository{}, stubTxManager{})
+	_, err := svc.UpdateCourse(context.Background(), "org-1", []string{"admin"}, "course-1", UpdateCourseRequest{SubjectID: "subject-1", AcademicTermID: "term-1", Code: "C1", Name: ""})
+	if !errors.Is(err, ErrInvalidInput) {
+		t.Fatalf("expected ErrInvalidInput, got %v", err)
+	}
+}
+
+func TestService_UpdateClass_InvalidInput(t *testing.T) {
+	svc := NewService(&fakeRepository{}, stubTxManager{})
+	_, err := svc.UpdateClass(context.Background(), "org-1", []string{"admin"}, "class-1", UpdateClassRequest{CourseID: "course-1", Name: ""})
+	if !errors.Is(err, ErrInvalidInput) {
+		t.Fatalf("expected ErrInvalidInput, got %v", err)
 	}
 }

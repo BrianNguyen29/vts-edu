@@ -405,6 +405,46 @@ Repo-wide implementation tracking. Append-only; do not delete historical entries
 | 2026-06-30 | Fix assessment detail item nesting | `apps/api/internal/features/assessments/models.go`, `apps/api/internal/features/assessments/repository.go`, `apps/api/internal/features/assessments/service.go`, `apps/api/internal/features/assessments/service_test.go`, `docs/backend/backend-technical-spec/openapi/openapi-skeleton.yaml`, `apps/web/src/shared/api/openapi-schema.d.ts`, `docs/implementation-audit.md` | `go test ./internal/features/assessments/...`, `pnpm check`, `pnpm e2e:smoke` xanh; test mới xác nhận items nằm đúng section. |
 | 2026-06-30 | Add assessment detail smoke assertion | `scripts/e2e_smoke_api.mjs`, `docs/implementation-audit.md` | `pnpm e2e:smoke` xanh; assertion kiểm tra section trong detail có ít nhất một item với đúng `question_version_id`. |
 
+## 2026-06-30 — Builder upgrades backend (next-batch-slice1-builder-backend)
+
+### Done
+
+- [x] Added backend endpoints:
+  - `PATCH /assessment-sections/{section_id}` update title/position.
+  - `DELETE /assessment-sections/{section_id}` archive draft section.
+  - `PATCH /assessment-items/{item_id}` update question_version_id/points/position.
+  - `DELETE /assessment-items/{item_id}` archive draft item.
+  - `DELETE /assessments/{id}/targets/{target_id}` archive draft target.
+  - `POST /assessments/{id}/sections/reorder` with ordered section ids.
+  - `POST /assessment-sections/{section_id}/items/reorder` with ordered item ids.
+  - `GET /questions?q=&bank_id=&limit=&offset=` question picker returning published question versions.
+  - `GET /assessments/{id}/publications` returning publication history.
+- [x] Extended `ValidateAssessment` with detailed errors: active section/item/target presence, points > 0, opens_at < closes_at, max_attempts/duration > 0, question version published, target class active.
+- [x] Implemented soft archive via status columns; kept only DRAFT assessments mutable.
+- [x] Added sqlc queries and regenerated code; updated Repository interface and wrapper.
+- [x] Added service and handler tests for update/delete/reorder/list publications.
+- [x] Extended E2E smoke to exercise edit section/item, reorder, delete/re-add item/target, question picker, publications, and validation errors.
+- [x] Updated OpenAPI skeleton and regenerated TypeScript types.
+
+### Deferred / not in scope
+
+- Frontend UI for builder upgrades.
+- Attempt generation/start from published snapshot.
+- Huma/openapi-fetch migration.
+
+### Decisions / notes
+
+- Reorder endpoints require the caller to send all active IDs in the desired order; positions are assigned sequentially (gaps of 10) inside a transaction.
+- Question picker lists only questions with a published version; prompt text is read from `prompt_json->>'text'`.
+- Publication history returns current assessment status for each publication row; older revisions are not independently tracked.
+- Archive uses status='ARCHIVED' for sections/items/targets; assessment itself stays in DRAFT until publish.
+
+## Change log
+
+| Date | Task | Files changed | Verification |
+|---|---|---|---|
+| 2026-06-30 | Builder upgrades backend | `apps/api/internal/features/assessments/*`, `apps/api/cmd/server/main.go`, `docs/backend/backend-technical-spec/openapi/openapi-skeleton.yaml`, `apps/web/src/shared/api/openapi-schema.d.ts`, `scripts/e2e_smoke_api.mjs`, `docs/implementation-audit.md` | `pnpm api:sqlc`, `pnpm api:types`, `pnpm check`, `pnpm e2e:smoke` xanh; smoke cover edit/delete/reorder/validation errors/publications/question picker. |
+
 ## 2026-06-30 — Password history and login lockout
 
 ### Done
@@ -441,8 +481,102 @@ Repo-wide implementation tracking. Append-only; do not delete historical entries
 - Huma adoption is a cost/risk decision, not a technical blocker.
 - Breached-password checking requires a separate privacy/ops review before integration.
 
+## 2026-06-30 — Attempt generation backend
+
+### Done
+
+- [x] `GET /api/v1/me/assessments` lists published/open assessments assigned to the current student via active class enrollments and assessment targets.
+- [x] `POST /api/v1/assessments/{assessment_id}/attempts` starts a new attempt or resumes an existing `IN_PROGRESS` attempt, enforcing `max_attempts`.
+- [x] Attempt generation reads the latest `assessment_publications.snapshot_json`, flattens sections/items into `attempt_items`, and snapshots prompt/choices/answer_key/points/question_version_id.
+- [x] `AttemptSnapshot` now includes `server_time` so the frontend can compare against `expires_at`.
+- [x] Added sqlc queries for assigned assessments, latest publication, in-progress attempt lookup, attempt count, and attempt/item creation in the `attempts` feature.
+- [x] Added service-level errors and handler mapping for unauthorized role, assessment unavailable, no publication, and attempt limit reached.
+- [x] Extended unit tests for list/start/resume/limit/unavailable scenarios.
+- [x] Updated OpenAPI skeleton with `/me/assessments`, `/assessments/{assessment_id}/attempts`, `AssignedAssessment`, `AssignedAssessmentList`, and `server_time`; regenerated TypeScript types.
+- [x] Extended E2E smoke: student sees assigned published assessment, starts attempt, verifies prompt/choices snapshots and server_time, resumes existing attempt.
+
+### Decisions / notes
+
+- No new database migration was required; existing `attempts.status`, `assessment_publications.snapshot_json`, and `attempt_items` columns suffice.
+- Global item positions are assigned sequentially across sections during attempt generation to avoid per-section position collisions.
+- Role check uses `student` role from the access token; the repository query also enforces enrollment, so a non-enrolled student receives `assessment_unavailable`.
+
+## 2026-06-30 — Academic admin backend gaps
+
+### Done
+
+- [x] Added `PATCH /api/v1/academic-terms/{term_id}` to update term name/date range.
+- [x] Added `PATCH /api/v1/subjects/{subject_id}` to update subject code/name/description.
+- [x] Added `PATCH /api/v1/courses/{course_id}` to update course subject/term/code/name.
+- [x] Added `PATCH /api/v1/classes/{class_id}` to update class course/name.
+- [x] Archive (DELETE) and membership management endpoints (`/classes/{id}/teachers`, `/classes/{id}/enrollments`) were already present and are unchanged.
+- [x] Added sqlc `UpdateTerm`, `UpdateSubject`, `UpdateCourse`, `UpdateClass` queries with tenant-scoped `WHERE` and `status='ACTIVE'` guards.
+- [x] Added service/handler validation and admin authorization for all update endpoints.
+- [x] Updated OpenAPI skeleton with PATCH operations and `Update*Request` schemas; regenerated TypeScript types.
+- [x] Added unit tests for unauthorized/invalid-input update paths and extended E2E smoke to exercise all four update endpoints.
+
+### Decisions / notes
+
+- Updates are full-replacement PATCH (all fields required) to keep sqlc queries simple; the admin UI can pre-populate existing values.
+- Update queries return the updated row and map `ErrNoRows` to `ErrNotFound` when the resource is missing or already archived.
+- Duplicate code on subject/course updates is mapped to `ErrDuplicateCode` (HTTP 409) using the existing `isDuplicateError` helper.
+
+## 2026-06-30 — OpenAPI fetch client migration expansion
+
+### Done
+
+- [x] Migrated all remaining frontend API helpers to `openapi-fetch` typed client:
+  - `apps/web/src/shared/api/attempts.ts`: `listAssignedAssessments`, `startAttempt`, `getAttempt`, `saveAnswer`, `submitAttempt`.
+  - `apps/web/src/shared/api/admin.ts`: `getOrganization`, `updateOrganization`, `listUsers`, `createUser`, `updateUserRoles`, `resetUserPassword`, `listAuditLogs`.
+  - `apps/web/src/shared/api/assessments.ts`: `listAssessments`, `createAssessment`, `getAssessment`, `updateAssessment`, `createSection`, `createItem`, `createTarget`, `validateAssessment`, `publishAssessment`, `listQuestions`, `updateSection`, `deleteSection`, `reorderSections`, `updateItem`, `deleteItem`, `reorderItems`, `deleteTarget`, `listPublications`.
+- [x] Extracted shared openapi-fetch response unwrappers (`unwrapData`, `unwrapPaged`, `unwrapVoid`) and `ApiResponseError` into `apps/web/src/shared/api/attempts.ts` for reuse by the other helper modules.
+- [x] Verified CSRF middleware path on unsafe methods: `openapi-client.ts` fetches/sets `X-CSRF-Token` and sends `credentials: 'include'` on every request.
+- [x] Confirmed all helper signatures and return shapes remain unchanged; existing UI components continue to import from the same modules.
+- [x] Updated ADR-0010 to record Stage 3 full adoption of the typed client.
+
+### Deferred / not in scope
+
+- Removal or deprecation of legacy `apiClient` (`apps/web/src/shared/api/api-client.ts`); kept as fallback.
+- Huma runtime migration.
+
+### Decisions / notes
+
+- Response unwrappers convert openapi-fetch `{ data, error, response }` into the existing `ApiResponseError` shape via `createApiError`, preserving current error handling in UI.
+- Query parameter objects are cleaned before sending so `undefined` values are not serialized into the URL.
+- Type-only re-exports of generated schemas remain; no runtime bundler size impact beyond `openapi-fetch` itself.
+
+## 2026-06-30 — Huma revisit docs
+
+### Done
+
+- [x] Revisited Huma decision after academic admin and openapi-fetch migration batch.
+- [x] Measured current OpenAPI skeleton size: **44 paths** in `openapi-skeleton.yaml` (above the original ~20–25 threshold).
+- [x] Recorded that manual spec maintenance remains manageable because `openapi-typescript` + `openapi-fetch` provide frontend type-safety and CI (`pnpm api:types`, `pnpm api:sqlc`) catches generated-code drift.
+- [x] Confirmed Huma runtime migration remains **deferred** due to higher refactor risk/cost than manual maintenance, especially for auth cookie/CSRF/refresh-sensitive handlers.
+- [x] Updated ADR-0010 with explicit next-review triggers:
+  - Spec drift causing production/type errors ≥ 2 times/month.
+  - Paths ≥ 60.
+  - Need runtime request/response schema validation.
+  - Dedicated refactor sprint with ≥ 80% handler test coverage.
+- [x] Updated `14-implementation-roadmap.md` Stage 2 with current path count and revisit trigger.
+
+### Deferred / not in scope
+
+- No Huma dependency installation.
+- No handler/router code changes.
+- No runtime OpenAPI generation.
+
+### Decisions / notes
+
+- The original ~20–25 endpoint threshold was crossed, but the cost crossover point is higher now that generated types and typed fetch client are automated.
+- If Huma is revisited, migration will proceed by feature slice (auth → admin → attempts → assessments → academics), preserving `Repository` interfaces and avoiding big-bang rewrite.
+
 ## Change log
 
 | Date | Task | Files changed | Verification |
 |---|---|---|---|
 | 2026-06-30 | ADR/docs Huma + breach evaluation | `docs/backend/backend-technical-spec/adr/0010-huma-sqlc-staged-groundwork.md`, `docs/backend/backend-technical-spec/adr/0011-breached-password-provider.md`, `docs/backend/backend-technical-spec/14-implementation-roadmap.md`, `docs/implementation-audit.md` | Docs syntax/yaml reviewed; `pnpm check` xanh. |
+| 2026-06-30 | Attempt generation backend | `apps/api/internal/features/attempts/*`, `apps/api/cmd/server/main.go`, `docs/backend/backend-technical-spec/openapi/openapi-skeleton.yaml`, `apps/web/src/shared/api/openapi-schema.d.ts`, `scripts/e2e_smoke_api.mjs`, `docs/implementation-audit.md` | `pnpm check` xanh; `pnpm e2e:smoke` xanh. |
+| 2026-06-30 | Academic admin backend gaps | `apps/api/internal/features/academics/*`, `apps/api/cmd/server/main.go`, `docs/backend/backend-technical-spec/openapi/openapi-skeleton.yaml`, `apps/web/src/shared/api/openapi-schema.d.ts`, `scripts/e2e_smoke_api.mjs`, `docs/implementation-audit.md` | `pnpm check` xanh; `pnpm e2e:smoke` xanh. |
+| 2026-06-30 | OpenAPI fetch client migration expansion | `apps/web/src/shared/api/openapi-client.ts`, `apps/web/src/shared/api/attempts.ts`, `apps/web/src/shared/api/admin.ts`, `apps/web/src/shared/api/assessments.ts`, `docs/backend/backend-technical-spec/adr/0010-huma-sqlc-staged-groundwork.md`, `docs/implementation-audit.md` | `pnpm web:typecheck`, `pnpm web:build`, `pnpm check`, `pnpm e2e:smoke` xanh; toàn bộ helpers frontend sử dụng `openapi-fetch`.
+| 2026-06-30 | Huma revisit docs | `docs/backend/backend-technical-spec/adr/0010-huma-sqlc-staged-groundwork.md`, `docs/backend/backend-technical-spec/14-implementation-roadmap.md`, `docs/implementation-audit.md` | `pnpm check` xanh; ADR ghi rõ 44 paths, Huma vẫn deferred, và các trigger tái xem xét.

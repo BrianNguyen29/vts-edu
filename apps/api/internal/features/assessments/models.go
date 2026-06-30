@@ -93,9 +93,57 @@ type CreateItemRequest struct {
 	Points            string `json:"points,omitempty"`
 }
 
+// UpdateSectionRequest is the payload for PATCH /assessment-sections/{section_id}.
+type UpdateSectionRequest struct {
+	Title    string `json:"title,omitempty"`
+	Position int    `json:"position,omitempty"`
+}
+
+// UpdateItemRequest is the payload for PATCH /assessment-items/{item_id}.
+type UpdateItemRequest struct {
+	QuestionVersionID string `json:"question_version_id,omitempty"`
+	Position          int    `json:"position,omitempty"`
+	Points            string `json:"points,omitempty"`
+}
+
+// ReorderSectionsRequest is the payload for POST /assessments/{id}/sections/reorder.
+type ReorderSectionsRequest struct {
+	SectionIDs []string `json:"section_ids"`
+}
+
+// ReorderItemsRequest is the payload for POST /assessment-sections/{section_id}/items/reorder.
+type ReorderItemsRequest struct {
+	ItemIDs []string `json:"item_ids"`
+}
+
 // CreateTargetRequest is the payload for POST /assessments/{id}/targets.
 type CreateTargetRequest struct {
 	ClassSectionID string `json:"class_section_id"`
+}
+
+// ListQuestionsOptions filters the question picker list.
+type ListQuestionsOptions struct {
+	Query  string
+	BankID string
+	Limit  int
+	Offset int
+}
+
+// QuestionPickerItem is a question/version choice for the builder picker.
+type QuestionPickerItem struct {
+	ID                    string `json:"id"`
+	QuestionBankID        string `json:"question_bank_id"`
+	QuestionVersionID     string `json:"question_version_id"`
+	QuestionVersionStatus string `json:"question_version_status"`
+	Prompt                string `json:"prompt"`
+}
+
+// PublicationSummary is a row in the assessment publication history.
+type PublicationSummary struct {
+	ID          string `json:"id"`
+	Version     int    `json:"version"`
+	Status      string `json:"status"`
+	PublishedAt string `json:"published_at"`
 }
 
 // PublishResult is returned by POST /assessments/{id}/publish.

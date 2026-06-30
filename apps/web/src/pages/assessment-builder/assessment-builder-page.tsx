@@ -5,18 +5,28 @@ import {
   createItem,
   createSection,
   createTarget,
+  deleteItem,
+  deleteSection,
+  deleteTarget,
   getAssessment,
+  listPublications,
+  listQuestions,
   publishAssessment,
+  reorderItems,
+  reorderSections,
   updateAssessment,
+  updateItem,
+  updateSection,
   validateAssessment,
   type AssessmentDetail,
+  type Item,
+  type PublicationSummary,
+  type QuestionPickerItem,
   type Section,
   type Target,
   type ValidationResult,
 } from '@/shared/api/assessments';
 import { listClasses, type ClassSection } from '@/shared/api/academics';
-
-const DEMO_QUESTION_VERSION_ID = '00000000-0000-4000-8000-000000000002';
 
 function formatFriendlyError(err: unknown): string {
   if (err instanceof ApiResponseError) {
@@ -42,6 +52,8 @@ export function AssessmentBuilderPage() {
 
   const [assessment, setAssessment] = useState<AssessmentDetail | null>(null);
   const [classes, setClasses] = useState<ClassSection[]>([]);
+  const [questions, setQuestions] = useState<QuestionPickerItem[]>([]);
+  const [publications, setPublications] = useState<PublicationSummary[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
@@ -61,6 +73,18 @@ export function AssessmentBuilderPage() {
   const [validating, setValidating] = useState(false);
   const [publishing, setPublishing] = useState(false);
 
+  const [editingSectionId, setEditingSectionId] = useState<string | null>(null);
+  const [editingSectionTitle, setEditingSectionTitle] = useState('');
+
+  const [editingItemId, setEditingItemId] = useState<string | null>(null);
+  const [editingItemPoints, setEditingItemPoints] = useState('');
+  const [editingItemQuestionId, setEditingItemQuestionId] = useState('');
+
+  const [pickerSectionId, setPickerSectionId] = useState<string | null>(null);
+  const [pickerQuestionId, setPickerQuestionId] = useState('');
+  const [pickerPoints, setPickerPoints] = useState('1.00');
+  const [questionSearch, setQuestionSearch] = useState('');
+
   useEffect(() => {
     let cancelled = false;
 
@@ -69,13 +93,18 @@ export function AssessmentBuilderPage() {
       setLoading(true);
       setError(null);
       try {
-        const [assessmentData, classesData] = await Promise.all([
-          getAssessment(assessmentId),
-          listClasses(),
-        ]);
+        const [assessmentData, classesData, questionsData, pubsData] =
+          await Promise.all([
+            getAssessment(assessmentId),
+            listClasses(),
+            listQuestions({ limit: 100 }),
+            listPublications(assessmentId),
+          ]);
         if (cancelled) return;
         setAssessment(assessmentData);
         setClasses(classesData.data);
+        setQuestions(questionsData.data);
+        setPublications(pubsData);
         setTitle(assessmentData.title);
         setDuration(String(assessmentData.duration_minutes));
         setInstructions(assessmentData.instructions ?? '');
@@ -97,6 +126,16 @@ export function AssessmentBuilderPage() {
   function clearMessages() {
     setError(null);
     setSuccess(null);
+  }
+
+  async function refreshAssessment() {
+    if (!assessmentId) return;
+    try {
+      const data = await getAssessment(assessmentId);
+      setAssessment(data);
+    } catch (err) {
+      setError(formatFriendlyError(err));
+    }
   }
 
   async function handleSaveSettings(e: React.FormEvent) {
@@ -143,15 +182,72 @@ export function AssessmentBuilderPage() {
     }
   }
 
-  async function handleAddItem(sectionId: string) {
-    if (!assessment) return;
+  async function handleUpdateSection(sectionId: string) {
+    if (!editingSectionTitle.trim()) return;
     clearMessages();
     try {
-      const section = assessment.sections.find((s) => s.id === sectionId);
+      const updated = await updateSection(sectionId, {
+        title: editingSectionTitle.trim(),
+      });
+      setAssessment((prev) => {
+        if (!prev) return prev;
+        return {
+          ...prev,
+          sections: prev.sections.map((s) =>
+            s.id === sectionId ? (updated as Section) : s
+          ),
+        };
+      });
+      setEditingSectionId(null);
+      setSuccess('Đã cập nhật phần.');
+    } catch (err) {
+      setError(formatFriendlyError(err));
+    }
+  }
+
+  async function handleDeleteSection(sectionId: string) {
+    if (!window.confirm('Bạn có chắc muốn xóa phần này?')) return;
+    clearMessages();
+    try {
+      await deleteSection(sectionId);
+      await refreshAssessment();
+      setSuccess('Đã xóa phần.');
+    } catch (err) {
+      setError(formatFriendlyError(err));
+    }
+  }
+
+  async function handleMoveSection(sectionId: string, direction: -1 | 1) {
+    if (!assessment) return;
+    const index = assessment.sections.findIndex((s) => s.id === sectionId);
+    const newIndex = index + direction;
+    if (index < 0 || newIndex < 0 || newIndex >= assessment.sections.length) {
+      return;
+    }
+    const newOrder = [...assessment.sections];
+    const [moved] = newOrder.splice(index, 1);
+    newOrder.splice(newIndex, 0, moved);
+    clearMessages();
+    try {
+      await reorderSections(
+        assessment.id,
+        { section_ids: newOrder.map((s) => s.id) }
+      );
+      await refreshAssessment();
+    } catch (err) {
+      setError(formatFriendlyError(err));
+    }
+  }
+
+  async function handleAddItem(sectionId: string) {
+    if (!pickerQuestionId) return;
+    clearMessages();
+    try {
+      const section = assessment?.sections.find((s) => s.id === sectionId);
       const item = await createItem(sectionId, {
-        question_version_id: DEMO_QUESTION_VERSION_ID,
+        question_version_id: pickerQuestionId,
         position: (section?.items.length ?? 0) + 1,
-        points: '1.00',
+        points: pickerPoints || '1.00',
       });
       setAssessment((prev) => {
         if (!prev) return prev;
@@ -164,7 +260,85 @@ export function AssessmentBuilderPage() {
           ),
         };
       });
+      setPickerSectionId(null);
+      setPickerQuestionId('');
+      setPickerPoints('1.00');
+      setQuestionSearch('');
       setSuccess('Đã thêm câu hỏi.');
+    } catch (err) {
+      setError(formatFriendlyError(err));
+    }
+  }
+
+  async function handleUpdateItem(itemId: string, sectionId: string) {
+    clearMessages();
+    try {
+      const updated = await updateItem(itemId, {
+        question_version_id: editingItemQuestionId || undefined,
+        points: editingItemPoints,
+      });
+      setAssessment((prev) => {
+        if (!prev) return prev;
+        return {
+          ...prev,
+          sections: prev.sections.map((s) =>
+            s.id === sectionId
+              ? {
+                  ...s,
+                  items: s.items.map((it) =>
+                    it.id === itemId ? (updated as Item) : it
+                  ),
+                }
+              : s
+          ),
+        };
+      });
+      setEditingItemId(null);
+      setSuccess('Đã cập nhật câu hỏi.');
+    } catch (err) {
+      setError(formatFriendlyError(err));
+    }
+  }
+
+  async function handleDeleteItem(itemId: string, sectionId: string) {
+    if (!window.confirm('Bạn có chắc muốn xóa câu hỏi này?')) return;
+    clearMessages();
+    try {
+      await deleteItem(itemId);
+      setAssessment((prev) => {
+        if (!prev) return prev;
+        return {
+          ...prev,
+          sections: prev.sections.map((s) =>
+            s.id === sectionId
+              ? { ...s, items: s.items.filter((it) => it.id !== itemId) }
+              : s
+          ),
+        };
+      });
+      setSuccess('Đã xóa câu hỏi.');
+    } catch (err) {
+      setError(formatFriendlyError(err));
+    }
+  }
+
+  async function handleMoveItem(
+    itemId: string,
+    sectionId: string,
+    direction: -1 | 1
+  ) {
+    const section = assessment?.sections.find((s) => s.id === sectionId);
+    if (!section) return;
+    const index = section.items.findIndex((it) => it.id === itemId);
+    const newIndex = index + direction;
+    if (index < 0 || newIndex < 0 || newIndex >= section.items.length) return;
+    const newOrder = [...section.items];
+    const [moved] = newOrder.splice(index, 1);
+    newOrder.splice(newIndex, 0, moved);
+    clearMessages();
+    try {
+      await reorderItems(sectionId, { item_ids: newOrder.map((it) => it.id) });
+      await refreshAssessment();
     } catch (err) {
       setError(formatFriendlyError(err));
     }
@@ -191,6 +365,23 @@ export function AssessmentBuilderPage() {
     }
   }
 
+  async function handleDeleteTarget(targetId: string) {
+    if (!assessmentId) return;
+    if (!window.confirm('Bạn có chắc muốn gỡ lớp đích này?')) return;
+    clearMessages();
+    try {
+      await deleteTarget(assessmentId, targetId);
+      setAssessment((prev) =>
+        prev
+          ? { ...prev, targets: prev.targets.filter((t) => t.id !== targetId) }
+          : prev
+      );
+      setSuccess('Đã gỡ lớp đích.');
+    } catch (err) {
+      setError(formatFriendlyError(err));
+    }
+  }
+
   async function handleValidate() {
     if (!assessmentId) return;
     clearMessages();
@@ -214,17 +405,24 @@ export function AssessmentBuilderPage() {
     setPublishing(true);
     try {
       const result = await publishAssessment(assessmentId);
-      setAssessment((prev) =>
-        prev
-          ? { ...prev, status: result.status, revision: result.revision }
-          : prev
-      );
+      await refreshAssessment();
+      const pubs = await listPublications(assessmentId);
+      setPublications(pubs);
       setSuccess(`Đã xuất bản đề thi (bản thảo ${result.revision}).`);
     } catch (err) {
       setError(formatFriendlyError(err));
     } finally {
       setPublishing(false);
     }
+  }
+
+  const filteredQuestions = questions.filter((q) =>
+    q.prompt.toLowerCase().includes(questionSearch.toLowerCase())
+  );
+
+  function getQuestionLabel(versionId: string): string {
+    const q = questions.find((x) => x.question_version_id === versionId);
+    return q?.prompt ?? versionId;
   }
 
   if (loading) {
@@ -256,7 +454,8 @@ export function AssessmentBuilderPage() {
     );
   }
 
-  const isPublished = assessment.status === 'PUBLISHED' || assessment.status === 'OPEN';
+  const isPublished =
+    assessment.status === 'PUBLISHED' || assessment.status === 'OPEN';
 
   return (
     <div className="dashboard-page">
@@ -323,7 +522,11 @@ export function AssessmentBuilderPage() {
             />
           </div>
           <div className="form-actions">
-            <button type="submit" className="primary" disabled={savingSettings || isPublished}>
+            <button
+              type="submit"
+              className="primary"
+              disabled={savingSettings || isPublished}
+            >
               {savingSettings ? 'Đang lưu…' : 'Lưu cài đặt'}
             </button>
           </div>
@@ -337,34 +540,255 @@ export function AssessmentBuilderPage() {
           <p className="dashboard-status">Chưa có phần nào.</p>
         )}
 
-        {assessment.sections.map((section) => (
+        {assessment.sections.map((section, sectionIndex) => (
           <div key={section.id} className="builder-section">
             <div className="section-header">
-              <h3>{section.title}</h3>
+              {editingSectionId === section.id ? (
+                <form
+                  onSubmit={(e) => {
+                    e.preventDefault();
+                    void handleUpdateSection(section.id);
+                  }}
+                  className="inline-form"
+                >
+                  <input
+                    type="text"
+                    value={editingSectionTitle}
+                    onChange={(e) => setEditingSectionTitle(e.target.value)}
+                    autoFocus
+                  />
+                  <button type="submit" className="primary">
+                    Lưu
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setEditingSectionId(null)}
+                  >
+                    Hủy
+                  </button>
+                </form>
+              ) : (
+                <h3>{section.title}</h3>
+              )}
               <span className="section-meta">
                 {section.items.length} câu hỏi
               </span>
             </div>
+
+            {!isPublished && editingSectionId !== section.id && (
+              <div className="row-actions" style={{ marginBottom: '0.75rem' }}>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setEditingSectionId(section.id);
+                    setEditingSectionTitle(section.title);
+                  }}
+                >
+                  Sửa tên
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleMoveSection(section.id, -1)}
+                  disabled={sectionIndex === 0}
+                >
+                  Lên
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleMoveSection(section.id, 1)}
+                  disabled={sectionIndex === assessment.sections.length - 1}
+                >
+                  Xuống
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleDeleteSection(section.id)}
+                >
+                  Xóa
+                </button>
+              </div>
+            )}
 
             {section.items.length === 0 && (
               <p className="dashboard-status">Chưa có câu hỏi.</p>
             )}
 
             <ul className="item-list">
-              {section.items.map((item, index) => (
+              {section.items.map((item, itemIndex) => (
                 <li key={item.id} className="item-row">
-                  <span>Câu {index + 1}</span>
-                  <span className="item-meta">
-                    {item.points} điểm · {item.question_version_id}
-                  </span>
+                  {editingItemId === item.id ? (
+                    <form
+                      onSubmit={(e) => {
+                        e.preventDefault();
+                        void handleUpdateItem(item.id, section.id);
+                      }}
+                      className="inline-form"
+                      style={{ flex: 1 }}
+                    >
+                      <label htmlFor={`edit-item-question-${item.id}`} className="sr-only">
+                        Câu hỏi
+                      </label>
+                      <select
+                        id={`edit-item-question-${item.id}`}
+                        value={editingItemQuestionId}
+                        onChange={(e) =>
+                          setEditingItemQuestionId(e.target.value)
+                        }
+                        required
+                      >
+                        <option value="">Chọn câu hỏi…</option>
+                        {questions.map((q) => (
+                          <option
+                            key={q.question_version_id}
+                            value={q.question_version_id}
+                          >
+                            {q.prompt}
+                          </option>
+                        ))}
+                      </select>
+                      <input
+                        type="text"
+                        value={editingItemPoints}
+                        onChange={(e) => setEditingItemPoints(e.target.value)}
+                        placeholder="Điểm"
+                        style={{ width: '6rem' }}
+                        required
+                      />
+                      <button type="submit" className="primary">
+                        Lưu
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setEditingItemId(null)}
+                      >
+                        Hủy
+                      </button>
+                    </form>
+                  ) : (
+                    <>
+                      <div>
+                        <div className="item-title">
+                          Câu {itemIndex + 1}: {getQuestionLabel(item.question_version_id)}
+                        </div>
+                        <div className="item-meta">
+                          {item.points} điểm · {item.question_version_id}
+                        </div>
+                      </div>
+                      {!isPublished && (
+                        <div className="row-actions">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setEditingItemId(item.id);
+                              setEditingItemQuestionId(item.question_version_id);
+                              setEditingItemPoints(item.points);
+                            }}
+                          >
+                            Sửa
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() =>
+                              handleMoveItem(item.id, section.id, -1)
+                            }
+                            disabled={itemIndex === 0}
+                          >
+                            Lên
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() =>
+                              handleMoveItem(item.id, section.id, 1)
+                            }
+                            disabled={itemIndex === section.items.length - 1}
+                          >
+                            Xuống
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() =>
+                              handleDeleteItem(item.id, section.id)
+                            }
+                          >
+                            Xóa
+                          </button>
+                        </div>
+                      )}
+                    </>
+                  )}
                 </li>
               ))}
             </ul>
 
-            {!isPublished && (
+            {!isPublished && pickerSectionId === section.id && (
+              <div className="item-picker">
+                <div className="field">
+                  <label>Tìm câu hỏi</label>
+                  <input
+                    type="search"
+                    placeholder="Nhập từ khóa…"
+                    value={questionSearch}
+                    onChange={(e) => setQuestionSearch(e.target.value)}
+                  />
+                </div>
+                <div className="field">
+                  <label htmlFor="picker-question">Chọn câu hỏi</label>
+                  <select
+                    id="picker-question"
+                    value={pickerQuestionId}
+                    onChange={(e) => setPickerQuestionId(e.target.value)}
+                    required
+                    size={Math.min(5, filteredQuestions.length || 1)}
+                  >
+                    <option value="">Chọn…</option>
+                    {filteredQuestions.map((q) => (
+                      <option key={q.question_version_id} value={q.question_version_id}>
+                        {q.prompt}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div className="field">
+                  <label>Điểm</label>
+                  <input
+                    type="text"
+                    value={pickerPoints}
+                    onChange={(e) => setPickerPoints(e.target.value)}
+                    style={{ width: '6rem' }}
+                  />
+                </div>
+                <div className="form-actions">
+                  <button
+                    type="button"
+                    className="primary"
+                    onClick={() => handleAddItem(section.id)}
+                    disabled={!pickerQuestionId}
+                  >
+                    Thêm câu hỏi
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setPickerSectionId(null);
+                      setPickerQuestionId('');
+                      setQuestionSearch('');
+                    }}
+                  >
+                    Hủy
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {!isPublished && pickerSectionId !== section.id && (
               <button
                 type="button"
-                onClick={() => handleAddItem(section.id)}
+                onClick={() => {
+                  setPickerSectionId(section.id);
+                  setPickerQuestionId('');
+                  setPickerPoints('1.00');
+                  setQuestionSearch('');
+                }}
                 className="secondary"
               >
                 + Thêm câu hỏi
@@ -388,7 +812,11 @@ export function AssessmentBuilderPage() {
               />
             </div>
             <div className="form-actions">
-              <button type="submit" className="primary" disabled={addingSection}>
+              <button
+                type="submit"
+                className="primary"
+                disabled={addingSection}
+              >
                 {addingSection ? 'Đang thêm…' : 'Thêm phần'}
               </button>
             </div>
@@ -409,7 +837,15 @@ export function AssessmentBuilderPage() {
               const cls = classes.find((c) => c.id === target.class_section_id);
               return (
                 <li key={target.id} className="target-row">
-                  {cls?.name ?? target.class_section_id}
+                  <span>{cls?.name ?? target.class_section_id}</span>
+                  {!isPublished && (
+                    <button
+                      type="button"
+                      onClick={() => handleDeleteTarget(target.id)}
+                    >
+                      Gỡ
+                    </button>
+                  )}
                 </li>
               );
             })}
@@ -418,7 +854,11 @@ export function AssessmentBuilderPage() {
 
         {!isPublished && (
           <form onSubmit={handleAddTarget} className="inline-form">
+            <label htmlFor="target-class" className="sr-only">
+              Lớp đích
+            </label>
             <select
+              id="target-class"
               value={targetClassId}
               onChange={(e) => setTargetClassId(e.target.value)}
               required
@@ -475,7 +915,32 @@ export function AssessmentBuilderPage() {
           </div>
         )}
       </section>
+
+      {publications.length > 0 && (
+        <section className="admin-section">
+          <h2>Lịch sử xuất bản</h2>
+          <div className="publication-table-wrapper">
+            <table className="publication-table">
+              <thead>
+                <tr>
+                  <th>Phiên bản</th>
+                  <th>Trạng thái</th>
+                  <th>Thời gian</th>
+                </tr>
+              </thead>
+              <tbody>
+                {publications.map((pub) => (
+                  <tr key={pub.id}>
+                    <td>{pub.version}</td>
+                    <td>{pub.status}</td>
+                    <td>{new Date(pub.published_at).toLocaleString('vi-VN')}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      )}
     </div>
   );
 }
-

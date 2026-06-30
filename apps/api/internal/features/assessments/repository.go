@@ -30,13 +30,35 @@ type Repository interface {
 	CreateAssessmentSection(ctx context.Context, tx pgx.Tx, orgID, assessmentID string, req CreateSectionRequest) (SectionDetail, error)
 	CreateAssessmentItem(ctx context.Context, tx pgx.Tx, orgID, assessmentID, sectionID string, req CreateItemRequest) (ItemDetail, error)
 	CreateAssessmentTarget(ctx context.Context, tx pgx.Tx, orgID, assessmentID string, req CreateTargetRequest) (TargetDetail, error)
+
+	GetAssessmentSection(ctx context.Context, orgID, sectionID string) (SectionDetail, error)
+	UpdateAssessmentSection(ctx context.Context, tx pgx.Tx, orgID, sectionID string, req UpdateSectionRequest) (SectionDetail, error)
+	ArchiveAssessmentSection(ctx context.Context, tx pgx.Tx, orgID, sectionID string) error
+
+	GetAssessmentItem(ctx context.Context, orgID, itemID string) (ItemDetail, error)
+	GetItemAssessmentID(ctx context.Context, orgID, itemID string) (string, error)
+	UpdateAssessmentItem(ctx context.Context, tx pgx.Tx, orgID, itemID string, req UpdateItemRequest) (ItemDetail, error)
+	ArchiveAssessmentItem(ctx context.Context, tx pgx.Tx, orgID, itemID string) error
+
+	GetAssessmentTarget(ctx context.Context, orgID, targetID string) (TargetDetail, error)
+	GetTargetAssessmentID(ctx context.Context, orgID, targetID string) (string, error)
+	ArchiveAssessmentTarget(ctx context.Context, tx pgx.Tx, orgID, targetID string) error
+
+	ReorderAssessmentSections(ctx context.Context, tx pgx.Tx, orgID, assessmentID string, sectionIDs []string) error
+	ReorderAssessmentItems(ctx context.Context, tx pgx.Tx, orgID, sectionID string, itemIDs []string) error
+
 	GetAssessmentItemsWithContent(ctx context.Context, orgID, assessmentID string) ([]ItemContentRow, error)
 	PublishAssessment(ctx context.Context, tx pgx.Tx, orgID, assessmentID, newStatus string) (int, error)
 	InsertAssessmentPublication(ctx context.Context, tx pgx.Tx, orgID, assessmentID string, version int, snapshot json.RawMessage) error
+	ListAssessmentPublications(ctx context.Context, orgID, assessmentID string) ([]PublicationSummary, error)
 	CountAssessmentSections(ctx context.Context, orgID, assessmentID string) (int64, error)
 	CountAssessmentItems(ctx context.Context, orgID, assessmentID string) (int64, error)
 	CountAssessmentTargets(ctx context.Context, orgID, assessmentID string) (int64, error)
 	QuestionVersionExists(ctx context.Context, orgID, questionVersionID string) (bool, error)
+	IsQuestionVersionPublished(ctx context.Context, orgID, questionVersionID string) (bool, error)
+	IsClassSectionActive(ctx context.Context, orgID, classSectionID string) (bool, error)
+	ListQuestions(ctx context.Context, orgID string, opts ListQuestionsOptions) ([]QuestionPickerItem, error)
+	CountQuestions(ctx context.Context, orgID string, opts ListQuestionsOptions) (int64, error)
 	IsClassManager(ctx context.Context, orgID, userID, classSectionID string) (bool, error)
 	IsAssessmentManager(ctx context.Context, orgID, userID, assessmentID string) (bool, error)
 }
@@ -455,6 +477,494 @@ func (r *sqlcRepository) GetAssessmentTargets(ctx context.Context, orgID, assess
 		}
 	}
 	return targets, nil
+}
+
+func (r *sqlcRepository) GetAssessmentSection(ctx context.Context, orgID, sectionID string) (SectionDetail, error) {
+	orgUUID, err := toUUID(orgID)
+	if err != nil {
+		return SectionDetail{}, fmt.Errorf("invalid organization id: %w", err)
+	}
+	id, err := toUUID(sectionID)
+	if err != nil {
+		return SectionDetail{}, fmt.Errorf("invalid section id: %w", err)
+	}
+	row, err := r.queries.GetAssessmentSection(ctx, assessmentsqlc.GetAssessmentSectionParams{
+		SectionID:      id,
+		OrganizationID: orgUUID,
+	})
+	if errors.Is(err, pgx.ErrNoRows) {
+		return SectionDetail{}, ErrNotFound
+	}
+	if err != nil {
+		return SectionDetail{}, fmt.Errorf("get assessment section: %w", err)
+	}
+	return sectionDetailFromRow(row), nil
+}
+
+func sectionDetailFromRow(row assessmentsqlc.GetAssessmentSectionRow) SectionDetail {
+	var settings json.RawMessage
+	if len(row.SettingsJson) > 0 {
+		settings = row.SettingsJson
+	}
+	return SectionDetail{
+		ID:       row.ID.String(),
+		Title:    row.Title,
+		Position: int(row.Position),
+		Settings: settings,
+		Items:    []ItemDetail{},
+	}
+}
+
+func (r *sqlcRepository) UpdateAssessmentSection(ctx context.Context, tx pgx.Tx, orgID, sectionID string, req UpdateSectionRequest) (SectionDetail, error) {
+	orgUUID, err := toUUID(orgID)
+	if err != nil {
+		return SectionDetail{}, fmt.Errorf("invalid organization id: %w", err)
+	}
+	id, err := toUUID(sectionID)
+	if err != nil {
+		return SectionDetail{}, fmt.Errorf("invalid section id: %w", err)
+	}
+	row, err := r.queries.WithTx(tx).UpdateAssessmentSection(ctx, assessmentsqlc.UpdateAssessmentSectionParams{
+		Title:          req.Title,
+		Position:       int32(req.Position),
+		SectionID:      id,
+		OrganizationID: orgUUID,
+	})
+	if errors.Is(err, pgx.ErrNoRows) {
+		return SectionDetail{}, ErrNotFound
+	}
+	if err != nil {
+		return SectionDetail{}, fmt.Errorf("update assessment section: %w", err)
+	}
+	return sectionDetailFromRow(assessmentsqlc.GetAssessmentSectionRow{
+		ID:           row.ID,
+		AssessmentID: row.AssessmentID,
+		Title:        row.Title,
+		Position:     row.Position,
+		SettingsJson: row.SettingsJson,
+		Status:       row.Status,
+	}), nil
+}
+
+func (r *sqlcRepository) ArchiveAssessmentSection(ctx context.Context, tx pgx.Tx, orgID, sectionID string) error {
+	orgUUID, err := toUUID(orgID)
+	if err != nil {
+		return fmt.Errorf("invalid organization id: %w", err)
+	}
+	id, err := toUUID(sectionID)
+	if err != nil {
+		return fmt.Errorf("invalid section id: %w", err)
+	}
+	rows, err := r.queries.WithTx(tx).ArchiveAssessmentSection(ctx, assessmentsqlc.ArchiveAssessmentSectionParams{
+		SectionID:      id,
+		OrganizationID: orgUUID,
+	})
+	if err != nil {
+		return fmt.Errorf("archive assessment section: %w", err)
+	}
+	if rows == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
+func (r *sqlcRepository) GetAssessmentItem(ctx context.Context, orgID, itemID string) (ItemDetail, error) {
+	orgUUID, err := toUUID(orgID)
+	if err != nil {
+		return ItemDetail{}, fmt.Errorf("invalid organization id: %w", err)
+	}
+	id, err := toUUID(itemID)
+	if err != nil {
+		return ItemDetail{}, fmt.Errorf("invalid item id: %w", err)
+	}
+	row, err := r.queries.GetAssessmentItem(ctx, assessmentsqlc.GetAssessmentItemParams{
+		ItemID:         id,
+		OrganizationID: orgUUID,
+	})
+	if errors.Is(err, pgx.ErrNoRows) {
+		return ItemDetail{}, ErrNotFound
+	}
+	if err != nil {
+		return ItemDetail{}, fmt.Errorf("get assessment item: %w", err)
+	}
+	return itemDetailFromRow(row), nil
+}
+
+func itemDetailFromRow(row assessmentsqlc.GetAssessmentItemRow) ItemDetail {
+	return ItemDetail{
+		ID:                  row.ID.String(),
+		AssessmentSectionID: row.AssessmentSectionID.String(),
+		QuestionVersionID:   row.QuestionVersionID.String(),
+		Position:            int(row.Position),
+		Points:              numericString(row.Points),
+	}
+}
+
+func (r *sqlcRepository) GetItemAssessmentID(ctx context.Context, orgID, itemID string) (string, error) {
+	orgUUID, err := toUUID(orgID)
+	if err != nil {
+		return "", fmt.Errorf("invalid organization id: %w", err)
+	}
+	id, err := toUUID(itemID)
+	if err != nil {
+		return "", fmt.Errorf("invalid item id: %w", err)
+	}
+	row, err := r.queries.GetItemAssessmentID(ctx, assessmentsqlc.GetItemAssessmentIDParams{
+		ItemID:         id,
+		OrganizationID: orgUUID,
+	})
+	if errors.Is(err, pgx.ErrNoRows) {
+		return "", ErrNotFound
+	}
+	if err != nil {
+		return "", fmt.Errorf("get item assessment id: %w", err)
+	}
+	return row.String(), nil
+}
+
+func (r *sqlcRepository) UpdateAssessmentItem(ctx context.Context, tx pgx.Tx, orgID, itemID string, req UpdateItemRequest) (ItemDetail, error) {
+	orgUUID, err := toUUID(orgID)
+	if err != nil {
+		return ItemDetail{}, fmt.Errorf("invalid organization id: %w", err)
+	}
+	id, err := toUUID(itemID)
+	if err != nil {
+		return ItemDetail{}, fmt.Errorf("invalid item id: %w", err)
+	}
+	var qvUUID pgtype.UUID
+	if req.QuestionVersionID != "" {
+		qvUUID, err = toUUID(req.QuestionVersionID)
+		if err != nil {
+			return ItemDetail{}, fmt.Errorf("invalid question version id: %w", err)
+		}
+	}
+	var points pgtype.Numeric
+	if req.Points != "" {
+		points, err = toNumeric(req.Points)
+		if err != nil {
+			return ItemDetail{}, fmt.Errorf("invalid points: %w", err)
+		}
+	}
+	row, err := r.queries.WithTx(tx).UpdateAssessmentItem(ctx, assessmentsqlc.UpdateAssessmentItemParams{
+		QuestionVersionID: qvUUID,
+		Points:            points,
+		Position:          int32(req.Position),
+		ItemID:            id,
+		OrganizationID:    orgUUID,
+	})
+	if errors.Is(err, pgx.ErrNoRows) {
+		return ItemDetail{}, ErrNotFound
+	}
+	if err != nil {
+		return ItemDetail{}, fmt.Errorf("update assessment item: %w", err)
+	}
+	return itemDetailFromRow(assessmentsqlc.GetAssessmentItemRow{
+		ID:                  row.ID,
+		AssessmentSectionID: row.AssessmentSectionID,
+		QuestionVersionID:   row.QuestionVersionID,
+		Position:            row.Position,
+		Points:              row.Points,
+		Status:              row.Status,
+	}), nil
+}
+
+func (r *sqlcRepository) ArchiveAssessmentItem(ctx context.Context, tx pgx.Tx, orgID, itemID string) error {
+	orgUUID, err := toUUID(orgID)
+	if err != nil {
+		return fmt.Errorf("invalid organization id: %w", err)
+	}
+	id, err := toUUID(itemID)
+	if err != nil {
+		return fmt.Errorf("invalid item id: %w", err)
+	}
+	rows, err := r.queries.WithTx(tx).ArchiveAssessmentItem(ctx, assessmentsqlc.ArchiveAssessmentItemParams{
+		ItemID:         id,
+		OrganizationID: orgUUID,
+	})
+	if err != nil {
+		return fmt.Errorf("archive assessment item: %w", err)
+	}
+	if rows == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
+func (r *sqlcRepository) GetAssessmentTarget(ctx context.Context, orgID, targetID string) (TargetDetail, error) {
+	orgUUID, err := toUUID(orgID)
+	if err != nil {
+		return TargetDetail{}, fmt.Errorf("invalid organization id: %w", err)
+	}
+	id, err := toUUID(targetID)
+	if err != nil {
+		return TargetDetail{}, fmt.Errorf("invalid target id: %w", err)
+	}
+	row, err := r.queries.GetAssessmentTarget(ctx, assessmentsqlc.GetAssessmentTargetParams{
+		TargetID:       id,
+		OrganizationID: orgUUID,
+	})
+	if errors.Is(err, pgx.ErrNoRows) {
+		return TargetDetail{}, ErrNotFound
+	}
+	if err != nil {
+		return TargetDetail{}, fmt.Errorf("get assessment target: %w", err)
+	}
+	return TargetDetail{
+		ID:             row.ID.String(),
+		ClassSectionID: row.ClassSectionID.String(),
+	}, nil
+}
+
+func (r *sqlcRepository) GetTargetAssessmentID(ctx context.Context, orgID, targetID string) (string, error) {
+	orgUUID, err := toUUID(orgID)
+	if err != nil {
+		return "", fmt.Errorf("invalid organization id: %w", err)
+	}
+	id, err := toUUID(targetID)
+	if err != nil {
+		return "", fmt.Errorf("invalid target id: %w", err)
+	}
+	row, err := r.queries.GetTargetAssessmentID(ctx, assessmentsqlc.GetTargetAssessmentIDParams{
+		TargetID:       id,
+		OrganizationID: orgUUID,
+	})
+	if errors.Is(err, pgx.ErrNoRows) {
+		return "", ErrNotFound
+	}
+	if err != nil {
+		return "", fmt.Errorf("get target assessment id: %w", err)
+	}
+	return row.String(), nil
+}
+
+func (r *sqlcRepository) ArchiveAssessmentTarget(ctx context.Context, tx pgx.Tx, orgID, targetID string) error {
+	orgUUID, err := toUUID(orgID)
+	if err != nil {
+		return fmt.Errorf("invalid organization id: %w", err)
+	}
+	id, err := toUUID(targetID)
+	if err != nil {
+		return fmt.Errorf("invalid target id: %w", err)
+	}
+	rows, err := r.queries.WithTx(tx).ArchiveAssessmentTarget(ctx, assessmentsqlc.ArchiveAssessmentTargetParams{
+		TargetID:       id,
+		OrganizationID: orgUUID,
+	})
+	if err != nil {
+		return fmt.Errorf("archive assessment target: %w", err)
+	}
+	if rows == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
+func (r *sqlcRepository) ReorderAssessmentSections(ctx context.Context, tx pgx.Tx, orgID, assessmentID string, sectionIDs []string) error {
+	orgUUID, err := toUUID(orgID)
+	if err != nil {
+		return fmt.Errorf("invalid organization id: %w", err)
+	}
+	assessUUID, err := toUUID(assessmentID)
+	if err != nil {
+		return fmt.Errorf("invalid assessment id: %w", err)
+	}
+	// Verify all provided IDs belong to this assessment and are active.
+	activeRows, err := r.queries.WithTx(tx).GetAssessmentSections(ctx, assessmentsqlc.GetAssessmentSectionsParams{
+		OrganizationID: orgUUID,
+		AssessmentID:   assessUUID,
+	})
+	if err != nil {
+		return fmt.Errorf("list active sections: %w", err)
+	}
+	activeSet := make(map[string]bool, len(activeRows))
+	for _, row := range activeRows {
+		activeSet[row.ID.String()] = true
+	}
+	if len(sectionIDs) != len(activeSet) {
+		return fmt.Errorf("%w: reorder must include all active sections", ErrInvalidInput)
+	}
+	for _, sid := range sectionIDs {
+		if !activeSet[sid] {
+			return fmt.Errorf("%w: unknown or inactive section %s", ErrInvalidInput, sid)
+		}
+	}
+	// Assign positions sequentially to avoid unique-constraint conflicts.
+	for i, sid := range sectionIDs {
+		sectionUUID, err := toUUID(sid)
+		if err != nil {
+			return fmt.Errorf("invalid section id: %w", err)
+		}
+		if _, err := r.queries.WithTx(tx).UpdateAssessmentSectionPosition(ctx, assessmentsqlc.UpdateAssessmentSectionPositionParams{
+			Position:       int32((i + 1) * 10),
+			SectionID:      sectionUUID,
+			OrganizationID: orgUUID,
+		}); err != nil {
+			return fmt.Errorf("update section position: %w", err)
+		}
+	}
+	return nil
+}
+
+func (r *sqlcRepository) ReorderAssessmentItems(ctx context.Context, tx pgx.Tx, orgID, sectionID string, itemIDs []string) error {
+	orgUUID, err := toUUID(orgID)
+	if err != nil {
+		return fmt.Errorf("invalid organization id: %w", err)
+	}
+	sectionUUID, err := toUUID(sectionID)
+	if err != nil {
+		return fmt.Errorf("invalid section id: %w", err)
+	}
+	activeRows, err := r.queries.WithTx(tx).GetAssessmentItemsBySection(ctx, assessmentsqlc.GetAssessmentItemsBySectionParams{
+		OrganizationID: orgUUID,
+		SectionID:      sectionUUID,
+	})
+	if err != nil {
+		return fmt.Errorf("list active items: %w", err)
+	}
+	activeSet := make(map[string]bool, len(activeRows))
+	for _, row := range activeRows {
+		activeSet[row.ID.String()] = true
+	}
+	if len(itemIDs) != len(activeSet) {
+		return fmt.Errorf("%w: reorder must include all active items in the section", ErrInvalidInput)
+	}
+	for _, iid := range itemIDs {
+		if !activeSet[iid] {
+			return fmt.Errorf("%w: unknown or inactive item %s", ErrInvalidInput, iid)
+		}
+	}
+	for i, iid := range itemIDs {
+		itemUUID, err := toUUID(iid)
+		if err != nil {
+			return fmt.Errorf("invalid item id: %w", err)
+		}
+		if _, err := r.queries.WithTx(tx).UpdateAssessmentItemPosition(ctx, assessmentsqlc.UpdateAssessmentItemPositionParams{
+			Position:       int32((i + 1) * 10),
+			ItemID:         itemUUID,
+			OrganizationID: orgUUID,
+		}); err != nil {
+			return fmt.Errorf("update item position: %w", err)
+		}
+	}
+	return nil
+}
+
+func (r *sqlcRepository) ListQuestions(ctx context.Context, orgID string, opts ListQuestionsOptions) ([]QuestionPickerItem, error) {
+	orgUUID, err := toUUID(orgID)
+	if err != nil {
+		return nil, fmt.Errorf("invalid organization id: %w", err)
+	}
+	rows, err := r.queries.ListQuestions(ctx, assessmentsqlc.ListQuestionsParams{
+		OrganizationID: orgUUID,
+		BankID:         opts.BankID,
+		SearchQuery:    opts.Query,
+		PageLimit:      int32(opts.Limit),
+		PageOffset:     int32(opts.Offset),
+	})
+	if err != nil {
+		return nil, fmt.Errorf("list questions: %w", err)
+	}
+	items := make([]QuestionPickerItem, len(rows))
+	for i, row := range rows {
+		qvID := ""
+		if row.QuestionVersionID.Valid {
+			qvID = row.QuestionVersionID.String()
+		}
+		prompt := ""
+		if s, ok := row.PromptText.(string); ok {
+			prompt = s
+		}
+		items[i] = QuestionPickerItem{
+			ID:                    row.ID.String(),
+			QuestionBankID:        row.QuestionBankID.String(),
+			QuestionVersionID:     qvID,
+			QuestionVersionStatus: row.QuestionVersionStatus,
+			Prompt:                prompt,
+		}
+	}
+	return items, nil
+}
+
+func (r *sqlcRepository) CountQuestions(ctx context.Context, orgID string, opts ListQuestionsOptions) (int64, error) {
+	orgUUID, err := toUUID(orgID)
+	if err != nil {
+		return 0, fmt.Errorf("invalid organization id: %w", err)
+	}
+	count, err := r.queries.CountQuestions(ctx, assessmentsqlc.CountQuestionsParams{
+		OrganizationID: orgUUID,
+		BankID:         opts.BankID,
+		SearchQuery:    opts.Query,
+	})
+	if err != nil {
+		return 0, fmt.Errorf("count questions: %w", err)
+	}
+	return count, nil
+}
+
+func (r *sqlcRepository) ListAssessmentPublications(ctx context.Context, orgID, assessmentID string) ([]PublicationSummary, error) {
+	orgUUID, err := toUUID(orgID)
+	if err != nil {
+		return nil, fmt.Errorf("invalid organization id: %w", err)
+	}
+	id, err := toUUID(assessmentID)
+	if err != nil {
+		return nil, fmt.Errorf("invalid assessment id: %w", err)
+	}
+	rows, err := r.queries.ListAssessmentPublications(ctx, assessmentsqlc.ListAssessmentPublicationsParams{
+		OrganizationID: orgUUID,
+		AssessmentID:   id,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("list assessment publications: %w", err)
+	}
+	pubs := make([]PublicationSummary, len(rows))
+	for i, row := range rows {
+		pubs[i] = PublicationSummary{
+			ID:          row.ID.String(),
+			Version:     int(row.Version),
+			Status:      row.Status,
+			PublishedAt: row.PublishedAt.Time.UTC().Format(time.RFC3339),
+		}
+	}
+	return pubs, nil
+}
+
+func (r *sqlcRepository) IsQuestionVersionPublished(ctx context.Context, orgID, questionVersionID string) (bool, error) {
+	orgUUID, err := toUUID(orgID)
+	if err != nil {
+		return false, fmt.Errorf("invalid organization id: %w", err)
+	}
+	qvUUID, err := toUUID(questionVersionID)
+	if err != nil {
+		return false, fmt.Errorf("invalid question version id: %w", err)
+	}
+	ok, err := r.queries.IsQuestionVersionPublished(ctx, assessmentsqlc.IsQuestionVersionPublishedParams{
+		QuestionVersionID: qvUUID,
+		OrganizationID:    orgUUID,
+	})
+	if err != nil {
+		return false, fmt.Errorf("check question version published: %w", err)
+	}
+	return ok, nil
+}
+
+func (r *sqlcRepository) IsClassSectionActive(ctx context.Context, orgID, classSectionID string) (bool, error) {
+	orgUUID, err := toUUID(orgID)
+	if err != nil {
+		return false, fmt.Errorf("invalid organization id: %w", err)
+	}
+	classUUID, err := toUUID(classSectionID)
+	if err != nil {
+		return false, fmt.Errorf("invalid class section id: %w", err)
+	}
+	ok, err := r.queries.IsClassSectionActive(ctx, assessmentsqlc.IsClassSectionActiveParams{
+		ClassSectionID: classUUID,
+		OrganizationID: orgUUID,
+	})
+	if err != nil {
+		return false, fmt.Errorf("check class section active: %w", err)
+	}
+	return ok, nil
 }
 
 func (r *sqlcRepository) UpdateAssessmentSettings(ctx context.Context, tx pgx.Tx, orgID, assessmentID string, req UpdateAssessmentRequest) error {

@@ -16,18 +16,22 @@ import (
 type Repository interface {
 	ListTerms(ctx context.Context, orgID string) ([]Term, error)
 	CreateTerm(ctx context.Context, tx pgx.Tx, orgID, name string, startDate, endDate time.Time) (Term, error)
+	UpdateTerm(ctx context.Context, tx pgx.Tx, orgID, termID, name string, startDate, endDate time.Time) (Term, error)
 	ArchiveTerm(ctx context.Context, tx pgx.Tx, orgID, termID string) error
 
 	ListSubjects(ctx context.Context, orgID string) ([]Subject, error)
 	CreateSubject(ctx context.Context, tx pgx.Tx, orgID, code, name, description string) (Subject, error)
+	UpdateSubject(ctx context.Context, tx pgx.Tx, orgID, subjectID, code, name, description string) (Subject, error)
 	ArchiveSubject(ctx context.Context, tx pgx.Tx, orgID, subjectID string) error
 
 	ListCourses(ctx context.Context, orgID string) ([]Course, error)
 	CreateCourse(ctx context.Context, tx pgx.Tx, orgID, subjectID, termID, code, name string) (Course, error)
+	UpdateCourse(ctx context.Context, tx pgx.Tx, orgID, courseID, subjectID, termID, code, name string) (Course, error)
 	ArchiveCourse(ctx context.Context, tx pgx.Tx, orgID, courseID string) error
 
 	ListClasses(ctx context.Context, orgID, membershipID string, forTeacher bool) ([]ClassSection, error)
 	CreateClass(ctx context.Context, tx pgx.Tx, orgID, courseID, name string) (ClassSection, error)
+	UpdateClass(ctx context.Context, tx pgx.Tx, orgID, classID, courseID, name string) (ClassSection, error)
 	ArchiveClass(ctx context.Context, tx pgx.Tx, orgID, classID string) error
 
 	ListClassTeachers(ctx context.Context, orgID, classID string) ([]ClassTeacher, error)
@@ -126,6 +130,37 @@ func (r *sqlcRepository) CreateTerm(ctx context.Context, tx pgx.Tx, orgID, name 
 	}, nil
 }
 
+func (r *sqlcRepository) UpdateTerm(ctx context.Context, tx pgx.Tx, orgID, termID, name string, startDate, endDate time.Time) (Term, error) {
+	orgUUID, err := toUUID(orgID)
+	if err != nil {
+		return Term{}, fmt.Errorf("invalid organization id: %w", err)
+	}
+	termUUID, err := toUUID(termID)
+	if err != nil {
+		return Term{}, fmt.Errorf("invalid term id: %w", err)
+	}
+	row, err := r.queries.WithTx(tx).UpdateTerm(ctx, academicssqlc.UpdateTermParams{
+		ID:             termUUID,
+		OrganizationID: orgUUID,
+		Name:           name,
+		StartDate:      toDate(startDate),
+		EndDate:        toDate(endDate),
+	})
+	if errors.Is(err, pgx.ErrNoRows) {
+		return Term{}, ErrNotFound
+	}
+	if err != nil {
+		return Term{}, fmt.Errorf("update term: %w", err)
+	}
+	return Term{
+		ID:        row.ID.String(),
+		Name:      row.Name,
+		StartDate: formatDate(row.StartDate.Time),
+		EndDate:   formatDate(row.EndDate.Time),
+		Status:    row.Status,
+	}, nil
+}
+
 func (r *sqlcRepository) ArchiveTerm(ctx context.Context, tx pgx.Tx, orgID, termID string) error {
 	orgUUID, err := toUUID(orgID)
 	if err != nil {
@@ -187,6 +222,41 @@ func (r *sqlcRepository) CreateSubject(ctx context.Context, tx pgx.Tx, orgID, co
 	})
 	if err != nil {
 		return Subject{}, fmt.Errorf("create subject: %w", err)
+	}
+	var desc string
+	if row.Description.Valid {
+		desc = row.Description.String
+	}
+	return Subject{
+		ID:          row.ID.String(),
+		Code:        row.Code,
+		Name:        row.Name,
+		Description: desc,
+		Status:      row.Status,
+	}, nil
+}
+
+func (r *sqlcRepository) UpdateSubject(ctx context.Context, tx pgx.Tx, orgID, subjectID, code, name, description string) (Subject, error) {
+	orgUUID, err := toUUID(orgID)
+	if err != nil {
+		return Subject{}, fmt.Errorf("invalid organization id: %w", err)
+	}
+	subjectUUID, err := toUUID(subjectID)
+	if err != nil {
+		return Subject{}, fmt.Errorf("invalid subject id: %w", err)
+	}
+	row, err := r.queries.WithTx(tx).UpdateSubject(ctx, academicssqlc.UpdateSubjectParams{
+		ID:             subjectUUID,
+		OrganizationID: orgUUID,
+		Code:           code,
+		Name:           name,
+		Description:    pgtype.Text{String: description, Valid: description != ""},
+	})
+	if errors.Is(err, pgx.ErrNoRows) {
+		return Subject{}, ErrNotFound
+	}
+	if err != nil {
+		return Subject{}, fmt.Errorf("update subject: %w", err)
 	}
 	var desc string
 	if row.Description.Valid {
@@ -268,6 +338,47 @@ func (r *sqlcRepository) CreateCourse(ctx context.Context, tx pgx.Tx, orgID, sub
 	})
 	if err != nil {
 		return Course{}, fmt.Errorf("create course: %w", err)
+	}
+	return Course{
+		ID:             row.ID.String(),
+		SubjectID:      row.SubjectID.String(),
+		AcademicTermID: row.AcademicTermID.String(),
+		Code:           row.Code,
+		Name:           row.Name,
+		Status:         row.Status,
+	}, nil
+}
+
+func (r *sqlcRepository) UpdateCourse(ctx context.Context, tx pgx.Tx, orgID, courseID, subjectID, termID, code, name string) (Course, error) {
+	orgUUID, err := toUUID(orgID)
+	if err != nil {
+		return Course{}, fmt.Errorf("invalid organization id: %w", err)
+	}
+	courseUUID, err := toUUID(courseID)
+	if err != nil {
+		return Course{}, fmt.Errorf("invalid course id: %w", err)
+	}
+	subjectUUID, err := toUUID(subjectID)
+	if err != nil {
+		return Course{}, fmt.Errorf("invalid subject id: %w", err)
+	}
+	termUUID, err := toUUID(termID)
+	if err != nil {
+		return Course{}, fmt.Errorf("invalid term id: %w", err)
+	}
+	row, err := r.queries.WithTx(tx).UpdateCourse(ctx, academicssqlc.UpdateCourseParams{
+		ID:             courseUUID,
+		OrganizationID: orgUUID,
+		SubjectID:      subjectUUID,
+		AcademicTermID: termUUID,
+		Code:           code,
+		Name:           name,
+	})
+	if errors.Is(err, pgx.ErrNoRows) {
+		return Course{}, ErrNotFound
+	}
+	if err != nil {
+		return Course{}, fmt.Errorf("update course: %w", err)
 	}
 	return Course{
 		ID:             row.ID.String(),
@@ -366,6 +477,41 @@ func (r *sqlcRepository) CreateClass(ctx context.Context, tx pgx.Tx, orgID, cour
 	})
 	if err != nil {
 		return ClassSection{}, fmt.Errorf("create class: %w", err)
+	}
+	return ClassSection{
+		ID:           row.ID.String(),
+		CourseID:     row.CourseID.String(),
+		Name:         row.Name,
+		StudentCount: row.StudentCount,
+		TeacherCount: row.TeacherCount,
+		Status:       row.Status,
+	}, nil
+}
+
+func (r *sqlcRepository) UpdateClass(ctx context.Context, tx pgx.Tx, orgID, classID, courseID, name string) (ClassSection, error) {
+	orgUUID, err := toUUID(orgID)
+	if err != nil {
+		return ClassSection{}, fmt.Errorf("invalid organization id: %w", err)
+	}
+	classUUID, err := toUUID(classID)
+	if err != nil {
+		return ClassSection{}, fmt.Errorf("invalid class id: %w", err)
+	}
+	courseUUID, err := toUUID(courseID)
+	if err != nil {
+		return ClassSection{}, fmt.Errorf("invalid course id: %w", err)
+	}
+	row, err := r.queries.WithTx(tx).UpdateClass(ctx, academicssqlc.UpdateClassParams{
+		ID:             classUUID,
+		OrganizationID: orgUUID,
+		CourseID:       courseUUID,
+		Name:           name,
+	})
+	if errors.Is(err, pgx.ErrNoRows) {
+		return ClassSection{}, ErrNotFound
+	}
+	if err != nil {
+		return ClassSection{}, fmt.Errorf("update class: %w", err)
 	}
 	return ClassSection{
 		ID:           row.ID.String(),

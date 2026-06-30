@@ -93,14 +93,60 @@ func (h *Handler) SubmitAttempt(w http.ResponseWriter, r *http.Request) {
 	writeData(w, http.StatusOK, result)
 }
 
+// ListAssignedAssessments handles GET /api/v1/me/assessments.
+func (h *Handler) ListAssignedAssessments(w http.ResponseWriter, r *http.Request) {
+	actor, err := auth.ActorFromRequest(r, h.issuer)
+	if err != nil {
+		writeError(w, http.StatusUnauthorized, "unauthorized", "missing or invalid access token")
+		return
+	}
+
+	assessments, err := h.svc.ListAssignedAssessments(r.Context(), actor)
+	if err != nil {
+		mapServiceError(w, err)
+		return
+	}
+
+	writeData(w, http.StatusOK, assessments)
+}
+
+// StartAttempt handles POST /api/v1/assessments/{assessment_id}/attempts.
+func (h *Handler) StartAttempt(w http.ResponseWriter, r *http.Request) {
+	if !csrf.Validate(r) {
+		writeError(w, http.StatusForbidden, "invalid_csrf", "invalid csrf token")
+		return
+	}
+
+	actor, err := auth.ActorFromRequest(r, h.issuer)
+	if err != nil {
+		writeError(w, http.StatusUnauthorized, "unauthorized", "missing or invalid access token")
+		return
+	}
+
+	assessmentID := chi.URLParam(r, "assessment_id")
+	snapshot, err := h.svc.StartAttempt(r.Context(), actor, assessmentID)
+	if err != nil {
+		mapServiceError(w, err)
+		return
+	}
+
+	writeData(w, http.StatusCreated, snapshot)
+}
+
 func mapServiceError(w http.ResponseWriter, err error) {
 	switch {
-	case errors.Is(err, ErrAttemptNotFound), errors.Is(err, ErrAnswerItemNotFound):
+	case errors.Is(err, auth.ErrUnauthorized):
+		writeError(w, http.StatusForbidden, "forbidden", err.Error())
+	case errors.Is(err, ErrAttemptNotFound), errors.Is(err, ErrAnswerItemNotFound), errors.Is(err, ErrAssessmentNotFound), errors.Is(err, ErrNoPublication):
 		writeError(w, http.StatusNotFound, "not_found", err.Error())
 	case errors.Is(err, ErrAttemptExpired):
 		writeError(w, http.StatusConflict, "attempt_expired", err.Error())
 	case errors.Is(err, ErrAttemptNotInProgress):
 		writeError(w, http.StatusConflict, "attempt_not_in_progress", err.Error())
+	case errors.Is(err, ErrAssessmentUnavailable):
+		writeError(w, http.StatusForbidden, "assessment_unavailable", err.Error())
+	case errors.Is(err, ErrAttemptLimitReached):
+		writeError(w, http.StatusConflict, "attempt_limit_reached", err.Error())
 	default:
 		writeError(w, http.StatusInternalServerError, "internal_error", "request failed")
 	}

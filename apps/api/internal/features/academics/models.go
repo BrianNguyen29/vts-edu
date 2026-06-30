@@ -18,6 +18,13 @@ type CreateTermRequest struct {
 	EndDate   string `json:"end_date"`
 }
 
+// UpdateTermRequest is the payload for PATCH /api/v1/academic-terms/{term_id}.
+type UpdateTermRequest struct {
+	Name      string `json:"name"`
+	StartDate string `json:"start_date"`
+	EndDate   string `json:"end_date"`
+}
+
 // Subject is a subject taught in an organization.
 type Subject struct {
 	ID          string `json:"id"`
@@ -29,6 +36,13 @@ type Subject struct {
 
 // CreateSubjectRequest is the payload for POST /api/v1/subjects.
 type CreateSubjectRequest struct {
+	Code        string `json:"code"`
+	Name        string `json:"name"`
+	Description string `json:"description,omitempty"`
+}
+
+// UpdateSubjectRequest is the payload for PATCH /api/v1/subjects/{subject_id}.
+type UpdateSubjectRequest struct {
 	Code        string `json:"code"`
 	Name        string `json:"name"`
 	Description string `json:"description,omitempty"`
@@ -52,6 +66,14 @@ type CreateCourseRequest struct {
 	Name           string `json:"name"`
 }
 
+// UpdateCourseRequest is the payload for PATCH /api/v1/courses/{course_id}.
+type UpdateCourseRequest struct {
+	SubjectID      string `json:"subject_id"`
+	AcademicTermID string `json:"academic_term_id"`
+	Code           string `json:"code"`
+	Name           string `json:"name"`
+}
+
 // ClassSection is a concrete class section for a course.
 type ClassSection struct {
 	ID           string `json:"id"`
@@ -64,6 +86,12 @@ type ClassSection struct {
 
 // CreateClassRequest is the payload for POST /api/v1/classes.
 type CreateClassRequest struct {
+	CourseID string `json:"course_id"`
+	Name     string `json:"name"`
+}
+
+// UpdateClassRequest is the payload for PATCH /api/v1/classes/{class_id}.
+type UpdateClassRequest struct {
 	CourseID string `json:"course_id"`
 	Name     string `json:"name"`
 }

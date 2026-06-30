@@ -19,7 +19,21 @@ type fakeRepo struct {
 	createItemFunc                    func(ctx context.Context, tx pgx.Tx, orgID, assessmentID, sectionID string, req CreateItemRequest) (ItemDetail, error)
 	createTargetFunc                  func(ctx context.Context, tx pgx.Tx, orgID, assessmentID string, req CreateTargetRequest) (TargetDetail, error)
 	getSectionAssessmentIDFunc        func(ctx context.Context, orgID, sectionID string) (string, error)
+	updateAssessmentSectionFunc       func(ctx context.Context, tx pgx.Tx, orgID, sectionID string, req UpdateSectionRequest) (SectionDetail, error)
+	archiveAssessmentSectionFunc      func(ctx context.Context, tx pgx.Tx, orgID, sectionID string) error
+	getItemAssessmentIDFunc           func(ctx context.Context, orgID, itemID string) (string, error)
+	updateAssessmentItemFunc          func(ctx context.Context, tx pgx.Tx, orgID, itemID string, req UpdateItemRequest) (ItemDetail, error)
+	archiveAssessmentItemFunc         func(ctx context.Context, tx pgx.Tx, orgID, itemID string) error
+	getTargetAssessmentIDFunc         func(ctx context.Context, orgID, targetID string) (string, error)
+	archiveAssessmentTargetFunc       func(ctx context.Context, tx pgx.Tx, orgID, targetID string) error
+	reorderAssessmentSectionsFunc     func(ctx context.Context, tx pgx.Tx, orgID, assessmentID string, sectionIDs []string) error
+	reorderAssessmentItemsFunc        func(ctx context.Context, tx pgx.Tx, orgID, sectionID string, itemIDs []string) error
+	listQuestionsFunc                 func(ctx context.Context, orgID string, opts ListQuestionsOptions) ([]QuestionPickerItem, error)
+	countQuestionsFunc                func(ctx context.Context, orgID string, opts ListQuestionsOptions) (int64, error)
+	listAssessmentPublicationsFunc    func(ctx context.Context, orgID, assessmentID string) ([]PublicationSummary, error)
 	questionVersionExistsFunc         func(ctx context.Context, orgID, questionVersionID string) (bool, error)
+	isQuestionVersionPublishedFunc    func(ctx context.Context, orgID, questionVersionID string) (bool, error)
+	isClassSectionActiveFunc          func(ctx context.Context, orgID, classSectionID string) (bool, error)
 	countSectionsFunc                 func(ctx context.Context, orgID, assessmentID string) (int64, error)
 	countItemsFunc                    func(ctx context.Context, orgID, assessmentID string) (int64, error)
 	countTargetsFunc                  func(ctx context.Context, orgID, assessmentID string) (int64, error)
@@ -95,6 +109,116 @@ func (f *fakeRepo) GetAssessmentTargets(ctx context.Context, orgID, assessmentID
 		return f.getAssessmentTargetsFunc(ctx, orgID, assessmentID)
 	}
 	return nil, nil
+}
+
+func (f *fakeRepo) GetAssessmentSection(ctx context.Context, orgID, sectionID string) (SectionDetail, error) {
+	return SectionDetail{}, nil
+}
+
+func (f *fakeRepo) UpdateAssessmentSection(ctx context.Context, tx pgx.Tx, orgID, sectionID string, req UpdateSectionRequest) (SectionDetail, error) {
+	if f.updateAssessmentSectionFunc != nil {
+		return f.updateAssessmentSectionFunc(ctx, tx, orgID, sectionID, req)
+	}
+	return SectionDetail{}, nil
+}
+
+func (f *fakeRepo) ArchiveAssessmentSection(ctx context.Context, tx pgx.Tx, orgID, sectionID string) error {
+	if f.archiveAssessmentSectionFunc != nil {
+		return f.archiveAssessmentSectionFunc(ctx, tx, orgID, sectionID)
+	}
+	return nil
+}
+
+func (f *fakeRepo) GetAssessmentItem(ctx context.Context, orgID, itemID string) (ItemDetail, error) {
+	return ItemDetail{}, nil
+}
+
+func (f *fakeRepo) GetItemAssessmentID(ctx context.Context, orgID, itemID string) (string, error) {
+	if f.getItemAssessmentIDFunc != nil {
+		return f.getItemAssessmentIDFunc(ctx, orgID, itemID)
+	}
+	return "", nil
+}
+
+func (f *fakeRepo) UpdateAssessmentItem(ctx context.Context, tx pgx.Tx, orgID, itemID string, req UpdateItemRequest) (ItemDetail, error) {
+	if f.updateAssessmentItemFunc != nil {
+		return f.updateAssessmentItemFunc(ctx, tx, orgID, itemID, req)
+	}
+	return ItemDetail{}, nil
+}
+
+func (f *fakeRepo) ArchiveAssessmentItem(ctx context.Context, tx pgx.Tx, orgID, itemID string) error {
+	if f.archiveAssessmentItemFunc != nil {
+		return f.archiveAssessmentItemFunc(ctx, tx, orgID, itemID)
+	}
+	return nil
+}
+
+func (f *fakeRepo) GetAssessmentTarget(ctx context.Context, orgID, targetID string) (TargetDetail, error) {
+	return TargetDetail{}, nil
+}
+
+func (f *fakeRepo) GetTargetAssessmentID(ctx context.Context, orgID, targetID string) (string, error) {
+	if f.getTargetAssessmentIDFunc != nil {
+		return f.getTargetAssessmentIDFunc(ctx, orgID, targetID)
+	}
+	return "", nil
+}
+
+func (f *fakeRepo) ArchiveAssessmentTarget(ctx context.Context, tx pgx.Tx, orgID, targetID string) error {
+	if f.archiveAssessmentTargetFunc != nil {
+		return f.archiveAssessmentTargetFunc(ctx, tx, orgID, targetID)
+	}
+	return nil
+}
+
+func (f *fakeRepo) ReorderAssessmentSections(ctx context.Context, tx pgx.Tx, orgID, assessmentID string, sectionIDs []string) error {
+	if f.reorderAssessmentSectionsFunc != nil {
+		return f.reorderAssessmentSectionsFunc(ctx, tx, orgID, assessmentID, sectionIDs)
+	}
+	return nil
+}
+
+func (f *fakeRepo) ReorderAssessmentItems(ctx context.Context, tx pgx.Tx, orgID, sectionID string, itemIDs []string) error {
+	if f.reorderAssessmentItemsFunc != nil {
+		return f.reorderAssessmentItemsFunc(ctx, tx, orgID, sectionID, itemIDs)
+	}
+	return nil
+}
+
+func (f *fakeRepo) ListQuestions(ctx context.Context, orgID string, opts ListQuestionsOptions) ([]QuestionPickerItem, error) {
+	if f.listQuestionsFunc != nil {
+		return f.listQuestionsFunc(ctx, orgID, opts)
+	}
+	return nil, nil
+}
+
+func (f *fakeRepo) CountQuestions(ctx context.Context, orgID string, opts ListQuestionsOptions) (int64, error) {
+	if f.countQuestionsFunc != nil {
+		return f.countQuestionsFunc(ctx, orgID, opts)
+	}
+	return 0, nil
+}
+
+func (f *fakeRepo) ListAssessmentPublications(ctx context.Context, orgID, assessmentID string) ([]PublicationSummary, error) {
+	if f.listAssessmentPublicationsFunc != nil {
+		return f.listAssessmentPublicationsFunc(ctx, orgID, assessmentID)
+	}
+	return nil, nil
+}
+
+func (f *fakeRepo) IsQuestionVersionPublished(ctx context.Context, orgID, questionVersionID string) (bool, error) {
+	if f.isQuestionVersionPublishedFunc != nil {
+		return f.isQuestionVersionPublishedFunc(ctx, orgID, questionVersionID)
+	}
+	return false, nil
+}
+
+func (f *fakeRepo) IsClassSectionActive(ctx context.Context, orgID, classSectionID string) (bool, error) {
+	if f.isClassSectionActiveFunc != nil {
+		return f.isClassSectionActiveFunc(ctx, orgID, classSectionID)
+	}
+	return false, nil
 }
 
 func (f *fakeRepo) UpdateAssessmentSettings(ctx context.Context, tx pgx.Tx, orgID, assessmentID string, req UpdateAssessmentRequest) error {
@@ -209,7 +333,16 @@ func TestService_ValidateAssessment_MissingSectionsItemsTargets(t *testing.T) {
 			return true, nil
 		},
 		getAssessmentFunc: func(ctx context.Context, orgID, assessmentID string) (AssessmentDetail, error) {
-			return AssessmentDetail{ID: assessmentID, Status: "DRAFT"}, nil
+			return AssessmentDetail{ID: assessmentID, Status: "DRAFT", DurationMinutes: 30, MaxAttempts: 1}, nil
+		},
+		getAssessmentSectionsFunc: func(ctx context.Context, orgID, assessmentID string) ([]SectionDetail, error) {
+			return nil, nil
+		},
+		getAssessmentItemsFunc: func(ctx context.Context, orgID, assessmentID string) ([]ItemDetail, error) {
+			return nil, nil
+		},
+		getAssessmentTargetsFunc: func(ctx context.Context, orgID, assessmentID string) ([]TargetDetail, error) {
+			return nil, nil
 		},
 		countSectionsFunc: func(ctx context.Context, orgID, assessmentID string) (int64, error) { return 0, nil },
 		countItemsFunc:    func(ctx context.Context, orgID, assessmentID string) (int64, error) { return 0, nil },
@@ -242,6 +375,9 @@ func TestService_PublishAssessment_Success(t *testing.T) {
 		getAssessmentSectionsFunc: func(ctx context.Context, orgID, assessmentID string) ([]SectionDetail, error) {
 			return []SectionDetail{{ID: "sec-1", Title: "Part A", Position: 1}}, nil
 		},
+		getAssessmentItemsFunc: func(ctx context.Context, orgID, assessmentID string) ([]ItemDetail, error) {
+			return []ItemDetail{{ID: "item-1", AssessmentSectionID: "sec-1", QuestionVersionID: "qv-1", Position: 1, Points: "1.00"}}, nil
+		},
 		getAssessmentItemsWithContentFunc: func(ctx context.Context, orgID, assessmentID string) ([]ItemContentRow, error) {
 			return []ItemContentRow{{
 				ID: "item-1", AssessmentSectionID: "sec-1", QuestionVersionID: "qv-1", Position: 1, Points: "1.00",
@@ -250,6 +386,12 @@ func TestService_PublishAssessment_Success(t *testing.T) {
 		},
 		getAssessmentTargetsFunc: func(ctx context.Context, orgID, assessmentID string) ([]TargetDetail, error) {
 			return []TargetDetail{{ID: "tgt-1", ClassSectionID: "class-1"}}, nil
+		},
+		isQuestionVersionPublishedFunc: func(ctx context.Context, orgID, questionVersionID string) (bool, error) {
+			return true, nil
+		},
+		isClassSectionActiveFunc: func(ctx context.Context, orgID, classSectionID string) (bool, error) {
+			return true, nil
 		},
 		publishAssessmentFunc: func(ctx context.Context, tx pgx.Tx, orgID, assessmentID, newStatus string) (int, error) {
 			return 2, nil
@@ -293,6 +435,99 @@ func TestService_PublishAssessment_NotDraft(t *testing.T) {
 	_, err := svc.PublishAssessment(context.Background(), auth.Actor{Roles: []string{"teacher"}}, "assess-1")
 	if !errors.Is(err, ErrValidationFailed) {
 		t.Fatalf("expected ErrValidationFailed, got %v", err)
+	}
+}
+
+func TestService_UpdateSection_Success(t *testing.T) {
+	repo := &fakeRepo{
+		isAssessmentManagerFunc: func(ctx context.Context, orgID, userID, assessmentID string) (bool, error) {
+			return true, nil
+		},
+		getSectionAssessmentIDFunc: func(ctx context.Context, orgID, sectionID string) (string, error) {
+			return "assess-1", nil
+		},
+		getAssessmentFunc: func(ctx context.Context, orgID, assessmentID string) (AssessmentDetail, error) {
+			return AssessmentDetail{ID: assessmentID, Status: "DRAFT"}, nil
+		},
+		updateAssessmentSectionFunc: func(ctx context.Context, tx pgx.Tx, orgID, sectionID string, req UpdateSectionRequest) (SectionDetail, error) {
+			return SectionDetail{ID: sectionID, Title: req.Title, Position: req.Position}, nil
+		},
+	}
+	svc := NewService(repo, stubTxManager{})
+	section, err := svc.UpdateSection(context.Background(), auth.Actor{Roles: []string{"teacher"}}, "sec-1", UpdateSectionRequest{Title: "Updated", Position: 2})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if section.Title != "Updated" {
+		t.Errorf("title = %q, want Updated", section.Title)
+	}
+}
+
+func TestService_UpdateItem_Success(t *testing.T) {
+	repo := &fakeRepo{
+		isAssessmentManagerFunc: func(ctx context.Context, orgID, userID, assessmentID string) (bool, error) {
+			return true, nil
+		},
+		getItemAssessmentIDFunc: func(ctx context.Context, orgID, itemID string) (string, error) {
+			return "assess-1", nil
+		},
+		getAssessmentFunc: func(ctx context.Context, orgID, assessmentID string) (AssessmentDetail, error) {
+			return AssessmentDetail{ID: assessmentID, Status: "DRAFT"}, nil
+		},
+		questionVersionExistsFunc: func(ctx context.Context, orgID, questionVersionID string) (bool, error) {
+			return true, nil
+		},
+		updateAssessmentItemFunc: func(ctx context.Context, tx pgx.Tx, orgID, itemID string, req UpdateItemRequest) (ItemDetail, error) {
+			return ItemDetail{ID: itemID, QuestionVersionID: req.QuestionVersionID, Points: req.Points, Position: req.Position}, nil
+		},
+	}
+	svc := NewService(repo, stubTxManager{})
+	item, err := svc.UpdateItem(context.Background(), auth.Actor{Roles: []string{"teacher"}}, "item-1", UpdateItemRequest{QuestionVersionID: "qv-2", Points: "2.00", Position: 3})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if item.QuestionVersionID != "qv-2" {
+		t.Errorf("question_version_id = %q, want qv-2", item.QuestionVersionID)
+	}
+}
+
+func TestService_DeleteTarget_Success(t *testing.T) {
+	repo := &fakeRepo{
+		isAssessmentManagerFunc: func(ctx context.Context, orgID, userID, assessmentID string) (bool, error) {
+			return true, nil
+		},
+		getTargetAssessmentIDFunc: func(ctx context.Context, orgID, targetID string) (string, error) {
+			return "assess-1", nil
+		},
+		getAssessmentFunc: func(ctx context.Context, orgID, assessmentID string) (AssessmentDetail, error) {
+			return AssessmentDetail{ID: assessmentID, Status: "DRAFT"}, nil
+		},
+		archiveAssessmentTargetFunc: func(ctx context.Context, tx pgx.Tx, orgID, targetID string) error {
+			return nil
+		},
+	}
+	svc := NewService(repo, stubTxManager{})
+	if err := svc.DeleteTarget(context.Background(), auth.Actor{Roles: []string{"teacher"}}, "assess-1", "tgt-1"); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestService_ListPublications_Success(t *testing.T) {
+	repo := &fakeRepo{
+		isAssessmentManagerFunc: func(ctx context.Context, orgID, userID, assessmentID string) (bool, error) {
+			return true, nil
+		},
+		listAssessmentPublicationsFunc: func(ctx context.Context, orgID, assessmentID string) ([]PublicationSummary, error) {
+			return []PublicationSummary{{ID: "pub-1", Version: 1, Status: "OPEN", PublishedAt: "2026-06-30T00:00:00Z"}}, nil
+		},
+	}
+	svc := NewService(repo, stubTxManager{})
+	pubs, err := svc.ListPublications(context.Background(), auth.Actor{Roles: []string{"teacher"}}, "assess-1")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(pubs) != 1 {
+		t.Fatalf("expected 1 publication, got %d", len(pubs))
 	}
 }
 

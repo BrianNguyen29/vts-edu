@@ -791,3 +791,200 @@ func (q *Queries) UnenrollStudent(ctx context.Context, arg UnenrollStudentParams
 	}
 	return result.RowsAffected(), nil
 }
+
+const updateClass = `-- name: UpdateClass :one
+UPDATE class_sections cs
+SET course_id = $3,
+    name = $4,
+    updated_at = now()
+WHERE cs.id = $1
+  AND cs.organization_id = $2
+  AND cs.status = 'ACTIVE'
+RETURNING cs.id AS id,
+          cs.course_id AS course_id,
+          cs.name AS name,
+          (SELECT COUNT(*) FROM enrollments e WHERE e.class_section_id = cs.id AND e.status = 'ACTIVE') AS student_count,
+          (SELECT COUNT(*) FROM class_teachers ct WHERE ct.class_section_id = cs.id AND ct.status = 'ACTIVE') AS teacher_count,
+          cs.status AS status
+`
+
+type UpdateClassParams struct {
+	ID             pgtype.UUID `json:"id"`
+	OrganizationID pgtype.UUID `json:"organization_id"`
+	CourseID       pgtype.UUID `json:"course_id"`
+	Name           string      `json:"name"`
+}
+
+type UpdateClassRow struct {
+	ID           pgtype.UUID `json:"id"`
+	CourseID     pgtype.UUID `json:"course_id"`
+	Name         string      `json:"name"`
+	StudentCount int64       `json:"student_count"`
+	TeacherCount int64       `json:"teacher_count"`
+	Status       string      `json:"status"`
+}
+
+func (q *Queries) UpdateClass(ctx context.Context, arg UpdateClassParams) (UpdateClassRow, error) {
+	row := q.db.QueryRow(ctx, updateClass,
+		arg.ID,
+		arg.OrganizationID,
+		arg.CourseID,
+		arg.Name,
+	)
+	var i UpdateClassRow
+	err := row.Scan(
+		&i.ID,
+		&i.CourseID,
+		&i.Name,
+		&i.StudentCount,
+		&i.TeacherCount,
+		&i.Status,
+	)
+	return i, err
+}
+
+const updateCourse = `-- name: UpdateCourse :one
+UPDATE courses
+SET subject_id = $3,
+    academic_term_id = $4,
+    code = $5,
+    name = $6,
+    updated_at = now()
+WHERE id = $1
+  AND organization_id = $2
+  AND status = 'ACTIVE'
+RETURNING id, subject_id, academic_term_id, code, name, status
+`
+
+type UpdateCourseParams struct {
+	ID             pgtype.UUID `json:"id"`
+	OrganizationID pgtype.UUID `json:"organization_id"`
+	SubjectID      pgtype.UUID `json:"subject_id"`
+	AcademicTermID pgtype.UUID `json:"academic_term_id"`
+	Code           string      `json:"code"`
+	Name           string      `json:"name"`
+}
+
+type UpdateCourseRow struct {
+	ID             pgtype.UUID `json:"id"`
+	SubjectID      pgtype.UUID `json:"subject_id"`
+	AcademicTermID pgtype.UUID `json:"academic_term_id"`
+	Code           string      `json:"code"`
+	Name           string      `json:"name"`
+	Status         string      `json:"status"`
+}
+
+func (q *Queries) UpdateCourse(ctx context.Context, arg UpdateCourseParams) (UpdateCourseRow, error) {
+	row := q.db.QueryRow(ctx, updateCourse,
+		arg.ID,
+		arg.OrganizationID,
+		arg.SubjectID,
+		arg.AcademicTermID,
+		arg.Code,
+		arg.Name,
+	)
+	var i UpdateCourseRow
+	err := row.Scan(
+		&i.ID,
+		&i.SubjectID,
+		&i.AcademicTermID,
+		&i.Code,
+		&i.Name,
+		&i.Status,
+	)
+	return i, err
+}
+
+const updateSubject = `-- name: UpdateSubject :one
+UPDATE subjects
+SET code = $3,
+    name = $4,
+    description = $5,
+    updated_at = now()
+WHERE id = $1
+  AND organization_id = $2
+  AND status = 'ACTIVE'
+RETURNING id, code, name, description, status
+`
+
+type UpdateSubjectParams struct {
+	ID             pgtype.UUID `json:"id"`
+	OrganizationID pgtype.UUID `json:"organization_id"`
+	Code           string      `json:"code"`
+	Name           string      `json:"name"`
+	Description    pgtype.Text `json:"description"`
+}
+
+type UpdateSubjectRow struct {
+	ID          pgtype.UUID `json:"id"`
+	Code        string      `json:"code"`
+	Name        string      `json:"name"`
+	Description pgtype.Text `json:"description"`
+	Status      string      `json:"status"`
+}
+
+func (q *Queries) UpdateSubject(ctx context.Context, arg UpdateSubjectParams) (UpdateSubjectRow, error) {
+	row := q.db.QueryRow(ctx, updateSubject,
+		arg.ID,
+		arg.OrganizationID,
+		arg.Code,
+		arg.Name,
+		arg.Description,
+	)
+	var i UpdateSubjectRow
+	err := row.Scan(
+		&i.ID,
+		&i.Code,
+		&i.Name,
+		&i.Description,
+		&i.Status,
+	)
+	return i, err
+}
+
+const updateTerm = `-- name: UpdateTerm :one
+UPDATE academic_terms
+SET name = $3,
+    start_date = $4,
+    end_date = $5,
+    updated_at = now()
+WHERE id = $1
+  AND organization_id = $2
+  AND status = 'ACTIVE'
+RETURNING id, name, start_date, end_date, status
+`
+
+type UpdateTermParams struct {
+	ID             pgtype.UUID `json:"id"`
+	OrganizationID pgtype.UUID `json:"organization_id"`
+	Name           string      `json:"name"`
+	StartDate      pgtype.Date `json:"start_date"`
+	EndDate        pgtype.Date `json:"end_date"`
+}
+
+type UpdateTermRow struct {
+	ID        pgtype.UUID `json:"id"`
+	Name      string      `json:"name"`
+	StartDate pgtype.Date `json:"start_date"`
+	EndDate   pgtype.Date `json:"end_date"`
+	Status    string      `json:"status"`
+}
+
+func (q *Queries) UpdateTerm(ctx context.Context, arg UpdateTermParams) (UpdateTermRow, error) {
+	row := q.db.QueryRow(ctx, updateTerm,
+		arg.ID,
+		arg.OrganizationID,
+		arg.Name,
+		arg.StartDate,
+		arg.EndDate,
+	)
+	var i UpdateTermRow
+	err := row.Scan(
+		&i.ID,
+		&i.Name,
+		&i.StartDate,
+		&i.EndDate,
+		&i.Status,
+	)
+	return i, err
+}

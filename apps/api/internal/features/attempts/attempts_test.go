@@ -18,13 +18,19 @@ import (
 )
 
 type fakeRepo struct {
-	getAttempt   func(ctx context.Context, id, orgID, userID string) (*attempts.Attempt, error)
-	getItems     func(ctx context.Context, id, orgID string) ([]attempts.AttemptItemRow, error)
-	getForUpdate func(ctx context.Context, tx pgx.Tx, id, orgID, userID string) (*attempts.Attempt, error)
-	itemExists   func(ctx context.Context, tx pgx.Tx, itemID, attemptID, orgID string) (bool, error)
-	upsertAnswer func(ctx context.Context, tx pgx.Tx, attemptID, itemID, orgID string, payload json.RawMessage) (*attempts.AnswerSaved, error)
-	markExpired  func(ctx context.Context, tx pgx.Tx, id, orgID, userID string) error
-	submit       func(ctx context.Context, tx pgx.Tx, id, orgID, userID, score, maxScore, gradingStatus string) (*attempts.GradingResult, error)
+	getAttempt    func(ctx context.Context, id, orgID, userID string) (*attempts.Attempt, error)
+	getItems      func(ctx context.Context, id, orgID string) ([]attempts.AttemptItemRow, error)
+	getForUpdate  func(ctx context.Context, tx pgx.Tx, id, orgID, userID string) (*attempts.Attempt, error)
+	itemExists    func(ctx context.Context, tx pgx.Tx, itemID, attemptID, orgID string) (bool, error)
+	upsertAnswer  func(ctx context.Context, tx pgx.Tx, attemptID, itemID, orgID string, payload json.RawMessage) (*attempts.AnswerSaved, error)
+	markExpired   func(ctx context.Context, tx pgx.Tx, id, orgID, userID string) error
+	submit        func(ctx context.Context, tx pgx.Tx, id, orgID, userID, score, maxScore, gradingStatus string) (*attempts.GradingResult, error)
+	listAssigned  func(ctx context.Context, orgID, userID string) ([]attempts.AssignedAssessment, error)
+	getLatestPub  func(ctx context.Context, orgID, assessmentID string) (*attempts.PublicationSnapshot, string, string, error)
+	getInProgress func(ctx context.Context, orgID, userID, assessmentID string) (*attempts.Attempt, error)
+	countAttempts func(ctx context.Context, orgID, userID, assessmentID string) (int64, error)
+	createAttempt func(ctx context.Context, tx pgx.Tx, orgID, userID, assessmentID, publicationID string, startedAt, expiresAt time.Time) (*attempts.Attempt, error)
+	createItems   func(ctx context.Context, tx pgx.Tx, orgID, attemptID string, items []attempts.AttemptItemInput) error
 }
 
 func (f *fakeRepo) GetAttempt(ctx context.Context, id, orgID, userID string) (*attempts.Attempt, error) {
@@ -53,6 +59,48 @@ func (f *fakeRepo) MarkAttemptExpired(ctx context.Context, tx pgx.Tx, id, orgID,
 
 func (f *fakeRepo) SubmitAttempt(ctx context.Context, tx pgx.Tx, id, orgID, userID, score, maxScore, gradingStatus string) (*attempts.GradingResult, error) {
 	return f.submit(ctx, tx, id, orgID, userID, score, maxScore, gradingStatus)
+}
+
+func (f *fakeRepo) ListAssignedAssessments(ctx context.Context, orgID, userID string) ([]attempts.AssignedAssessment, error) {
+	if f.listAssigned != nil {
+		return f.listAssigned(ctx, orgID, userID)
+	}
+	return nil, nil
+}
+
+func (f *fakeRepo) GetLatestPublication(ctx context.Context, orgID, assessmentID string) (*attempts.PublicationSnapshot, string, string, error) {
+	if f.getLatestPub != nil {
+		return f.getLatestPub(ctx, orgID, assessmentID)
+	}
+	return nil, "", "", nil
+}
+
+func (f *fakeRepo) GetInProgressAttempt(ctx context.Context, orgID, userID, assessmentID string) (*attempts.Attempt, error) {
+	if f.getInProgress != nil {
+		return f.getInProgress(ctx, orgID, userID, assessmentID)
+	}
+	return nil, nil
+}
+
+func (f *fakeRepo) CountStudentAttempts(ctx context.Context, orgID, userID, assessmentID string) (int64, error) {
+	if f.countAttempts != nil {
+		return f.countAttempts(ctx, orgID, userID, assessmentID)
+	}
+	return 0, nil
+}
+
+func (f *fakeRepo) CreateAttempt(ctx context.Context, tx pgx.Tx, orgID, userID, assessmentID, publicationID string, startedAt, expiresAt time.Time) (*attempts.Attempt, error) {
+	if f.createAttempt != nil {
+		return f.createAttempt(ctx, tx, orgID, userID, assessmentID, publicationID, startedAt, expiresAt)
+	}
+	return &attempts.Attempt{ID: "new-attempt-id", OrganizationID: orgID, AssessmentID: assessmentID, Status: "IN_PROGRESS"}, nil
+}
+
+func (f *fakeRepo) CreateAttemptItems(ctx context.Context, tx pgx.Tx, orgID, attemptID string, items []attempts.AttemptItemInput) error {
+	if f.createItems != nil {
+		return f.createItems(ctx, tx, orgID, attemptID, items)
+	}
+	return nil
 }
 
 type stubTxManager struct{}
@@ -423,6 +471,167 @@ func TestHandler_SaveAnswer_MissingCSRF(t *testing.T) {
 
 	if rec.Code != http.StatusForbidden {
 		t.Fatalf("status = %d, want %d", rec.Code, http.StatusForbidden)
+	}
+}
+
+func TestService_ListAssignedAssessments_OK(t *testing.T) {
+	repo := &fakeRepo{
+		listAssigned: func(ctx context.Context, orgID, userID string) ([]attempts.AssignedAssessment, error) {
+			return []attempts.AssignedAssessment{
+				{ID: "assessment-id", Title: "Quiz", Status: "OPEN", DurationMinutes: 30, MaxAttempts: 2, Revision: 1, PublicationID: "pub-id"},
+			}, nil
+		},
+	}
+	svc := attempts.NewService(repo, stubTxManager{})
+	result, err := svc.ListAssignedAssessments(context.Background(), auth.Actor{UserID: "user-id", OrgID: "org-id", Roles: []string{"student"}})
+	if err != nil {
+		t.Fatalf("ListAssignedAssessments failed: %v", err)
+	}
+	if len(result) != 1 {
+		t.Fatalf("expected 1 assessment, got %d", len(result))
+	}
+	if result[0].Title != "Quiz" {
+		t.Errorf("title = %q, want Quiz", result[0].Title)
+	}
+}
+
+func TestService_ListAssignedAssessments_Forbidden(t *testing.T) {
+	svc := attempts.NewService(&fakeRepo{}, stubTxManager{})
+	_, err := svc.ListAssignedAssessments(context.Background(), auth.Actor{UserID: "user-id", OrgID: "org-id", Roles: []string{"teacher"}})
+	if !errors.Is(err, auth.ErrUnauthorized) {
+		t.Fatalf("expected ErrUnauthorized, got %v", err)
+	}
+}
+
+func TestService_StartAttempt_OK(t *testing.T) {
+	created := false
+	repo := &fakeRepo{
+		listAssigned: func(ctx context.Context, orgID, userID string) ([]attempts.AssignedAssessment, error) {
+			return []attempts.AssignedAssessment{
+				{ID: "assessment-id", Title: "Quiz", Status: "OPEN", DurationMinutes: 30, MaxAttempts: 2, Revision: 1, PublicationID: "pub-id"},
+			}, nil
+		},
+		getInProgress: func(ctx context.Context, orgID, userID, assessmentID string) (*attempts.Attempt, error) {
+			return nil, nil
+		},
+		countAttempts: func(ctx context.Context, orgID, userID, assessmentID string) (int64, error) {
+			return 0, nil
+		},
+		getLatestPub: func(ctx context.Context, orgID, assessmentID string) (*attempts.PublicationSnapshot, string, string, error) {
+			return &attempts.PublicationSnapshot{
+				ID:              assessmentID,
+				Title:           "Quiz",
+				DurationMinutes: 30,
+				MaxAttempts:     2,
+				Sections: []attempts.PublicationSection{
+					{
+						ID:    "section-1",
+						Title: "Section A",
+						Items: []attempts.PublicationItem{
+							{ID: "item-1", QuestionVersionID: "qv-1", Points: "1.00", Prompt: json.RawMessage(`{"text":"Q1"}`), Choices: json.RawMessage(`[]`), AnswerKey: json.RawMessage(`{"correct_option":"A"}`)},
+						},
+					},
+				},
+			}, "pub-id", "", nil
+		},
+		createAttempt: func(ctx context.Context, tx pgx.Tx, orgID, userID, assessmentID, publicationID string, startedAt, expiresAt time.Time) (*attempts.Attempt, error) {
+			created = true
+			return &attempts.Attempt{ID: "attempt-id", OrganizationID: orgID, AssessmentID: assessmentID, Status: "IN_PROGRESS", StartedAt: &startedAt, ExpiresAt: &expiresAt}, nil
+		},
+		getAttempt: func(ctx context.Context, id, orgID, userID string) (*attempts.Attempt, error) {
+			return &attempts.Attempt{ID: id, OrganizationID: orgID, AssessmentID: "assessment-id", Status: "IN_PROGRESS"}, nil
+		},
+		getItems: func(ctx context.Context, id, orgID string) ([]attempts.AttemptItemRow, error) {
+			return []attempts.AttemptItemRow{
+				{ID: "item-1", QuestionVersionID: "qv-1", Position: 1, Points: "1.00", Prompt: json.RawMessage(`{"text":"Q1"}`), Choices: json.RawMessage(`[]`)},
+			}, nil
+		},
+	}
+	svc := attempts.NewService(repo, stubTxManager{})
+	snapshot, err := svc.StartAttempt(context.Background(), auth.Actor{UserID: "user-id", OrgID: "org-id", Roles: []string{"student"}}, "assessment-id")
+	if err != nil {
+		t.Fatalf("StartAttempt failed: %v", err)
+	}
+	if !created {
+		t.Error("expected attempt to be created")
+	}
+	if snapshot.ID != "attempt-id" {
+		t.Errorf("id = %q, want attempt-id", snapshot.ID)
+	}
+	if len(snapshot.Items) != 1 {
+		t.Fatalf("expected 1 item, got %d", len(snapshot.Items))
+	}
+	if snapshot.Items[0].Position != 1 {
+		t.Errorf("position = %d, want 1", snapshot.Items[0].Position)
+	}
+}
+
+func TestService_StartAttempt_ResumeExisting(t *testing.T) {
+	created := false
+	repo := &fakeRepo{
+		listAssigned: func(ctx context.Context, orgID, userID string) ([]attempts.AssignedAssessment, error) {
+			return []attempts.AssignedAssessment{
+				{ID: "assessment-id", Title: "Quiz", Status: "OPEN", DurationMinutes: 30, MaxAttempts: 2, Revision: 1, PublicationID: "pub-id"},
+			}, nil
+		},
+		getInProgress: func(ctx context.Context, orgID, userID, assessmentID string) (*attempts.Attempt, error) {
+			return &attempts.Attempt{ID: "existing-id", OrganizationID: orgID, AssessmentID: assessmentID, Status: "IN_PROGRESS"}, nil
+		},
+		createAttempt: func(ctx context.Context, tx pgx.Tx, orgID, userID, assessmentID, publicationID string, startedAt, expiresAt time.Time) (*attempts.Attempt, error) {
+			created = true
+			return nil, nil
+		},
+		getAttempt: func(ctx context.Context, id, orgID, userID string) (*attempts.Attempt, error) {
+			return &attempts.Attempt{ID: id, OrganizationID: orgID, AssessmentID: "assessment-id", Status: "IN_PROGRESS"}, nil
+		},
+		getItems: func(ctx context.Context, id, orgID string) ([]attempts.AttemptItemRow, error) {
+			return []attempts.AttemptItemRow{{ID: "item-1", Position: 1, Points: "1.00"}}, nil
+		},
+	}
+	svc := attempts.NewService(repo, stubTxManager{})
+	snapshot, err := svc.StartAttempt(context.Background(), auth.Actor{UserID: "user-id", OrgID: "org-id", Roles: []string{"student"}}, "assessment-id")
+	if err != nil {
+		t.Fatalf("StartAttempt failed: %v", err)
+	}
+	if created {
+		t.Error("expected no new attempt to be created")
+	}
+	if snapshot.ID != "existing-id" {
+		t.Errorf("id = %q, want existing-id", snapshot.ID)
+	}
+}
+
+func TestService_StartAttempt_LimitReached(t *testing.T) {
+	repo := &fakeRepo{
+		listAssigned: func(ctx context.Context, orgID, userID string) ([]attempts.AssignedAssessment, error) {
+			return []attempts.AssignedAssessment{
+				{ID: "assessment-id", Title: "Quiz", Status: "OPEN", DurationMinutes: 30, MaxAttempts: 1, Revision: 1, PublicationID: "pub-id"},
+			}, nil
+		},
+		getInProgress: func(ctx context.Context, orgID, userID, assessmentID string) (*attempts.Attempt, error) {
+			return nil, nil
+		},
+		countAttempts: func(ctx context.Context, orgID, userID, assessmentID string) (int64, error) {
+			return 1, nil
+		},
+	}
+	svc := attempts.NewService(repo, stubTxManager{})
+	_, err := svc.StartAttempt(context.Background(), auth.Actor{UserID: "user-id", OrgID: "org-id", Roles: []string{"student"}}, "assessment-id")
+	if !errors.Is(err, attempts.ErrAttemptLimitReached) {
+		t.Fatalf("expected ErrAttemptLimitReached, got %v", err)
+	}
+}
+
+func TestService_StartAttempt_Unavailable(t *testing.T) {
+	repo := &fakeRepo{
+		listAssigned: func(ctx context.Context, orgID, userID string) ([]attempts.AssignedAssessment, error) {
+			return nil, nil
+		},
+	}
+	svc := attempts.NewService(repo, stubTxManager{})
+	_, err := svc.StartAttempt(context.Background(), auth.Actor{UserID: "user-id", OrgID: "org-id", Roles: []string{"student"}}, "assessment-id")
+	if !errors.Is(err, attempts.ErrAssessmentUnavailable) {
+		t.Fatalf("expected ErrAssessmentUnavailable, got %v", err)
 	}
 }
 

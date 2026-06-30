@@ -20,19 +20,23 @@ type TransactionManager interface {
 type Service interface {
 	ListTerms(ctx context.Context, orgID string) ([]Term, error)
 	CreateTerm(ctx context.Context, orgID string, roles []string, req CreateTermRequest) (Term, error)
+	UpdateTerm(ctx context.Context, orgID string, roles []string, termID string, req UpdateTermRequest) (Term, error)
 	ArchiveTerm(ctx context.Context, orgID string, roles []string, termID string) error
 
 	ListSubjects(ctx context.Context, orgID string) ([]Subject, error)
 	CreateSubject(ctx context.Context, orgID string, roles []string, req CreateSubjectRequest) (Subject, error)
+	UpdateSubject(ctx context.Context, orgID string, roles []string, subjectID string, req UpdateSubjectRequest) (Subject, error)
 	ArchiveSubject(ctx context.Context, orgID string, roles []string, subjectID string) error
 
 	ListCourses(ctx context.Context, orgID string) ([]Course, error)
 	CreateCourse(ctx context.Context, orgID string, roles []string, req CreateCourseRequest) (Course, error)
+	UpdateCourse(ctx context.Context, orgID string, roles []string, courseID string, req UpdateCourseRequest) (Course, error)
 	ArchiveCourse(ctx context.Context, orgID string, roles []string, courseID string) error
 
 	ListClasses(ctx context.Context, orgID string, userID string, roles []string) ([]ClassSection, error)
 	ListMyTeachingClasses(ctx context.Context, orgID string, userID string) ([]ClassSection, error)
 	CreateClass(ctx context.Context, orgID string, roles []string, req CreateClassRequest) (ClassSection, error)
+	UpdateClass(ctx context.Context, orgID string, roles []string, classID string, req UpdateClassRequest) (ClassSection, error)
 	ArchiveClass(ctx context.Context, orgID string, roles []string, classID string) error
 
 	ListClassTeachers(ctx context.Context, orgID string, userID string, roles []string, classID string) ([]ClassTeacher, error)
@@ -138,6 +142,35 @@ func (s *service) CreateTerm(ctx context.Context, orgID string, roles []string, 
 	return term, err
 }
 
+func (s *service) UpdateTerm(ctx context.Context, orgID string, roles []string, termID string, req UpdateTermRequest) (Term, error) {
+	if err := requireAdmin(roles); err != nil {
+		return Term{}, err
+	}
+	name := strings.TrimSpace(req.Name)
+	if name == "" {
+		return Term{}, ErrInvalidInput
+	}
+	startDate, err := parseDate(req.StartDate)
+	if err != nil {
+		return Term{}, ErrInvalidInput
+	}
+	endDate, err := parseDate(req.EndDate)
+	if err != nil {
+		return Term{}, ErrInvalidInput
+	}
+	if !endDate.After(startDate) {
+		return Term{}, ErrInvalidInput
+	}
+
+	var term Term
+	err = s.tm.WithinTx(ctx, func(ctx context.Context, tx pgx.Tx) error {
+		var err error
+		term, err = s.repo.UpdateTerm(ctx, tx, orgID, termID, name, startDate, endDate)
+		return err
+	})
+	return term, err
+}
+
 func (s *service) ArchiveTerm(ctx context.Context, orgID string, roles []string, termID string) error {
 	if err := requireAdmin(roles); err != nil {
 		return err
@@ -173,6 +206,28 @@ func (s *service) CreateSubject(ctx context.Context, orgID string, roles []strin
 	return subject, err
 }
 
+func (s *service) UpdateSubject(ctx context.Context, orgID string, roles []string, subjectID string, req UpdateSubjectRequest) (Subject, error) {
+	if err := requireAdmin(roles); err != nil {
+		return Subject{}, err
+	}
+	code := strings.TrimSpace(req.Code)
+	name := strings.TrimSpace(req.Name)
+	if code == "" || name == "" {
+		return Subject{}, ErrInvalidInput
+	}
+
+	var subject Subject
+	err := s.tm.WithinTx(ctx, func(ctx context.Context, tx pgx.Tx) error {
+		var err error
+		subject, err = s.repo.UpdateSubject(ctx, tx, orgID, subjectID, code, name, strings.TrimSpace(req.Description))
+		if isDuplicateError(err) {
+			return ErrDuplicateCode
+		}
+		return err
+	})
+	return subject, err
+}
+
 func (s *service) ArchiveSubject(ctx context.Context, orgID string, roles []string, subjectID string) error {
 	if err := requireAdmin(roles); err != nil {
 		return err
@@ -200,6 +255,28 @@ func (s *service) CreateCourse(ctx context.Context, orgID string, roles []string
 	err := s.tm.WithinTx(ctx, func(ctx context.Context, tx pgx.Tx) error {
 		var err error
 		course, err = s.repo.CreateCourse(ctx, tx, orgID, req.SubjectID, req.AcademicTermID, code, name)
+		if isDuplicateError(err) {
+			return ErrDuplicateCode
+		}
+		return err
+	})
+	return course, err
+}
+
+func (s *service) UpdateCourse(ctx context.Context, orgID string, roles []string, courseID string, req UpdateCourseRequest) (Course, error) {
+	if err := requireAdmin(roles); err != nil {
+		return Course{}, err
+	}
+	code := strings.TrimSpace(req.Code)
+	name := strings.TrimSpace(req.Name)
+	if code == "" || name == "" || req.SubjectID == "" || req.AcademicTermID == "" {
+		return Course{}, ErrInvalidInput
+	}
+
+	var course Course
+	err := s.tm.WithinTx(ctx, func(ctx context.Context, tx pgx.Tx) error {
+		var err error
+		course, err = s.repo.UpdateCourse(ctx, tx, orgID, courseID, req.SubjectID, req.AcademicTermID, code, name)
 		if isDuplicateError(err) {
 			return ErrDuplicateCode
 		}
@@ -255,6 +332,24 @@ func (s *service) CreateClass(ctx context.Context, orgID string, roles []string,
 	err := s.tm.WithinTx(ctx, func(ctx context.Context, tx pgx.Tx) error {
 		var err error
 		class, err = s.repo.CreateClass(ctx, tx, orgID, req.CourseID, name)
+		return err
+	})
+	return class, err
+}
+
+func (s *service) UpdateClass(ctx context.Context, orgID string, roles []string, classID string, req UpdateClassRequest) (ClassSection, error) {
+	if err := requireAdmin(roles); err != nil {
+		return ClassSection{}, err
+	}
+	name := strings.TrimSpace(req.Name)
+	if name == "" || req.CourseID == "" {
+		return ClassSection{}, ErrInvalidInput
+	}
+
+	var class ClassSection
+	err := s.tm.WithinTx(ctx, func(ctx context.Context, tx pgx.Tx) error {
+		var err error
+		class, err = s.repo.UpdateClass(ctx, tx, orgID, classID, req.CourseID, name)
 		return err
 	})
 	return class, err

@@ -49,6 +49,42 @@ func (f *fakeService) CreateTarget(ctx context.Context, actor auth.Actor, assess
 	return assessments.TargetDetail{}, nil
 }
 
+func (f *fakeService) UpdateSection(ctx context.Context, actor auth.Actor, sectionID string, req assessments.UpdateSectionRequest) (assessments.SectionDetail, error) {
+	return assessments.SectionDetail{}, nil
+}
+
+func (f *fakeService) DeleteSection(ctx context.Context, actor auth.Actor, sectionID string) error {
+	return nil
+}
+
+func (f *fakeService) UpdateItem(ctx context.Context, actor auth.Actor, itemID string, req assessments.UpdateItemRequest) (assessments.ItemDetail, error) {
+	return assessments.ItemDetail{}, nil
+}
+
+func (f *fakeService) DeleteItem(ctx context.Context, actor auth.Actor, itemID string) error {
+	return nil
+}
+
+func (f *fakeService) DeleteTarget(ctx context.Context, actor auth.Actor, assessmentID, targetID string) error {
+	return nil
+}
+
+func (f *fakeService) ReorderSections(ctx context.Context, actor auth.Actor, assessmentID string, req assessments.ReorderSectionsRequest) error {
+	return nil
+}
+
+func (f *fakeService) ReorderItems(ctx context.Context, actor auth.Actor, sectionID string, req assessments.ReorderItemsRequest) error {
+	return nil
+}
+
+func (f *fakeService) ListQuestions(ctx context.Context, actor auth.Actor, opts assessments.ListQuestionsOptions) ([]assessments.QuestionPickerItem, *assessments.PageInfo, error) {
+	return nil, nil, nil
+}
+
+func (f *fakeService) ListPublications(ctx context.Context, actor auth.Actor, assessmentID string) ([]assessments.PublicationSummary, error) {
+	return nil, nil
+}
+
 func (f *fakeService) ValidateAssessment(ctx context.Context, actor auth.Actor, assessmentID string) (assessments.ValidationResult, error) {
 	return assessments.ValidationResult{}, nil
 }

@@ -15,6 +15,7 @@ import { ApiResponseError } from '@/shared/api/attempts';
 import { PasswordPolicyHints } from '@/shared/components/password-policy-hints';
 import { validatePassword } from '@/shared/lib/password-policy';
 import { AuditLogsPanel } from './audit-logs-panel';
+import { AcademicManagementPanel } from './academic-management-panel';
 
 const AVAILABLE_ROLES = ['student', 'teacher', 'admin'] as const;
 
@@ -59,7 +60,7 @@ export function AdminDashboardPage() {
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
 
-  const [activeTab, setActiveTab] = useState<'org' | 'users' | 'audit'>('org');
+  const [activeTab, setActiveTab] = useState<'org' | 'users' | 'audit' | 'academic'>('org');
 
   const [mode, setMode] = useState<ViewMode>('list');
   const [selectedUser, setSelectedUser] = useState<User | null>(null);
@@ -322,6 +323,14 @@ export function AdminDashboardPage() {
           aria-current={activeTab === 'audit' ? 'page' : undefined}
         >
           Nhật ký hoạt động
+        </button>
+        <button
+          type="button"
+          className={activeTab === 'academic' ? 'active' : ''}
+          onClick={() => setActiveTab('academic')}
+          aria-current={activeTab === 'academic' ? 'page' : undefined}
+        >
+          Học vụ
         </button>
       </nav>
 
@@ -606,6 +615,7 @@ export function AdminDashboardPage() {
       )}
 
       {activeTab === 'audit' && <AuditLogsPanel />}
+      {activeTab === 'academic' && <AcademicManagementPanel />}
     </div>
   );
 }

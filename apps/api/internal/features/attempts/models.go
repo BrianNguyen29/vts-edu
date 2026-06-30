@@ -15,7 +15,53 @@ type AttemptSnapshot struct {
 	StartedAt      *time.Time    `json:"started_at,omitempty"`
 	ExpiresAt      *time.Time    `json:"expires_at,omitempty"`
 	SubmittedAt    *time.Time    `json:"submitted_at,omitempty"`
+	ServerTime     time.Time     `json:"server_time"`
 	Items          []AttemptItem `json:"items"`
+}
+
+// AssignedAssessment is a published assessment available to the current student.
+type AssignedAssessment struct {
+	ID              string `json:"id"`
+	Title           string `json:"title"`
+	Status          string `json:"status"`
+	DurationMinutes int    `json:"duration_minutes"`
+	MaxAttempts     int    `json:"max_attempts"`
+	Revision        int    `json:"revision"`
+	PublicationID   string `json:"publication_id"`
+	PublishedAt     string `json:"published_at"`
+}
+
+// PublicationSnapshot mirrors the JSON stored in assessment_publications.snapshot_json.
+type PublicationSnapshot struct {
+	ID              string               `json:"id"`
+	Title           string               `json:"title"`
+	DurationMinutes int                  `json:"duration_minutes"`
+	MaxAttempts     int                  `json:"max_attempts"`
+	Instructions    string               `json:"instructions"`
+	OpensAt         *string              `json:"opens_at"`
+	ClosesAt        *string              `json:"closes_at"`
+	Revision        int                  `json:"revision"`
+	Sections        []PublicationSection `json:"sections"`
+}
+
+// PublicationSection is a section inside a published assessment snapshot.
+type PublicationSection struct {
+	ID       string            `json:"id"`
+	Title    string            `json:"title"`
+	Position int               `json:"position"`
+	Items    []PublicationItem `json:"items"`
+}
+
+// PublicationItem is an item inside a published assessment snapshot.
+type PublicationItem struct {
+	ID                string          `json:"id"`
+	QuestionVersionID string          `json:"question_version_id"`
+	Position          int             `json:"position"`
+	Points            string          `json:"points"`
+	Prompt            json.RawMessage `json:"prompt"`
+	Choices           json.RawMessage `json:"choices"`
+	AnswerKey         json.RawMessage `json:"answer_key"`
+	MaxScore          string          `json:"max_score"`
 }
 
 // AttemptItem is a single question inside an attempt.

@@ -1,7 +1,9 @@
-import { apiClient } from './api-client';
+import { getOpenAPIClient } from './openapi-client';
 import {
   ApiResponseError,
-  createApiError,
+  unwrapData,
+  unwrapPaged,
+  unwrapVoid,
   type ListOptions,
 } from './attempts';
 import type { components, paths } from './openapi-schema';
@@ -26,133 +28,243 @@ export type CreateTargetRequest =
 export type ValidationResult =
   components['schemas']['ValidationResult']['data'];
 export type PublishResult = components['schemas']['PublishResult']['data'];
+export type QuestionPickerItem =
+  components['schemas']['QuestionPickerItem'];
+export type PagedQuestions =
+  paths['/questions']['get']['responses'][200]['content']['application/json'];
+export type PublicationSummary =
+  components['schemas']['PublicationSummary'];
+export type UpdateSectionRequest =
+  components['schemas']['UpdateSectionRequest'];
+export type UpdateItemRequest =
+  components['schemas']['UpdateItemRequest'];
+export type ReorderSectionsRequest =
+  components['schemas']['ReorderSectionsRequest'];
+export type ReorderItemsRequest =
+  components['schemas']['ReorderItemsRequest'];
 
-function buildQueryString(opts: ListOptions): string {
-  const params = new URLSearchParams();
-  if (opts.q) params.set('q', opts.q);
-  if (opts.limit !== undefined) params.set('limit', String(opts.limit));
-  if (opts.offset !== undefined) params.set('offset', String(opts.offset));
-  if (opts.cursor) params.set('cursor', opts.cursor);
-  if (opts.count) params.set('count', 'true');
-  const query = params.toString();
-  return query ? `?${query}` : '';
+function cleanListQuery(opts: ListOptions) {
+  return {
+    q: opts.q,
+    limit: opts.limit,
+    offset: opts.offset,
+    cursor: opts.cursor,
+    count: opts.count,
+  };
+}
+
+function cleanQuestionQuery(
+  opts: { q?: string; bank_id?: string; limit?: number; offset?: number }
+) {
+  return {
+    q: opts.q,
+    bank_id: opts.bank_id,
+    limit: opts.limit,
+    offset: opts.offset,
+  };
 }
 
 export async function listAssessments(
   opts: ListOptions = {}
 ): Promise<PagedAssessments> {
-  const res = await apiClient(`/assessments${buildQueryString(opts)}`);
-  const json = (await res.json()) as unknown;
-  if (!res.ok) {
-    throw createApiError(res.status, json);
-  }
-  return json as PagedAssessments;
+  const client = await getOpenAPIClient();
+  return unwrapPaged<AssessmentListItem>(
+    await client.GET('/assessments', { params: { query: cleanListQuery(opts) } })
+  ) as PagedAssessments;
 }
 
 export async function createAssessment(
   classSectionId: string,
   req: CreateAssessmentRequest
 ): Promise<AssessmentDetail> {
-  const res = await apiClient(`/classes/${classSectionId}/assessments`, {
-    method: 'POST',
-    body: JSON.stringify(req),
-  });
-  const json = (await res.json()) as unknown;
-  if (!res.ok) {
-    throw createApiError(res.status, json);
-  }
-  return (json as { data: AssessmentDetail }).data;
+  const client = await getOpenAPIClient();
+  return unwrapData<AssessmentDetail>(
+    await client.POST('/classes/{class_id}/assessments', {
+      params: { path: { class_id: classSectionId } },
+      body: req,
+    })
+  );
 }
 
 export async function getAssessment(id: string): Promise<AssessmentDetail> {
-  const res = await apiClient(`/assessments/${id}`);
-  const json = (await res.json()) as unknown;
-  if (!res.ok) {
-    throw createApiError(res.status, json);
-  }
-  return (json as { data: AssessmentDetail }).data;
+  const client = await getOpenAPIClient();
+  return unwrapData<AssessmentDetail>(
+    await client.GET('/assessments/{id}', { params: { path: { id } } })
+  );
 }
 
 export async function updateAssessment(
   id: string,
   req: UpdateAssessmentRequest
 ): Promise<AssessmentDetail> {
-  const res = await apiClient(`/assessments/${id}`, {
-    method: 'PATCH',
-    body: JSON.stringify(req),
-  });
-  const json = (await res.json()) as unknown;
-  if (!res.ok) {
-    throw createApiError(res.status, json);
-  }
-  return (json as { data: AssessmentDetail }).data;
+  const client = await getOpenAPIClient();
+  return unwrapData<AssessmentDetail>(
+    await client.PATCH('/assessments/{id}', {
+      params: { path: { id } },
+      body: req,
+    })
+  );
 }
 
 export async function createSection(
   assessmentId: string,
   req: CreateSectionRequest
 ): Promise<Section> {
-  const res = await apiClient(`/assessments/${assessmentId}/sections`, {
-    method: 'POST',
-    body: JSON.stringify(req),
-  });
-  const json = (await res.json()) as unknown;
-  if (!res.ok) {
-    throw createApiError(res.status, json);
-  }
-  return (json as { data: Section }).data;
+  const client = await getOpenAPIClient();
+  return unwrapData<Section>(
+    await client.POST('/assessments/{id}/sections', {
+      params: { path: { id: assessmentId } },
+      body: req,
+    })
+  );
 }
 
 export async function createItem(
   sectionId: string,
   req: CreateItemRequest
 ): Promise<Item> {
-  const res = await apiClient(`/assessment-sections/${sectionId}/items`, {
-    method: 'POST',
-    body: JSON.stringify(req),
-  });
-  const json = (await res.json()) as unknown;
-  if (!res.ok) {
-    throw createApiError(res.status, json);
-  }
-  return (json as { data: Item }).data;
+  const client = await getOpenAPIClient();
+  return unwrapData<Item>(
+    await client.POST('/assessment-sections/{section_id}/items', {
+      params: { path: { section_id: sectionId } },
+      body: req,
+    })
+  );
 }
 
 export async function createTarget(
   assessmentId: string,
   req: CreateTargetRequest
 ): Promise<Target> {
-  const res = await apiClient(`/assessments/${assessmentId}/targets`, {
-    method: 'POST',
-    body: JSON.stringify(req),
-  });
-  const json = (await res.json()) as unknown;
-  if (!res.ok) {
-    throw createApiError(res.status, json);
-  }
-  return (json as { data: Target }).data;
+  const client = await getOpenAPIClient();
+  return unwrapData<Target>(
+    await client.POST('/assessments/{id}/targets', {
+      params: { path: { id: assessmentId } },
+      body: req,
+    })
+  );
 }
 
 export async function validateAssessment(id: string): Promise<ValidationResult> {
-  const res = await apiClient(`/assessments/${id}/validate`, {
-    method: 'POST',
-  });
-  const json = (await res.json()) as unknown;
-  if (!res.ok) {
-    throw createApiError(res.status, json);
-  }
-  return (json as { data: ValidationResult }).data;
+  const client = await getOpenAPIClient();
+  return unwrapData<ValidationResult>(
+    await client.POST('/assessments/{id}/validate', {
+      params: { path: { id } },
+    })
+  );
 }
 
 export async function publishAssessment(id: string): Promise<PublishResult> {
-  const res = await apiClient(`/assessments/${id}/publish`, {
-    method: 'POST',
-  });
-  const json = (await res.json()) as unknown;
-  if (!res.ok) {
-    throw createApiError(res.status, json);
-  }
-  return (json as { data: PublishResult }).data;
+  const client = await getOpenAPIClient();
+  return unwrapData<PublishResult>(
+    await client.POST('/assessments/{id}/publish', {
+      params: { path: { id } },
+    })
+  );
+}
+
+export async function listQuestions(
+  opts: { q?: string; bank_id?: string; limit?: number; offset?: number } = {}
+): Promise<PagedQuestions> {
+  const client = await getOpenAPIClient();
+  return unwrapPaged<QuestionPickerItem>(
+    await client.GET('/questions', {
+      params: { query: cleanQuestionQuery(opts) },
+    })
+  ) as PagedQuestions;
+}
+
+export async function updateSection(
+  sectionId: string,
+  req: UpdateSectionRequest
+): Promise<Section> {
+  const client = await getOpenAPIClient();
+  return unwrapData<Section>(
+    await client.PATCH('/assessment-sections/{section_id}', {
+      params: { path: { section_id: sectionId } },
+      body: req,
+    })
+  );
+}
+
+export async function deleteSection(sectionId: string): Promise<void> {
+  const client = await getOpenAPIClient();
+  unwrapVoid(
+    await client.DELETE('/assessment-sections/{section_id}', {
+      params: { path: { section_id: sectionId } },
+    })
+  );
+}
+
+export async function reorderSections(
+  assessmentId: string,
+  req: ReorderSectionsRequest
+): Promise<void> {
+  const client = await getOpenAPIClient();
+  unwrapVoid(
+    await client.POST('/assessments/{id}/sections/reorder', {
+      params: { path: { id: assessmentId } },
+      body: req,
+    })
+  );
+}
+
+export async function updateItem(
+  itemId: string,
+  req: UpdateItemRequest
+): Promise<Item> {
+  const client = await getOpenAPIClient();
+  return unwrapData<Item>(
+    await client.PATCH('/assessment-items/{item_id}', {
+      params: { path: { item_id: itemId } },
+      body: req,
+    })
+  );
+}
+
+export async function deleteItem(itemId: string): Promise<void> {
+  const client = await getOpenAPIClient();
+  unwrapVoid(
+    await client.DELETE('/assessment-items/{item_id}', {
+      params: { path: { item_id: itemId } },
+    })
+  );
+}
+
+export async function reorderItems(
+  sectionId: string,
+  req: ReorderItemsRequest
+): Promise<void> {
+  const client = await getOpenAPIClient();
+  unwrapVoid(
+    await client.POST('/assessment-sections/{section_id}/items/reorder', {
+      params: { path: { section_id: sectionId } },
+      body: req,
+    })
+  );
+}
+
+export async function deleteTarget(
+  assessmentId: string,
+  targetId: string
+): Promise<void> {
+  const client = await getOpenAPIClient();
+  unwrapVoid(
+    await client.DELETE('/assessments/{id}/targets/{target_id}', {
+      params: { path: { id: assessmentId, target_id: targetId } },
+    })
+  );
+}
+
+export async function listPublications(
+  assessmentId: string
+): Promise<PublicationSummary[]> {
+  const client = await getOpenAPIClient();
+  return unwrapData<PublicationSummary[]>(
+    await client.GET('/assessments/{id}/publications', {
+      params: { path: { id: assessmentId } },
+    })
+  );
 }
 
 export { ApiResponseError };

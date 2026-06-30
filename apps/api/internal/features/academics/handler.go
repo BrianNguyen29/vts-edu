@@ -122,6 +122,29 @@ func (h *Handler) CreateTerm(w http.ResponseWriter, r *http.Request) {
 	writeData(w, http.StatusCreated, term)
 }
 
+func (h *Handler) UpdateTerm(w http.ResponseWriter, r *http.Request) {
+	actor, ok := h.requireAdmin(w, r)
+	if !ok {
+		return
+	}
+	if !csrf.Validate(r) {
+		writeError(w, http.StatusForbidden, "invalid_csrf", "invalid csrf token")
+		return
+	}
+	termID := chi.URLParam(r, "term_id")
+	var req UpdateTermRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "bad_request", "invalid request body")
+		return
+	}
+	term, err := h.svc.UpdateTerm(r.Context(), actor.OrgID, actor.Roles, termID, req)
+	if err != nil {
+		h.mapError(w, err)
+		return
+	}
+	writeData(w, http.StatusOK, term)
+}
+
 func (h *Handler) ArchiveTerm(w http.ResponseWriter, r *http.Request) {
 	actor, ok := h.requireAdmin(w, r)
 	if !ok {
@@ -176,6 +199,29 @@ func (h *Handler) CreateSubject(w http.ResponseWriter, r *http.Request) {
 	writeData(w, http.StatusCreated, subject)
 }
 
+func (h *Handler) UpdateSubject(w http.ResponseWriter, r *http.Request) {
+	actor, ok := h.requireAdmin(w, r)
+	if !ok {
+		return
+	}
+	if !csrf.Validate(r) {
+		writeError(w, http.StatusForbidden, "invalid_csrf", "invalid csrf token")
+		return
+	}
+	subjectID := chi.URLParam(r, "subject_id")
+	var req UpdateSubjectRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "bad_request", "invalid request body")
+		return
+	}
+	subject, err := h.svc.UpdateSubject(r.Context(), actor.OrgID, actor.Roles, subjectID, req)
+	if err != nil {
+		h.mapError(w, err)
+		return
+	}
+	writeData(w, http.StatusOK, subject)
+}
+
 func (h *Handler) ArchiveSubject(w http.ResponseWriter, r *http.Request) {
 	actor, ok := h.requireAdmin(w, r)
 	if !ok {
@@ -228,6 +274,29 @@ func (h *Handler) CreateCourse(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeData(w, http.StatusCreated, course)
+}
+
+func (h *Handler) UpdateCourse(w http.ResponseWriter, r *http.Request) {
+	actor, ok := h.requireAdmin(w, r)
+	if !ok {
+		return
+	}
+	if !csrf.Validate(r) {
+		writeError(w, http.StatusForbidden, "invalid_csrf", "invalid csrf token")
+		return
+	}
+	courseID := chi.URLParam(r, "course_id")
+	var req UpdateCourseRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "bad_request", "invalid request body")
+		return
+	}
+	course, err := h.svc.UpdateCourse(r.Context(), actor.OrgID, actor.Roles, courseID, req)
+	if err != nil {
+		h.mapError(w, err)
+		return
+	}
+	writeData(w, http.StatusOK, course)
 }
 
 func (h *Handler) ArchiveCourse(w http.ResponseWriter, r *http.Request) {
@@ -295,6 +364,29 @@ func (h *Handler) CreateClass(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeData(w, http.StatusCreated, class)
+}
+
+func (h *Handler) UpdateClass(w http.ResponseWriter, r *http.Request) {
+	actor, ok := h.requireAdmin(w, r)
+	if !ok {
+		return
+	}
+	if !csrf.Validate(r) {
+		writeError(w, http.StatusForbidden, "invalid_csrf", "invalid csrf token")
+		return
+	}
+	classID := chi.URLParam(r, "class_id")
+	var req UpdateClassRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "bad_request", "invalid request body")
+		return
+	}
+	class, err := h.svc.UpdateClass(r.Context(), actor.OrgID, actor.Roles, classID, req)
+	if err != nil {
+		h.mapError(w, err)
+		return
+	}
+	writeData(w, http.StatusOK, class)
 }
 
 func (h *Handler) ArchiveClass(w http.ResponseWriter, r *http.Request) {

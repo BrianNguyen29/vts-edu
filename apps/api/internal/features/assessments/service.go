@@ -29,8 +29,22 @@ type Service interface {
 	GetAssessment(ctx context.Context, actor auth.Actor, assessmentID string) (AssessmentDetail, error)
 	UpdateAssessment(ctx context.Context, actor auth.Actor, assessmentID string, req UpdateAssessmentRequest) (AssessmentDetail, error)
 	CreateSection(ctx context.Context, actor auth.Actor, assessmentID string, req CreateSectionRequest) (SectionDetail, error)
+	UpdateSection(ctx context.Context, actor auth.Actor, sectionID string, req UpdateSectionRequest) (SectionDetail, error)
+	DeleteSection(ctx context.Context, actor auth.Actor, sectionID string) error
+
 	CreateItem(ctx context.Context, actor auth.Actor, sectionID string, req CreateItemRequest) (ItemDetail, error)
+	UpdateItem(ctx context.Context, actor auth.Actor, itemID string, req UpdateItemRequest) (ItemDetail, error)
+	DeleteItem(ctx context.Context, actor auth.Actor, itemID string) error
+
 	CreateTarget(ctx context.Context, actor auth.Actor, assessmentID string, req CreateTargetRequest) (TargetDetail, error)
+	DeleteTarget(ctx context.Context, actor auth.Actor, assessmentID, targetID string) error
+
+	ReorderSections(ctx context.Context, actor auth.Actor, assessmentID string, req ReorderSectionsRequest) error
+	ReorderItems(ctx context.Context, actor auth.Actor, sectionID string, req ReorderItemsRequest) error
+
+	ListQuestions(ctx context.Context, actor auth.Actor, opts ListQuestionsOptions) ([]QuestionPickerItem, *PageInfo, error)
+	ListPublications(ctx context.Context, actor auth.Actor, assessmentID string) ([]PublicationSummary, error)
+
 	ValidateAssessment(ctx context.Context, actor auth.Actor, assessmentID string) (ValidationResult, error)
 	PublishAssessment(ctx context.Context, actor auth.Actor, assessmentID string) (PublishResult, error)
 }
@@ -319,6 +333,218 @@ func (s *service) CreateTarget(ctx context.Context, actor auth.Actor, assessment
 	return target, nil
 }
 
+func (s *service) UpdateSection(ctx context.Context, actor auth.Actor, sectionID string, req UpdateSectionRequest) (SectionDetail, error) {
+	if !isTeacherOrAdmin(actor.Roles) {
+		return SectionDetail{}, ErrUnauthorized
+	}
+	assessmentID, err := s.repo.GetSectionAssessmentID(ctx, actor.OrgID, sectionID)
+	if err != nil {
+		return SectionDetail{}, mapRepoError(err)
+	}
+	if err := s.requireManager(ctx, actor, assessmentID); err != nil {
+		return SectionDetail{}, err
+	}
+	if err := s.requireDraft(ctx, actor.OrgID, assessmentID); err != nil {
+		return SectionDetail{}, err
+	}
+	if strings.TrimSpace(req.Title) == "" && req.Position == 0 {
+		return SectionDetail{}, fmt.Errorf("%w: title or position required", ErrInvalidInput)
+	}
+
+	var section SectionDetail
+	err = s.tm.WithinTx(ctx, func(ctx context.Context, tx pgx.Tx) error {
+		var err error
+		section, err = s.repo.UpdateAssessmentSection(ctx, tx, actor.OrgID, sectionID, req)
+		if isDuplicateError(err) {
+			return ErrDuplicateSection
+		}
+		return err
+	})
+	if err != nil {
+		return SectionDetail{}, mapRepoError(err)
+	}
+	return section, nil
+}
+
+func (s *service) DeleteSection(ctx context.Context, actor auth.Actor, sectionID string) error {
+	if !isTeacherOrAdmin(actor.Roles) {
+		return ErrUnauthorized
+	}
+	assessmentID, err := s.repo.GetSectionAssessmentID(ctx, actor.OrgID, sectionID)
+	if err != nil {
+		return mapRepoError(err)
+	}
+	if err := s.requireManager(ctx, actor, assessmentID); err != nil {
+		return err
+	}
+	if err := s.requireDraft(ctx, actor.OrgID, assessmentID); err != nil {
+		return err
+	}
+	return s.tm.WithinTx(ctx, func(ctx context.Context, tx pgx.Tx) error {
+		return s.repo.ArchiveAssessmentSection(ctx, tx, actor.OrgID, sectionID)
+	})
+}
+
+func (s *service) UpdateItem(ctx context.Context, actor auth.Actor, itemID string, req UpdateItemRequest) (ItemDetail, error) {
+	if !isTeacherOrAdmin(actor.Roles) {
+		return ItemDetail{}, ErrUnauthorized
+	}
+	assessmentID, err := s.repo.GetItemAssessmentID(ctx, actor.OrgID, itemID)
+	if err != nil {
+		return ItemDetail{}, mapRepoError(err)
+	}
+	if err := s.requireManager(ctx, actor, assessmentID); err != nil {
+		return ItemDetail{}, err
+	}
+	if err := s.requireDraft(ctx, actor.OrgID, assessmentID); err != nil {
+		return ItemDetail{}, err
+	}
+	if req.QuestionVersionID == "" && req.Position == 0 && req.Points == "" {
+		return ItemDetail{}, fmt.Errorf("%w: at least one field to update is required", ErrInvalidInput)
+	}
+	if req.Points != "" {
+		if _, err := strconv.ParseFloat(req.Points, 64); err != nil {
+			return ItemDetail{}, fmt.Errorf("%w: points must be numeric", ErrInvalidInput)
+		}
+	}
+	if req.QuestionVersionID != "" {
+		exists, err := s.repo.QuestionVersionExists(ctx, actor.OrgID, req.QuestionVersionID)
+		if err != nil {
+			return ItemDetail{}, err
+		}
+		if !exists {
+			return ItemDetail{}, fmt.Errorf("%w: question version not found or not published", ErrInvalidInput)
+		}
+	}
+
+	var item ItemDetail
+	err = s.tm.WithinTx(ctx, func(ctx context.Context, tx pgx.Tx) error {
+		var err error
+		item, err = s.repo.UpdateAssessmentItem(ctx, tx, actor.OrgID, itemID, req)
+		if isDuplicateError(err) {
+			return ErrDuplicateItem
+		}
+		return err
+	})
+	if err != nil {
+		return ItemDetail{}, mapRepoError(err)
+	}
+	return item, nil
+}
+
+func (s *service) DeleteItem(ctx context.Context, actor auth.Actor, itemID string) error {
+	if !isTeacherOrAdmin(actor.Roles) {
+		return ErrUnauthorized
+	}
+	assessmentID, err := s.repo.GetItemAssessmentID(ctx, actor.OrgID, itemID)
+	if err != nil {
+		return mapRepoError(err)
+	}
+	if err := s.requireManager(ctx, actor, assessmentID); err != nil {
+		return err
+	}
+	if err := s.requireDraft(ctx, actor.OrgID, assessmentID); err != nil {
+		return err
+	}
+	return s.tm.WithinTx(ctx, func(ctx context.Context, tx pgx.Tx) error {
+		return s.repo.ArchiveAssessmentItem(ctx, tx, actor.OrgID, itemID)
+	})
+}
+
+func (s *service) DeleteTarget(ctx context.Context, actor auth.Actor, assessmentID, targetID string) error {
+	if !isTeacherOrAdmin(actor.Roles) {
+		return ErrUnauthorized
+	}
+	targetAssessmentID, err := s.repo.GetTargetAssessmentID(ctx, actor.OrgID, targetID)
+	if err != nil {
+		return mapRepoError(err)
+	}
+	if targetAssessmentID != assessmentID {
+		return ErrNotFound
+	}
+	if err := s.requireManager(ctx, actor, assessmentID); err != nil {
+		return err
+	}
+	if err := s.requireDraft(ctx, actor.OrgID, assessmentID); err != nil {
+		return err
+	}
+	return s.tm.WithinTx(ctx, func(ctx context.Context, tx pgx.Tx) error {
+		return s.repo.ArchiveAssessmentTarget(ctx, tx, actor.OrgID, targetID)
+	})
+}
+
+func (s *service) ReorderSections(ctx context.Context, actor auth.Actor, assessmentID string, req ReorderSectionsRequest) error {
+	if !isTeacherOrAdmin(actor.Roles) {
+		return ErrUnauthorized
+	}
+	if err := s.requireManager(ctx, actor, assessmentID); err != nil {
+		return err
+	}
+	if err := s.requireDraft(ctx, actor.OrgID, assessmentID); err != nil {
+		return err
+	}
+	if len(req.SectionIDs) == 0 {
+		return fmt.Errorf("%w: section_ids required", ErrInvalidInput)
+	}
+	return s.tm.WithinTx(ctx, func(ctx context.Context, tx pgx.Tx) error {
+		return s.repo.ReorderAssessmentSections(ctx, tx, actor.OrgID, assessmentID, req.SectionIDs)
+	})
+}
+
+func (s *service) ReorderItems(ctx context.Context, actor auth.Actor, sectionID string, req ReorderItemsRequest) error {
+	if !isTeacherOrAdmin(actor.Roles) {
+		return ErrUnauthorized
+	}
+	assessmentID, err := s.repo.GetSectionAssessmentID(ctx, actor.OrgID, sectionID)
+	if err != nil {
+		return mapRepoError(err)
+	}
+	if err := s.requireManager(ctx, actor, assessmentID); err != nil {
+		return err
+	}
+	if err := s.requireDraft(ctx, actor.OrgID, assessmentID); err != nil {
+		return err
+	}
+	if len(req.ItemIDs) == 0 {
+		return fmt.Errorf("%w: item_ids required", ErrInvalidInput)
+	}
+	return s.tm.WithinTx(ctx, func(ctx context.Context, tx pgx.Tx) error {
+		return s.repo.ReorderAssessmentItems(ctx, tx, actor.OrgID, sectionID, req.ItemIDs)
+	})
+}
+
+func (s *service) ListQuestions(ctx context.Context, actor auth.Actor, opts ListQuestionsOptions) ([]QuestionPickerItem, *PageInfo, error) {
+	if !isTeacherOrAdmin(actor.Roles) {
+		return nil, nil, ErrUnauthorized
+	}
+	queryOpts := opts
+	if opts.Limit > 0 {
+		queryOpts.Limit = opts.Limit + 1
+	}
+	rows, err := s.repo.ListQuestions(ctx, actor.OrgID, queryOpts)
+	if err != nil {
+		return nil, nil, err
+	}
+	page := &PageInfo{Limit: opts.Limit, Offset: opts.Offset}
+	if opts.Limit > 0 {
+		if len(rows) > opts.Limit {
+			page.HasMore = true
+			rows = rows[:opts.Limit]
+		}
+	}
+	return rows, page, nil
+}
+
+func (s *service) ListPublications(ctx context.Context, actor auth.Actor, assessmentID string) ([]PublicationSummary, error) {
+	if !isTeacherOrAdmin(actor.Roles) {
+		return nil, ErrUnauthorized
+	}
+	if err := s.requireManager(ctx, actor, assessmentID); err != nil {
+		return nil, err
+	}
+	return s.repo.ListAssessmentPublications(ctx, actor.OrgID, assessmentID)
+}
+
 // ValidationResult reports whether an assessment is ready to publish.
 type ValidationResult struct {
 	Valid  bool              `json:"valid"`
@@ -342,29 +568,63 @@ func (s *service) ValidateAssessment(ctx context.Context, actor auth.Actor, asse
 	if assessment.Status != "DRAFT" {
 		validationErrors = append(validationErrors, ValidationError{Field: "status", Message: "assessment must be in DRAFT status"})
 	}
+	if assessment.DurationMinutes < 1 {
+		validationErrors = append(validationErrors, ValidationError{Field: "duration_minutes", Message: "duration must be at least 1 minute"})
+	}
+	if assessment.MaxAttempts < 1 {
+		validationErrors = append(validationErrors, ValidationError{Field: "max_attempts", Message: "max_attempts must be at least 1"})
+	}
+	if assessment.OpensAt != nil && assessment.ClosesAt != nil {
+		opens, err1 := time.Parse(time.RFC3339, *assessment.OpensAt)
+		closes, err2 := time.Parse(time.RFC3339, *assessment.ClosesAt)
+		if err1 == nil && err2 == nil && !closes.After(opens) {
+			validationErrors = append(validationErrors, ValidationError{Field: "schedule", Message: "opens_at must be before closes_at"})
+		}
+	}
 
-	sectionCount, err := s.repo.CountAssessmentSections(ctx, actor.OrgID, assessmentID)
+	sections, err := s.repo.GetAssessmentSections(ctx, actor.OrgID, assessmentID)
 	if err != nil {
 		return ValidationResult{}, err
 	}
-	if sectionCount == 0 {
-		validationErrors = append(validationErrors, ValidationError{Field: "sections", Message: "at least one section is required"})
+	if len(sections) == 0 {
+		validationErrors = append(validationErrors, ValidationError{Field: "sections", Message: "at least one active section is required"})
 	}
 
-	itemCount, err := s.repo.CountAssessmentItems(ctx, actor.OrgID, assessmentID)
+	items, err := s.repo.GetAssessmentItems(ctx, actor.OrgID, assessmentID)
 	if err != nil {
 		return ValidationResult{}, err
 	}
-	if itemCount == 0 {
-		validationErrors = append(validationErrors, ValidationError{Field: "items", Message: "at least one item is required"})
+	if len(items) == 0 {
+		validationErrors = append(validationErrors, ValidationError{Field: "items", Message: "at least one active item is required"})
+	}
+	for _, it := range items {
+		if pts, err := strconv.ParseFloat(it.Points, 64); err != nil || pts <= 0 {
+			validationErrors = append(validationErrors, ValidationError{Field: "items", Message: fmt.Sprintf("item %s points must be greater than 0", it.ID)})
+		}
+		published, err := s.repo.IsQuestionVersionPublished(ctx, actor.OrgID, it.QuestionVersionID)
+		if err != nil {
+			return ValidationResult{}, err
+		}
+		if !published {
+			validationErrors = append(validationErrors, ValidationError{Field: "items", Message: fmt.Sprintf("item %s question version is not published", it.ID)})
+		}
 	}
 
-	targetCount, err := s.repo.CountAssessmentTargets(ctx, actor.OrgID, assessmentID)
+	targets, err := s.repo.GetAssessmentTargets(ctx, actor.OrgID, assessmentID)
 	if err != nil {
 		return ValidationResult{}, err
 	}
-	if targetCount == 0 {
-		validationErrors = append(validationErrors, ValidationError{Field: "targets", Message: "at least one target class is required"})
+	if len(targets) == 0 {
+		validationErrors = append(validationErrors, ValidationError{Field: "targets", Message: "at least one active target class is required"})
+	}
+	for _, tgt := range targets {
+		active, err := s.repo.IsClassSectionActive(ctx, actor.OrgID, tgt.ClassSectionID)
+		if err != nil {
+			return ValidationResult{}, err
+		}
+		if !active {
+			validationErrors = append(validationErrors, ValidationError{Field: "targets", Message: fmt.Sprintf("target class %s is not active", tgt.ClassSectionID)})
+		}
 	}
 
 	return ValidationResult{

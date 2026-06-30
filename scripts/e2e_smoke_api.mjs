@@ -269,6 +269,83 @@ async function publishAssessment(token, assessmentID) {
   return json.data;
 }
 
+async function updateSection(token, sectionID, payload) {
+  const r = await fetch(`${API_PREFIX}/assessment-sections/${sectionID}`, {
+    method: 'PATCH',
+    headers: headers(token, true),
+    body: JSON.stringify(payload),
+  });
+  if (!r.ok) throw new Error(`update section failed: ${r.status}`);
+  const json = await r.json();
+  console.log('  updated section:', json.data.title);
+  return json.data;
+}
+
+async function updateItem(token, itemID, payload) {
+  const r = await fetch(`${API_PREFIX}/assessment-items/${itemID}`, {
+    method: 'PATCH',
+    headers: headers(token, true),
+    body: JSON.stringify(payload),
+  });
+  if (!r.ok) throw new Error(`update item failed: ${r.status}`);
+  const json = await r.json();
+  console.log('  updated item:', json.data.question_version_id, json.data.points);
+  return json.data;
+}
+
+async function reorderSections(token, assessmentID, sectionIDs) {
+  const r = await fetch(`${API_PREFIX}/assessments/${assessmentID}/sections/reorder`, {
+    method: 'POST',
+    headers: headers(token, true),
+    body: JSON.stringify({ section_ids: sectionIDs }),
+  });
+  if (!r.ok) throw new Error(`reorder sections failed: ${r.status}`);
+}
+
+async function reorderItems(token, sectionID, itemIDs) {
+  const r = await fetch(`${API_PREFIX}/assessment-sections/${sectionID}/items/reorder`, {
+    method: 'POST',
+    headers: headers(token, true),
+    body: JSON.stringify({ item_ids: itemIDs }),
+  });
+  if (!r.ok) throw new Error(`reorder items failed: ${r.status}`);
+}
+
+async function deleteItem(token, itemID) {
+  const r = await fetch(`${API_PREFIX}/assessment-items/${itemID}`, {
+    method: 'DELETE',
+    headers: headers(token, true),
+  });
+  if (!r.ok) throw new Error(`delete item failed: ${r.status}`);
+}
+
+async function deleteTarget(token, assessmentID, targetID) {
+  const r = await fetch(`${API_PREFIX}/assessments/${assessmentID}/targets/${targetID}`, {
+    method: 'DELETE',
+    headers: headers(token, true),
+  });
+  if (!r.ok) throw new Error(`delete target failed: ${r.status}`);
+}
+
+async function listQuestions(token, query = '') {
+  const url = new URL(`${API_PREFIX}/questions`);
+  if (query) url.searchParams.set('q', query);
+  url.searchParams.set('limit', '10');
+  const r = await fetch(url, { headers: headers(token) });
+  if (!r.ok) throw new Error(`list questions failed: ${r.status}`);
+  const json = await r.json();
+  console.log('  questions:', json.data.length);
+  return json.data;
+}
+
+async function listPublications(token, assessmentID) {
+  const r = await fetch(`${API_PREFIX}/assessments/${assessmentID}/publications`, { headers: headers(token) });
+  if (!r.ok) throw new Error(`list publications failed: ${r.status}`);
+  const json = await r.json();
+  console.log('  publications:', json.data.length);
+  return json.data;
+}
+
 async function listUsers(token) {
   const r = await fetch(`${API_PREFIX}/users`, { headers: headers(token) });
   if (!r.ok) throw new Error(`list users failed: ${r.status}`);
@@ -516,6 +593,54 @@ async function createClass(token, courseID, name) {
   return json.data;
 }
 
+async function updateAcademicTerm(token, termID, name, startDate, endDate) {
+  const r = await fetch(`${API_PREFIX}/academic-terms/${termID}`, {
+    method: 'PATCH',
+    headers: headers(token, true),
+    body: JSON.stringify({ name, start_date: startDate, end_date: endDate }),
+  });
+  if (!r.ok) throw new Error(`update academic term failed: ${r.status}`);
+  const json = await r.json();
+  console.log('  updated term:', json.data.name);
+  return json.data;
+}
+
+async function updateSubject(token, subjectID, code, name) {
+  const r = await fetch(`${API_PREFIX}/subjects/${subjectID}`, {
+    method: 'PATCH',
+    headers: headers(token, true),
+    body: JSON.stringify({ code, name }),
+  });
+  if (!r.ok) throw new Error(`update subject failed: ${r.status}`);
+  const json = await r.json();
+  console.log('  updated subject:', json.data.code, json.data.name);
+  return json.data;
+}
+
+async function updateCourse(token, courseID, subjectID, termID, code, name) {
+  const r = await fetch(`${API_PREFIX}/courses/${courseID}`, {
+    method: 'PATCH',
+    headers: headers(token, true),
+    body: JSON.stringify({ subject_id: subjectID, academic_term_id: termID, code, name }),
+  });
+  if (!r.ok) throw new Error(`update course failed: ${r.status}`);
+  const json = await r.json();
+  console.log('  updated course:', json.data.code, json.data.name);
+  return json.data;
+}
+
+async function updateClass(token, classID, courseID, name) {
+  const r = await fetch(`${API_PREFIX}/classes/${classID}`, {
+    method: 'PATCH',
+    headers: headers(token, true),
+    body: JSON.stringify({ course_id: courseID, name }),
+  });
+  if (!r.ok) throw new Error(`update class failed: ${r.status}`);
+  const json = await r.json();
+  console.log('  updated class:', json.data.name);
+  return json.data;
+}
+
 async function listClassTeachers(token, classID) {
   const r = await fetch(`${API_PREFIX}/classes/${classID}/teachers`, { headers: headers(token) });
   if (!r.ok) throw new Error(`list class teachers failed: ${r.status}`);
@@ -668,6 +793,25 @@ async function submit(token) {
   console.log('  submit status:', json.data.status);
   console.log('  score:', json.data.score, '/', json.data.max_score, '| grading:', json.data.grading_status);
   if (json.data.grading_status !== 'GRADED') throw new Error(`unexpected grading_status: ${json.data.grading_status}`);
+  return json.data;
+}
+
+async function listAssignedAssessments(token) {
+  const r = await fetch(`${API_PREFIX}/me/assessments`, { headers: headers(token) });
+  if (!r.ok) throw new Error(`list assigned assessments failed: ${r.status}`);
+  const json = await r.json();
+  console.log('  assigned assessments:', json.data.length);
+  return json.data;
+}
+
+async function startAttempt(token, assessmentID) {
+  const r = await fetch(`${API_PREFIX}/assessments/${assessmentID}/attempts`, {
+    method: 'POST',
+    headers: headers(token, true),
+  });
+  if (!r.ok) throw new Error(`start attempt failed: ${r.status}`);
+  const json = await r.json();
+  console.log('  started attempt:', json.data.id, 'status:', json.data.status, 'items:', json.data.items.length);
   return json.data;
 }
 
@@ -844,9 +988,28 @@ async function main() {
   }
 
   const newTerm = await createAcademicTerm(adminAfter.data.access_token, 'Học kỳ 1 2026-2027', '2026-09-01', '2027-01-31');
+  const updatedTerm = await updateAcademicTerm(adminAfter.data.access_token, newTerm.id, 'Học kỳ 1 2026-2027 Updated', '2026-09-01', '2027-01-31');
+  if (updatedTerm.name !== 'Học kỳ 1 2026-2027 Updated') {
+    throw new Error('term name not updated');
+  }
+
   const newSubject = await createSubject(adminAfter.data.access_token, 'PHY', 'Vật lý');
+  const updatedSubject = await updateSubject(adminAfter.data.access_token, newSubject.id, 'PHY-UPD', 'Vật lý Updated');
+  if (updatedSubject.code !== 'PHY-UPD' || updatedSubject.name !== 'Vật lý Updated') {
+    throw new Error('subject not updated');
+  }
+
   const newCourse = await createCourse(adminAfter.data.access_token, newSubject.id, newTerm.id, 'PHY9-HK1', 'Vật lý 9 - HK1');
+  const updatedCourse = await updateCourse(adminAfter.data.access_token, newCourse.id, newSubject.id, newTerm.id, 'PHY9-HK1-UPD', 'Vật lý 9 - HK1 Updated');
+  if (updatedCourse.code !== 'PHY9-HK1-UPD' || updatedCourse.name !== 'Vật lý 9 - HK1 Updated') {
+    throw new Error('course not updated');
+  }
+
   const newClass = await createClass(adminAfter.data.access_token, newCourse.id, '9A1');
+  const updatedClass = await updateClass(adminAfter.data.access_token, newClass.id, updatedCourse.id, '9A1');
+  if (updatedClass.name !== '9A1') {
+    throw new Error('class name unexpectedly changed');
+  }
 
   await addClassTeacher(adminAfter.data.access_token, newClass.id, teacherUserId);
   await enrollStudent(adminAfter.data.access_token, newClass.id, studentActor.id);
@@ -879,7 +1042,32 @@ async function main() {
     throw new Error('item question_version_id mismatch');
   }
 
-  await createTarget(teacherAfter.data.access_token, draftAssessment.id, seeded8A1.id);
+  const builderTarget = await createTarget(teacherAfter.data.access_token, draftAssessment.id, seeded8A1.id);
+
+  // Builder upgrades: edit, reorder, delete/re-add, question picker, publications.
+  await updateSection(teacherAfter.data.access_token, builderSection.id, { title: 'Phần I - updated' });
+  await updateItem(teacherAfter.data.access_token, builderItem.id, { points: '2.00' });
+  await reorderSections(teacherAfter.data.access_token, draftAssessment.id, [builderSection.id]);
+  await reorderItems(teacherAfter.data.access_token, builderSection.id, [builderItem.id]);
+
+  await deleteItem(teacherAfter.data.access_token, builderItem.id);
+  const invalidAfterDelete = await validateAssessment(teacherAfter.data.access_token, draftAssessment.id);
+  if (invalidAfterDelete.valid) {
+    throw new Error('expected validation to fail after deleting item');
+  }
+  const readdedItem = await createItem(teacherAfter.data.access_token, builderSection.id, FIXED_QUESTION_VERSION_ID, 2, '1.50');
+
+  await deleteTarget(teacherAfter.data.access_token, draftAssessment.id, builderTarget.id);
+  const invalidAfterTargetDelete = await validateAssessment(teacherAfter.data.access_token, draftAssessment.id);
+  if (invalidAfterTargetDelete.valid) {
+    throw new Error('expected validation to fail after deleting target');
+  }
+  await createTarget(teacherAfter.data.access_token, draftAssessment.id, newClass.id);
+
+  const questions = await listQuestions(teacherAfter.data.access_token, 'Giá trị');
+  if (questions.length === 0) {
+    throw new Error('expected at least one question in picker');
+  }
 
   const validationBeforePublish = await validateAssessment(teacherAfter.data.access_token, draftAssessment.id);
   if (!validationBeforePublish.valid) {
@@ -894,7 +1082,12 @@ async function main() {
     throw new Error('expected published revision >= 1');
   }
 
-  const classAssessments = await listAssessmentsByClass(teacherAfter.data.access_token, seeded8A1.id);
+  const publications = await listPublications(teacherAfter.data.access_token, draftAssessment.id);
+  if (publications.length !== 1) {
+    throw new Error(`expected 1 publication, got ${publications.length}`);
+  }
+
+  const classAssessments = await listAssessmentsByClass(teacherAfter.data.access_token, newClass.id);
   if (!classAssessments.some((a) => a.id === draftAssessment.id)) {
     throw new Error('published assessment should appear in class assessment list');
   }
@@ -910,10 +1103,51 @@ async function main() {
   if (!sectionWithItems) {
     throw new Error('expected at least one section with nested items in assessment detail');
   }
-  if (sectionWithItems.items[0].question_version_id !== FIXED_QUESTION_VERSION_ID) {
-    throw new Error(`expected item question_version_id ${FIXED_QUESTION_VERSION_ID}, got ${sectionWithItems.items[0].question_version_id}`);
+  const detailItem = sectionWithItems.items.find((it) => it.id === readdedItem.id);
+  if (!detailItem) {
+    throw new Error('re-added item not found in assessment detail');
+  }
+  if (detailItem.question_version_id !== FIXED_QUESTION_VERSION_ID) {
+    throw new Error(`expected item question_version_id ${FIXED_QUESTION_VERSION_ID}, got ${detailItem.question_version_id}`);
   }
   console.log('  assessment detail section has items:', sectionWithItems.items.length);
+
+  console.log('Checking student attempt generation...');
+  const assigned = await listAssignedAssessments(token);
+  const assignedAssessment = assigned.find((a) => a.id === draftAssessment.id);
+  if (!assignedAssessment) {
+    throw new Error('student should see assigned published assessment');
+  }
+  if (assignedAssessment.publication_id !== publications[0].id) {
+    throw new Error('assigned assessment publication_id mismatch');
+  }
+
+  const generatedAttempt = await startAttempt(token, draftAssessment.id);
+  if (generatedAttempt.status !== 'IN_PROGRESS') {
+    throw new Error(`expected IN_PROGRESS generated attempt, got ${generatedAttempt.status}`);
+  }
+  if (generatedAttempt.items.length === 0) {
+    throw new Error('generated attempt has no items');
+  }
+  if (!generatedAttempt.server_time) {
+    throw new Error('expected server_time in generated attempt snapshot');
+  }
+  if (!generatedAttempt.expires_at) {
+    throw new Error('expected expires_at in generated attempt snapshot');
+  }
+  for (const item of generatedAttempt.items) {
+    if (!item.prompt || !item.prompt.text) {
+      throw new Error(`generated item ${item.id} missing prompt snapshot`);
+    }
+    if (!Array.isArray(item.choices) || item.choices.length === 0) {
+      throw new Error(`generated item ${item.id} missing choices snapshot`);
+    }
+  }
+
+  const resumedAttempt = await startAttempt(token, draftAssessment.id);
+  if (resumedAttempt.id !== generatedAttempt.id) {
+    throw new Error('expected resume of existing in-progress attempt');
+  }
 
   console.log('Checking login lockout...');
   await assertLoginLockout('hs001');

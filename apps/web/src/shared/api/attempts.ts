@@ -1,4 +1,4 @@
-import { apiClient } from './api-client';
+import { getOpenAPIClient } from './openapi-client';
 import type { components } from './openapi-schema';
 
 export type AttemptSnapshot = components['schemas']['AttemptSnapshot']['data'];
@@ -8,6 +8,7 @@ export type QuestionChoice = components['schemas']['AttemptItem']['choices'][num
 export type AnswerSnapshot = NonNullable<components['schemas']['AttemptItem']['answer']>;
 export type AnswerSaved = components['schemas']['SaveAnswerResponse']['data'];
 export type AttemptSubmitted = components['schemas']['AttemptSubmitted']['data'];
+export type AssignedAssessment = components['schemas']['AssignedAssessment'];
 
 export interface ApiError {
   error: {
@@ -61,13 +62,60 @@ export function createApiError(status: number, raw: unknown): ApiResponseError {
   });
 }
 
-export async function getAttempt(attemptId: string): Promise<AttemptSnapshot> {
-  const res = await apiClient(`/attempts/${attemptId}`);
-  const json = (await res.json()) as unknown;
-  if (!res.ok) {
-    throw createApiError(res.status, json);
+export function unwrapData<T>(res: {
+  data?: unknown;
+  error?: unknown;
+  response: Response;
+}): T {
+  if (res.error) {
+    throw createApiError(res.response.status, res.error);
   }
-  return (json as { data: AttemptSnapshot }).data;
+  return (res.data as { data: T }).data;
+}
+
+export function unwrapPaged<T>(res: {
+  data?: unknown;
+  error?: unknown;
+  response: Response;
+}): PagedList<T> {
+  if (res.error) {
+    throw createApiError(res.response.status, res.error);
+  }
+  return res.data as PagedList<T>;
+}
+
+export function unwrapVoid(res: {
+  error?: unknown;
+  response: Response;
+}): void {
+  if (res.error) {
+    throw createApiError(res.response.status, res.error);
+  }
+}
+
+export async function listAssignedAssessments(): Promise<AssignedAssessment[]> {
+  const client = await getOpenAPIClient();
+  return unwrapData<AssignedAssessment[]>(
+    await client.GET('/me/assessments')
+  );
+}
+
+export async function startAttempt(assessmentId: string): Promise<AttemptSnapshot> {
+  const client = await getOpenAPIClient();
+  return unwrapData<AttemptSnapshot>(
+    await client.POST('/assessments/{assessment_id}/attempts', {
+      params: { path: { assessment_id: assessmentId } },
+    })
+  );
+}
+
+export async function getAttempt(attemptId: string): Promise<AttemptSnapshot> {
+  const client = await getOpenAPIClient();
+  return unwrapData<AttemptSnapshot>(
+    await client.GET('/attempts/{attempt_id}', {
+      params: { path: { attempt_id: attemptId } },
+    })
+  );
 }
 
 export async function saveAnswer(
@@ -75,26 +123,22 @@ export async function saveAnswer(
   itemId: string,
   answerPayload: unknown
 ): Promise<AnswerSaved> {
-  const res = await apiClient(`/attempts/${attemptId}/answers/${itemId}`, {
-    method: 'PUT',
-    body: JSON.stringify({ answer_payload: answerPayload }),
-  });
-  const json = (await res.json()) as unknown;
-  if (!res.ok) {
-    throw createApiError(res.status, json);
-  }
-  return (json as { data: AnswerSaved }).data;
+  const client = await getOpenAPIClient();
+  return unwrapData<AnswerSaved>(
+    await client.PUT('/attempts/{attempt_id}/answers/{attempt_item_id}', {
+      params: { path: { attempt_id: attemptId, attempt_item_id: itemId } },
+      body: { answer_payload: answerPayload as { selected_option?: string } },
+    })
+  );
 }
 
 export async function submitAttempt(
   attemptId: string
 ): Promise<AttemptSubmitted> {
-  const res = await apiClient(`/attempts/${attemptId}/submit`, {
-    method: 'POST',
-  });
-  const json = (await res.json()) as unknown;
-  if (!res.ok) {
-    throw createApiError(res.status, json);
-  }
-  return (json as { data: AttemptSubmitted }).data;
+  const client = await getOpenAPIClient();
+  return unwrapData<AttemptSubmitted>(
+    await client.POST('/attempts/{attempt_id}/submit', {
+      params: { path: { attempt_id: attemptId } },
+    })
+  );
 }

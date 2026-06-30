@@ -10,6 +10,17 @@ INSERT INTO academic_terms (organization_id, name, start_date, end_date)
 VALUES ($1, $2, $3, $4)
 RETURNING id, name, start_date, end_date, status;
 
+-- name: UpdateTerm :one
+UPDATE academic_terms
+SET name = $3,
+    start_date = $4,
+    end_date = $5,
+    updated_at = now()
+WHERE id = $1
+  AND organization_id = $2
+  AND status = 'ACTIVE'
+RETURNING id, name, start_date, end_date, status;
+
 -- name: ArchiveTerm :execrows
 UPDATE academic_terms
 SET status = 'ARCHIVED',
@@ -30,6 +41,17 @@ INSERT INTO subjects (organization_id, code, name, description)
 VALUES ($1, $2, $3, $4)
 RETURNING id, code, name, description, status;
 
+-- name: UpdateSubject :one
+UPDATE subjects
+SET code = $3,
+    name = $4,
+    description = $5,
+    updated_at = now()
+WHERE id = $1
+  AND organization_id = $2
+  AND status = 'ACTIVE'
+RETURNING id, code, name, description, status;
+
 -- name: ArchiveSubject :execrows
 UPDATE subjects
 SET status = 'ARCHIVED',
@@ -48,6 +70,18 @@ ORDER BY code;
 -- name: CreateCourse :one
 INSERT INTO courses (organization_id, subject_id, academic_term_id, code, name)
 VALUES ($1, $2, $3, $4, $5)
+RETURNING id, subject_id, academic_term_id, code, name, status;
+
+-- name: UpdateCourse :one
+UPDATE courses
+SET subject_id = $3,
+    academic_term_id = $4,
+    code = $5,
+    name = $6,
+    updated_at = now()
+WHERE id = $1
+  AND organization_id = $2
+  AND status = 'ACTIVE'
 RETURNING id, subject_id, academic_term_id, code, name, status;
 
 -- name: ArchiveCourse :execrows
@@ -90,6 +124,21 @@ ORDER BY cs.name;
 INSERT INTO class_sections (organization_id, course_id, name)
 VALUES ($1, $2, $3)
 RETURNING id, course_id, name, 0::bigint AS student_count, 0::bigint AS teacher_count, status;
+
+-- name: UpdateClass :one
+UPDATE class_sections cs
+SET course_id = $3,
+    name = $4,
+    updated_at = now()
+WHERE cs.id = $1
+  AND cs.organization_id = $2
+  AND cs.status = 'ACTIVE'
+RETURNING cs.id AS id,
+          cs.course_id AS course_id,
+          cs.name AS name,
+          (SELECT COUNT(*) FROM enrollments e WHERE e.class_section_id = cs.id AND e.status = 'ACTIVE') AS student_count,
+          (SELECT COUNT(*) FROM class_teachers ct WHERE ct.class_section_id = cs.id AND ct.status = 'ACTIVE') AS teacher_count,
+          cs.status AS status;
 
 -- name: ArchiveClass :execrows
 UPDATE class_sections

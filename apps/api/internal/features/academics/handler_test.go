@@ -25,6 +25,10 @@ func (f *fakeService) CreateTerm(ctx context.Context, orgID string, roles []stri
 	return academics.Term{}, nil
 }
 
+func (f *fakeService) UpdateTerm(ctx context.Context, orgID string, roles []string, termID string, req academics.UpdateTermRequest) (academics.Term, error) {
+	return academics.Term{}, nil
+}
+
 func (f *fakeService) ArchiveTerm(ctx context.Context, orgID string, roles []string, termID string) error {
 	return nil
 }
@@ -37,6 +41,10 @@ func (f *fakeService) CreateSubject(ctx context.Context, orgID string, roles []s
 	return academics.Subject{}, nil
 }
 
+func (f *fakeService) UpdateSubject(ctx context.Context, orgID string, roles []string, subjectID string, req academics.UpdateSubjectRequest) (academics.Subject, error) {
+	return academics.Subject{}, nil
+}
+
 func (f *fakeService) ArchiveSubject(ctx context.Context, orgID string, roles []string, subjectID string) error {
 	return nil
 }
@@ -46,6 +54,10 @@ func (f *fakeService) ListCourses(ctx context.Context, orgID string) ([]academic
 }
 
 func (f *fakeService) CreateCourse(ctx context.Context, orgID string, roles []string, req academics.CreateCourseRequest) (academics.Course, error) {
+	return academics.Course{}, nil
+}
+
+func (f *fakeService) UpdateCourse(ctx context.Context, orgID string, roles []string, courseID string, req academics.UpdateCourseRequest) (academics.Course, error) {
 	return academics.Course{}, nil
 }
 
@@ -65,6 +77,10 @@ func (f *fakeService) ListMyTeachingClasses(ctx context.Context, orgID, userID s
 }
 
 func (f *fakeService) CreateClass(ctx context.Context, orgID string, roles []string, req academics.CreateClassRequest) (academics.ClassSection, error) {
+	return academics.ClassSection{}, nil
+}
+
+func (f *fakeService) UpdateClass(ctx context.Context, orgID string, roles []string, classID string, req academics.UpdateClassRequest) (academics.ClassSection, error) {
 	return academics.ClassSection{}, nil
 }
 

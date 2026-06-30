@@ -14,7 +14,12 @@ Tiếp cận từng giai đoạn:
 1. **Hiện tại**: Duy trì OpenAPI skeleton bằng tay (`docs/backend/backend-technical-spec/openapi/openapi-skeleton.yaml`) phản ánh đúng API surface đã implement. Sinh TypeScript types từ skeleton (`apps/web/src/shared/api/openapi-schema.d.ts`) dùng `openapi-typescript`, type-only, không thay thế runtime `apiClient`.
 2. **Stage 1 — sqlc (hoàn tất)**: Đã migrate `assessments`, `admin`, `auth`, và `attempts` repositories sang sqlc generated queries qua wrapper giữ nguyên các `Repository` interfaces. Không thay đổi service/handler contracts.
 3. **Stage 2 — Huma (deferred)**: Huma vẫn tạm hoãn cho đến khi OpenAPI maintenance cost vượt quá chi phí rewrite router/handlers sang Huma, hoặc đến khi API contract ổn định hơn sau khi có thêm endpoints. OpenAPI skeleton vẫn được duy trì thủ công trong giai đoạn này.
-4. **Stage 3 — Typed client (partially adopted)**: Đã thêm `openapi-fetch` runtime dependency, tạo wrapper `apps/web/src/shared/api/openapi-client.ts` với middleware auth/CSRF, và migrate hai helper read-only đầu tiên (`listClasses`, `listEnrollments`). Các helper còn lại vẫn dùng `apiClient` để giảm rủi ro regression; Huma vẫn tạm hoãn.
+4. **Stage 3 — Typed client (adopted)**: Đã thêm `openapi-fetch` runtime dependency, tạo wrapper `apps/web/src/shared/api/openapi-client.ts` với middleware auth/CSRF, và migrate toàn bộ các helper frontend hiện có sang typed client:
+   - `attempts.ts`: `listAssignedAssessments`, `startAttempt`, `getAttempt`, `saveAnswer`, `submitAttempt`.
+   - `admin.ts`: `getOrganization`, `updateOrganization`, `listUsers`, `createUser`, `updateUserRoles`, `resetUserPassword`, `listAuditLogs`.
+   - `assessments.ts`: `listAssessments`, `createAssessment`, `getAssessment`, `updateAssessment`, `createSection`, `createItem`, `createTarget`, `validateAssessment`, `publishAssessment`, `listQuestions`, `updateSection`, `deleteSection`, `reorderSections`, `updateItem`, `deleteItem`, `reorderItems`, `deleteTarget`, `listPublications`.
+   - `academics.ts`: `listClasses`, `listEnrollments` (từ lần migrate trước).
+   - `apiClient` vẫn giữ lại làm fallback cho các helper chưa migrate hoặc khi schema chưa sẵn sàng; Huma vẫn tạm hoãn.
 
 ## openapi-fetch evaluation (Stage 3)
 
@@ -22,7 +27,7 @@ Tiếp cận từng giai đoạn:
 
 - **Lợi ích**: type-safe paths/parameters/body/response, nhỏ gọn (~6 kb min), dùng native `fetch`, dễ kết hợp middleware cho bearer token và CSRF.
 - **Hạn chế**: middleware chạy theo request; cần đảm bảo `credentials: 'include'` và async CSRF fetch tương thích với flow hiện tại.
-- **Quyết định**: migrate từng bước, bắt đầu với GET read-only để tránh rủi ro CSRF, sau đó mở rộng sang POST/PUT/PATCH khi đã kiểm chứng kỹ. Existing `apiClient` vẫn giữ lại như fallback.
+- **Quyết định**: migrate toàn bộ frontend helpers sang `openapi-fetch`, bao gồm cả GET và POST/PUT/PATCH/DELETE. CSRF middleware lấy token tự động qua `GET /auth/csrf-token` trước mỗi unsafe request và gửi kèm `X-CSRF-Token`; `credentials: 'include'` được đặt trên mọi request. Existing `apiClient` vẫn giữ lại như fallback.
 
 ## Huma evaluation (post-sqlc)
 
@@ -31,6 +36,25 @@ Sau khi tất cả các repository chính đã được sqlc hóa, Huma vẫn ch
 - **Lợi ích**: tự động sinh OpenAPI, kiểm tra request/response schema ở runtime, giảm sai lệch giữa spec và code.
 - **Chi phí**: phải chuyển toàn bộ chi router/handlers sang Huma operations, thay đổi cách đăng ký route, response envelope, error shape, và middleware ordering. Rủi ro regression cao với các endpoint nhạy cảm (auth cookie, CSRF, refresh rotation).
 - **Ngưỡng tái xem xét**: khi số endpoint vượt quá ~20–25 hoặc chi phí cập nhật skeleton thủ công trở nên đáng kể so với một sprint refactor Huma.
+
+## Huma revisit (post-academic/openapi-fetch)
+
+Sau khi hoàn thành batch academics và migrate toàn bộ frontend helpers sang `openapi-fetch`, nhóm đã đo lại chi phí duy trì skeleton thủ công:
+
+- **Kích thước spec hiện tại**: OpenAPI skeleton đang định nghĩa **44 paths** (tính theo `paths:` trong `openapi-skeleton.yaml`), vượt xa ngưỡng 20–25 paths ban đầu.
+- **Chi phí thực tế**: mỗi lần thêm/sửa endpoint vẫn phải cập nhật tay cả YAML, sqlc queries, Go handlers/services, và generated TypeScript types. Tuy nhiên, quy trình này hiện đã chạy ổn định; `pnpm api:types` và `pnpm api:sqlc` được gọi trong CI, và `openapi-fetch` cung cấp type-safety ở frontend mà không đòi hỏi Huma.
+- **Rủi ro migration**: auth cookie, CSRF double-submit, refresh rotation, và response envelope tùy chỉnh vẫn là những điểm cần mapping cẩn thận khi chuyển sang Huma; chi phí refactor ước tính vẫn cao hơn chi phí duy trì skeleton ít nhất là một sprint.
+
+### Decision
+
+- **Huma runtime migration vẫn tạm hoãn.** OpenAPI skeleton được duy trì thủ công; `openapi-typescript` + `openapi-fetch` đã đáp ứng đủ nhu cầu type-safety ở frontend.
+- **Ngưỡng tái xem xét tiếp theo**: kích hoạt lại đánh giá Huma khi xảy ra một trong các điều kiện sau:
+  1. Spec drift gây lỗi production hoặc lỗi type generation ≥ 2 lần trong một tháng.
+  2. Số paths vượt quá **60** (hiện tại ~44), tức là manual maintenance bắt đầu bùng nổ.
+  3. Cần tự động kiểm tra request/response schema ở runtime cho API contract phức tạp hơn (ví dụ: public/external API consumer).
+  4. Một sprint dành riêng cho refactor được phê duyệt, và có thể viết test coverage ≥ 80% cho các handlers trước khi chuyển đổi.
+
+Nếu kích hoạt, migration sẽ diễn ra theo feature slice (auth → admin → attempts → assessments → academics) thay vì big-bang, và `Repository` interfaces hiện tại sẽ được giữ nguyên.
 
 ## Consequences
 

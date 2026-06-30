@@ -104,3 +104,56 @@ WHERE id = $1
   AND student_user_id = $3
   AND status = 'IN_PROGRESS'
 RETURNING submitted_at, score::text, max_score::text, grading_status;
+
+-- name: ListAssignedAssessments :many
+SELECT a.id, a.title, a.status, a.duration_minutes, a.max_attempts, a.revision, ap.id AS publication_id, ap.published_at
+FROM assessments a
+JOIN assessment_targets t ON t.assessment_id = a.id AND t.status = 'ACTIVE'
+JOIN class_sections cs ON cs.id = t.class_section_id AND cs.status = 'ACTIVE'
+JOIN enrollments e ON e.class_section_id = t.class_section_id AND e.status = 'ACTIVE'
+JOIN organization_memberships m ON m.id = e.membership_id AND m.user_id = $1 AND m.organization_id = $2 AND m.status = 'ACTIVE'
+LEFT JOIN LATERAL (
+    SELECT id, published_at
+    FROM assessment_publications
+    WHERE assessment_id = a.id AND organization_id = $2
+    ORDER BY version DESC
+    LIMIT 1
+) ap ON true
+WHERE a.organization_id = $2
+  AND a.status IN ('OPEN', 'PUBLISHED')
+  AND (a.opens_at IS NULL OR a.opens_at <= now())
+  AND (a.closes_at IS NULL OR a.closes_at > now())
+ORDER BY a.created_at DESC;
+
+-- name: GetLatestPublication :one
+SELECT id, snapshot_json, published_at
+FROM assessment_publications
+WHERE organization_id = $1
+  AND assessment_id = $2
+ORDER BY version DESC
+LIMIT 1;
+
+-- name: GetInProgressAttempt :one
+SELECT id, organization_id, assessment_id, publication_id, status, started_at, expires_at, submitted_at, score, max_score, grading_status
+FROM attempts
+WHERE organization_id = $1
+  AND student_user_id = $2
+  AND assessment_id = $3
+  AND status = 'IN_PROGRESS'
+LIMIT 1;
+
+-- name: CountStudentAttempts :one
+SELECT COUNT(*)
+FROM attempts
+WHERE organization_id = $1
+  AND student_user_id = $2
+  AND assessment_id = $3;
+
+-- name: CreateAttempt :one
+INSERT INTO attempts (organization_id, assessment_id, student_user_id, publication_id, status, started_at, expires_at)
+VALUES ($1, $2, $3, $4, 'IN_PROGRESS', $5, $6)
+RETURNING id, organization_id, assessment_id, publication_id, status, started_at, expires_at, submitted_at, score, max_score, grading_status;
+
+-- name: CreateAttemptItem :exec
+INSERT INTO attempt_items (organization_id, attempt_id, question_version_id, position, points, prompt_json, choices_json, answer_key_json)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8);

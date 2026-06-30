@@ -120,6 +120,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/me/assessments": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Student only. Returns the published/open assessments assigned to the current student. */
+        get: operations["attempts.listAssignedAssessments"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/assessments/{assessment_id}/attempts": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Student only. Starts a new attempt or resumes an existing in-progress attempt for the assessment. Requires `X-CSRF-Token` header. */
+        post: operations["attempts.start"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/attempts/{attempt_id}": {
         parameters: {
             query?: never;
@@ -306,7 +340,8 @@ export interface paths {
         delete: operations["academics.archiveTerm"];
         options?: never;
         head?: never;
-        patch?: never;
+        /** @description Admin only. Update an academic term. Requires `X-CSRF-Token` header. */
+        patch: operations["academics.updateTerm"];
         trace?: never;
     };
     "/subjects": {
@@ -341,7 +376,8 @@ export interface paths {
         delete: operations["academics.archiveSubject"];
         options?: never;
         head?: never;
-        patch?: never;
+        /** @description Admin only. Update a subject. Requires `X-CSRF-Token` header. */
+        patch: operations["academics.updateSubject"];
         trace?: never;
     };
     "/courses": {
@@ -376,7 +412,8 @@ export interface paths {
         delete: operations["academics.archiveCourse"];
         options?: never;
         head?: never;
-        patch?: never;
+        /** @description Admin only. Update a course. Requires `X-CSRF-Token` header. */
+        patch: operations["academics.updateCourse"];
         trace?: never;
     };
     "/classes": {
@@ -411,7 +448,8 @@ export interface paths {
         delete: operations["academics.archiveClass"];
         options?: never;
         head?: never;
-        patch?: never;
+        /** @description Admin only. Update a class section. Requires `X-CSRF-Token` header. */
+        patch: operations["academics.updateClass"];
         trace?: never;
     };
     "/classes/{class_id}/assessments": {
@@ -529,6 +567,127 @@ export interface paths {
         put?: never;
         /** @description Teacher or admin only. Validate, snapshot, and publish the assessment. Requires `X-CSRF-Token` header. */
         post: operations["assessments.publish"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/assessments/{id}/sections/reorder": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Teacher or admin only. Reorder all active sections of a draft assessment. Requires `X-CSRF-Token` header. */
+        post: operations["assessments.reorderSections"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/assessment-sections/{section_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** @description Teacher or admin only. Archive a draft section. Requires `X-CSRF-Token` header. */
+        delete: operations["assessments.deleteSection"];
+        options?: never;
+        head?: never;
+        /** @description Teacher or admin only. Update a draft section title/position. Requires `X-CSRF-Token` header. */
+        patch: operations["assessments.updateSection"];
+        trace?: never;
+    };
+    "/assessment-sections/{section_id}/items/reorder": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Teacher or admin only. Reorder all active items in a draft section. Requires `X-CSRF-Token` header. */
+        post: operations["assessments.reorderItems"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/assessment-items/{item_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** @description Teacher or admin only. Archive a draft item. Requires `X-CSRF-Token` header. */
+        delete: operations["assessments.deleteItem"];
+        options?: never;
+        head?: never;
+        /** @description Teacher or admin only. Update a draft item question version/points/position. Requires `X-CSRF-Token` header. */
+        patch: operations["assessments.updateItem"];
+        trace?: never;
+    };
+    "/assessments/{id}/targets/{target_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** @description Teacher or admin only. Archive a draft target. Requires `X-CSRF-Token` header. */
+        delete: operations["assessments.deleteTarget"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/assessments/{id}/publications": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Teacher or admin only. List publication history for an assessment. */
+        get: operations["assessments.listPublications"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/questions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Teacher or admin only. Question picker for published question versions. */
+        get: operations["assessments.listQuestions"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -673,6 +832,8 @@ export interface components {
                 expires_at?: string | null;
                 /** Format: date-time */
                 submitted_at?: string | null;
+                /** Format: date-time */
+                server_time: string;
                 items: components["schemas"]["AttemptItem"][];
             };
         };
@@ -739,6 +900,23 @@ export interface components {
                 /** @enum {string} */
                 grading_status: "GRADED";
             };
+        };
+        AssignedAssessmentList: {
+            data: components["schemas"]["AssignedAssessment"][];
+        };
+        AssignedAssessment: {
+            /** Format: uuid */
+            id: string;
+            title: string;
+            /** @enum {string} */
+            status: "OPEN" | "PUBLISHED";
+            duration_minutes: number;
+            max_attempts: number;
+            revision: number;
+            /** Format: uuid */
+            publication_id: string;
+            /** Format: date-time */
+            published_at: string;
         };
         PageInfo: {
             limit: number;
@@ -950,6 +1128,31 @@ export interface components {
             course_id: string;
             name: string;
         };
+        UpdateTermRequest: {
+            name: string;
+            /** Format: date */
+            start_date: string;
+            /** Format: date */
+            end_date: string;
+        };
+        UpdateSubjectRequest: {
+            code: string;
+            name: string;
+            description?: string | null;
+        };
+        UpdateCourseRequest: {
+            /** Format: uuid */
+            subject_id: string;
+            /** Format: uuid */
+            academic_term_id: string;
+            code: string;
+            name: string;
+        };
+        UpdateClassRequest: {
+            /** Format: uuid */
+            course_id: string;
+            name: string;
+        };
         ClassTeacher: {
             data: {
                 /** Format: uuid */
@@ -1101,6 +1304,42 @@ export interface components {
                 /** Format: date-time */
                 published_at?: string;
             };
+        };
+        UpdateSectionRequest: {
+            title?: string;
+            position?: number;
+        };
+        UpdateItemRequest: {
+            /** Format: uuid */
+            question_version_id?: string;
+            position?: number;
+            points?: string;
+        };
+        ReorderSectionsRequest: {
+            section_ids: string[];
+        };
+        ReorderItemsRequest: {
+            item_ids: string[];
+        };
+        QuestionPickerItem: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            question_bank_id: string;
+            /** Format: uuid */
+            question_version_id: string;
+            /** @enum {string} */
+            question_version_status: "DRAFT" | "PUBLISHED" | "ARCHIVED";
+            prompt: string;
+        };
+        PublicationSummary: {
+            /** Format: uuid */
+            id: string;
+            version: number;
+            /** @enum {string} */
+            status: "DRAFT" | "SCHEDULED" | "OPEN" | "CLOSED" | "GRADING" | "REVIEWED" | "PUBLISHED" | "ARCHIVED";
+            /** Format: date-time */
+            published_at: string;
         };
         Problem: {
             /** Format: uri-reference */
@@ -1351,6 +1590,54 @@ export interface operations {
             };
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["Forbidden"];
+        };
+    };
+    "attempts.listAssignedAssessments": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Assigned assessments */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AssignedAssessmentList"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+        };
+    };
+    "attempts.start": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                assessment_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Attempt snapshot created or resumed */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AttemptSnapshot"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
         };
     };
     "attempts.get": {
@@ -1745,6 +2032,36 @@ export interface operations {
             404: components["responses"]["NotFound"];
         };
     };
+    "academics.updateTerm": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                term_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateTermRequest"];
+            };
+        };
+        responses: {
+            /** @description Term updated */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Term"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
     "academics.listSubjects": {
         parameters: {
             query?: never;
@@ -1810,6 +2127,37 @@ export interface operations {
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
+        };
+    };
+    "academics.updateSubject": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                subject_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateSubjectRequest"];
+            };
+        };
+        responses: {
+            /** @description Subject updated */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Subject"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
         };
     };
     "academics.listCourses": {
@@ -1879,6 +2227,37 @@ export interface operations {
             404: components["responses"]["NotFound"];
         };
     };
+    "academics.updateCourse": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                course_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateCourseRequest"];
+            };
+        };
+        responses: {
+            /** @description Course updated */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Course"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+        };
+    };
     "academics.listClasses": {
         parameters: {
             query?: never;
@@ -1940,6 +2319,36 @@ export interface operations {
         requestBody?: never;
         responses: {
             200: components["responses"]["SuccessResponse"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    "academics.updateClass": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                class_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateClassRequest"];
+            };
+        };
+        responses: {
+            /** @description Class section updated */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ClassSection"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
@@ -2195,6 +2604,249 @@ export interface operations {
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
+        };
+    };
+    "assessments.reorderSections": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ReorderSectionsRequest"];
+            };
+        };
+        responses: {
+            /** @description Sections reordered */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    "assessments.deleteSection": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                section_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Section archived */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    "assessments.updateSection": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                section_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateSectionRequest"];
+            };
+        };
+        responses: {
+            /** @description Section updated */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Section"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+        };
+    };
+    "assessments.reorderItems": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                section_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ReorderItemsRequest"];
+            };
+        };
+        responses: {
+            /** @description Items reordered */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    "assessments.deleteItem": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                item_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Item archived */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    "assessments.updateItem": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                item_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateItemRequest"];
+            };
+        };
+        responses: {
+            /** @description Item updated */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Item"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+        };
+    };
+    "assessments.deleteTarget": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+                target_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Target archived */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    "assessments.listPublications": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Publication history */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PublicationSummary"][];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    "assessments.listQuestions": {
+        parameters: {
+            query?: {
+                q?: string;
+                bank_id?: string;
+                limit?: number;
+                offset?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Question picker list */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["QuestionPickerItem"][];
+                        page?: components["schemas"]["PageInfo"];
+                    };
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
         };
     };
     "academics.listClassTeachers": {

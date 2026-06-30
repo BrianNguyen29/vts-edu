@@ -53,6 +53,23 @@ type Repository interface {
 
 	MarkAttemptExpired(ctx context.Context, tx pgx.Tx, attemptID, orgID, userID string) error
 	SubmitAttempt(ctx context.Context, tx pgx.Tx, attemptID, orgID, userID, score, maxScore, gradingStatus string) (*GradingResult, error)
+
+	ListAssignedAssessments(ctx context.Context, orgID, userID string) ([]AssignedAssessment, error)
+	GetLatestPublication(ctx context.Context, orgID, assessmentID string) (*PublicationSnapshot, string, string, error)
+	GetInProgressAttempt(ctx context.Context, orgID, userID, assessmentID string) (*Attempt, error)
+	CountStudentAttempts(ctx context.Context, orgID, userID, assessmentID string) (int64, error)
+	CreateAttempt(ctx context.Context, tx pgx.Tx, orgID, userID, assessmentID, publicationID string, startedAt, expiresAt time.Time) (*Attempt, error)
+	CreateAttemptItems(ctx context.Context, tx pgx.Tx, orgID, attemptID string, items []AttemptItemInput) error
+}
+
+// AttemptItemInput is the data needed to create an attempt_item row.
+type AttemptItemInput struct {
+	QuestionVersionID string
+	Position          int
+	Points            string
+	Prompt            json.RawMessage
+	Choices           json.RawMessage
+	AnswerKey         json.RawMessage
 }
 
 // GradingResult is the persisted result of a successful submit.
@@ -376,4 +393,225 @@ func (r *sqlcRepository) SubmitAttempt(ctx context.Context, tx pgx.Tx, attemptID
 		MaxScore:      row.MaxScore,
 		GradingStatus: row.GradingStatus.String,
 	}, nil
+}
+
+func (r *sqlcRepository) ListAssignedAssessments(ctx context.Context, orgID, userID string) ([]AssignedAssessment, error) {
+	org, err := toUUID(orgID)
+	if err != nil {
+		return nil, fmt.Errorf("invalid organization id: %w", err)
+	}
+	usr, err := toUUID(userID)
+	if err != nil {
+		return nil, fmt.Errorf("invalid user id: %w", err)
+	}
+
+	rows, err := r.queries.ListAssignedAssessments(ctx, attemptssqlc.ListAssignedAssessmentsParams{
+		UserID:         usr,
+		OrganizationID: org,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("list assigned assessments: %w", err)
+	}
+
+	result := make([]AssignedAssessment, len(rows))
+	for i, row := range rows {
+		publishedAt := ""
+		if row.PublishedAt.Valid {
+			publishedAt = row.PublishedAt.Time.Format(time.RFC3339)
+		}
+		pubID := ""
+		if row.PublicationID.Valid {
+			pubID = row.PublicationID.String()
+		}
+		result[i] = AssignedAssessment{
+			ID:              row.ID.String(),
+			Title:           row.Title,
+			Status:          row.Status,
+			DurationMinutes: int(row.DurationMinutes),
+			MaxAttempts:     int(row.MaxAttempts),
+			Revision:        int(row.Revision),
+			PublicationID:   pubID,
+			PublishedAt:     publishedAt,
+		}
+	}
+	return result, nil
+}
+
+func (r *sqlcRepository) GetLatestPublication(ctx context.Context, orgID, assessmentID string) (*PublicationSnapshot, string, string, error) {
+	org, err := toUUID(orgID)
+	if err != nil {
+		return nil, "", "", fmt.Errorf("invalid organization id: %w", err)
+	}
+	assessment, err := toUUID(assessmentID)
+	if err != nil {
+		return nil, "", "", fmt.Errorf("invalid assessment id: %w", err)
+	}
+
+	row, err := r.queries.GetLatestPublication(ctx, attemptssqlc.GetLatestPublicationParams{
+		OrganizationID: org,
+		AssessmentID:   assessment,
+	})
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, "", "", nil
+	}
+	if err != nil {
+		return nil, "", "", fmt.Errorf("get latest publication: %w", err)
+	}
+
+	var snap PublicationSnapshot
+	if err := json.Unmarshal(row.SnapshotJson, &snap); err != nil {
+		return nil, "", "", fmt.Errorf("parse publication snapshot: %w", err)
+	}
+
+	publishedAt := ""
+	if row.PublishedAt.Valid {
+		publishedAt = row.PublishedAt.Time.Format(time.RFC3339)
+	}
+	return &snap, row.ID.String(), publishedAt, nil
+}
+
+func (r *sqlcRepository) GetInProgressAttempt(ctx context.Context, orgID, userID, assessmentID string) (*Attempt, error) {
+	org, err := toUUID(orgID)
+	if err != nil {
+		return nil, fmt.Errorf("invalid organization id: %w", err)
+	}
+	usr, err := toUUID(userID)
+	if err != nil {
+		return nil, fmt.Errorf("invalid user id: %w", err)
+	}
+	assessment, err := toUUID(assessmentID)
+	if err != nil {
+		return nil, fmt.Errorf("invalid assessment id: %w", err)
+	}
+
+	row, err := r.queries.GetInProgressAttempt(ctx, attemptssqlc.GetInProgressAttemptParams{
+		OrganizationID: org,
+		StudentUserID:  usr,
+		AssessmentID:   assessment,
+	})
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("get in progress attempt: %w", err)
+	}
+
+	return &Attempt{
+		ID:             row.ID.String(),
+		OrganizationID: row.OrganizationID.String(),
+		AssessmentID:   row.AssessmentID.String(),
+		PublicationID:  uuidPtr(row.PublicationID),
+		Status:         row.Status,
+		StartedAt:      tsPtr(row.StartedAt),
+		ExpiresAt:      tsPtr(row.ExpiresAt),
+		SubmittedAt:    tsPtr(row.SubmittedAt),
+		Score:          numericPtr(row.Score),
+		MaxScore:       numericPtr(row.MaxScore),
+		GradingStatus:  textPtr(row.GradingStatus),
+	}, nil
+}
+
+func (r *sqlcRepository) CountStudentAttempts(ctx context.Context, orgID, userID, assessmentID string) (int64, error) {
+	org, err := toUUID(orgID)
+	if err != nil {
+		return 0, fmt.Errorf("invalid organization id: %w", err)
+	}
+	usr, err := toUUID(userID)
+	if err != nil {
+		return 0, fmt.Errorf("invalid user id: %w", err)
+	}
+	assessment, err := toUUID(assessmentID)
+	if err != nil {
+		return 0, fmt.Errorf("invalid assessment id: %w", err)
+	}
+
+	count, err := r.queries.CountStudentAttempts(ctx, attemptssqlc.CountStudentAttemptsParams{
+		OrganizationID: org,
+		StudentUserID:  usr,
+		AssessmentID:   assessment,
+	})
+	if err != nil {
+		return 0, fmt.Errorf("count student attempts: %w", err)
+	}
+	return count, nil
+}
+
+func (r *sqlcRepository) CreateAttempt(ctx context.Context, tx pgx.Tx, orgID, userID, assessmentID, publicationID string, startedAt, expiresAt time.Time) (*Attempt, error) {
+	org, err := toUUID(orgID)
+	if err != nil {
+		return nil, fmt.Errorf("invalid organization id: %w", err)
+	}
+	usr, err := toUUID(userID)
+	if err != nil {
+		return nil, fmt.Errorf("invalid user id: %w", err)
+	}
+	assessment, err := toUUID(assessmentID)
+	if err != nil {
+		return nil, fmt.Errorf("invalid assessment id: %w", err)
+	}
+	pub, err := toUUID(publicationID)
+	if err != nil {
+		return nil, fmt.Errorf("invalid publication id: %w", err)
+	}
+
+	row, err := r.queries.WithTx(tx).CreateAttempt(ctx, attemptssqlc.CreateAttemptParams{
+		OrganizationID: org,
+		AssessmentID:   assessment,
+		StudentUserID:  usr,
+		PublicationID:  pub,
+		StartedAt:      pgtype.Timestamptz{Time: startedAt, Valid: true},
+		ExpiresAt:      pgtype.Timestamptz{Time: expiresAt, Valid: true},
+	})
+	if err != nil {
+		return nil, fmt.Errorf("create attempt: %w", err)
+	}
+
+	return &Attempt{
+		ID:             row.ID.String(),
+		OrganizationID: row.OrganizationID.String(),
+		AssessmentID:   row.AssessmentID.String(),
+		PublicationID:  uuidPtr(row.PublicationID),
+		Status:         row.Status,
+		StartedAt:      tsPtr(row.StartedAt),
+		ExpiresAt:      tsPtr(row.ExpiresAt),
+		SubmittedAt:    tsPtr(row.SubmittedAt),
+		Score:          numericPtr(row.Score),
+		MaxScore:       numericPtr(row.MaxScore),
+		GradingStatus:  textPtr(row.GradingStatus),
+	}, nil
+}
+
+func (r *sqlcRepository) CreateAttemptItems(ctx context.Context, tx pgx.Tx, orgID, attemptID string, items []AttemptItemInput) error {
+	org, err := toUUID(orgID)
+	if err != nil {
+		return fmt.Errorf("invalid organization id: %w", err)
+	}
+	attempt, err := toUUID(attemptID)
+	if err != nil {
+		return fmt.Errorf("invalid attempt id: %w", err)
+	}
+
+	for _, item := range items {
+		qv, err := toUUID(item.QuestionVersionID)
+		if err != nil {
+			return fmt.Errorf("invalid question version id: %w", err)
+		}
+		points, err := toNumeric(item.Points)
+		if err != nil {
+			return fmt.Errorf("invalid points: %w", err)
+		}
+		if err := r.queries.WithTx(tx).CreateAttemptItem(ctx, attemptssqlc.CreateAttemptItemParams{
+			OrganizationID:    org,
+			AttemptID:         attempt,
+			QuestionVersionID: qv,
+			Position:          int32(item.Position),
+			Points:            points,
+			PromptJson:        []byte(item.Prompt),
+			ChoicesJson:       []byte(item.Choices),
+			AnswerKeyJson:     []byte(item.AnswerKey),
+		}); err != nil {
+			return fmt.Errorf("create attempt item: %w", err)
+		}
+	}
+	return nil
 }

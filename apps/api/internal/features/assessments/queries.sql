@@ -108,6 +108,14 @@ WHERE organization_id = sqlc.arg(organization_id)
   AND status = 'ACTIVE'
 ORDER BY assessment_section_id, position;
 
+-- name: GetAssessmentItemsBySection :many
+SELECT id, assessment_section_id, question_version_id, position, points, status
+FROM assessment_items
+WHERE organization_id = sqlc.arg(organization_id)
+  AND assessment_section_id = sqlc.arg(section_id)
+  AND status = 'ACTIVE'
+ORDER BY position;
+
 -- name: GetAssessmentItemsWithContent :many
 SELECT ai.id, ai.assessment_section_id, ai.question_version_id, ai.position, ai.points,
        qv.prompt_json, qv.choices_json, qv.answer_key_json, qv.max_score
@@ -199,4 +207,159 @@ SELECT EXISTS (
     WHERE qv.id = sqlc.arg(question_version_id)
       AND qb.organization_id = sqlc.arg(organization_id)
       AND qv.status = 'PUBLISHED'
+);
+
+-- name: GetAssessmentSection :one
+SELECT id, assessment_id, title, position, settings_json, status
+FROM assessment_sections
+WHERE id = sqlc.arg(section_id)
+  AND organization_id = sqlc.arg(organization_id);
+
+-- name: UpdateAssessmentSection :one
+UPDATE assessment_sections
+SET title = COALESCE(NULLIF(sqlc.arg(title)::text, ''), title),
+    position = sqlc.arg(position),
+    updated_at = now()
+WHERE id = sqlc.arg(section_id)
+  AND organization_id = sqlc.arg(organization_id)
+  AND status = 'ACTIVE'
+RETURNING id, assessment_id, title, position, settings_json, status;
+
+-- name: ArchiveAssessmentSection :execrows
+UPDATE assessment_sections
+SET status = 'ARCHIVED',
+    updated_at = now()
+WHERE id = sqlc.arg(section_id)
+  AND organization_id = sqlc.arg(organization_id)
+  AND status = 'ACTIVE';
+
+-- name: GetAssessmentItem :one
+SELECT id, assessment_section_id, question_version_id, position, points, status
+FROM assessment_items
+WHERE id = sqlc.arg(item_id)
+  AND organization_id = sqlc.arg(organization_id);
+
+-- name: GetItemAssessmentID :one
+SELECT assessment_id
+FROM assessment_items
+WHERE id = sqlc.arg(item_id)
+  AND organization_id = sqlc.arg(organization_id);
+
+-- name: UpdateAssessmentItem :one
+UPDATE assessment_items
+SET question_version_id = COALESCE(NULLIF(sqlc.arg(question_version_id)::uuid, '00000000-0000-0000-0000-000000000000'::uuid), question_version_id),
+    points = COALESCE(NULLIF(sqlc.arg(points)::numeric, '0'::numeric), points),
+    position = sqlc.arg(position),
+    updated_at = now()
+WHERE id = sqlc.arg(item_id)
+  AND organization_id = sqlc.arg(organization_id)
+  AND status = 'ACTIVE'
+RETURNING id, assessment_section_id, question_version_id, position, points, status;
+
+-- name: ArchiveAssessmentItem :execrows
+UPDATE assessment_items
+SET status = 'ARCHIVED',
+    updated_at = now()
+WHERE id = sqlc.arg(item_id)
+  AND organization_id = sqlc.arg(organization_id)
+  AND status = 'ACTIVE';
+
+-- name: GetAssessmentTarget :one
+SELECT id, assessment_id, class_section_id, status
+FROM assessment_targets
+WHERE id = sqlc.arg(target_id)
+  AND organization_id = sqlc.arg(organization_id);
+
+-- name: GetTargetAssessmentID :one
+SELECT assessment_id
+FROM assessment_targets
+WHERE id = sqlc.arg(target_id)
+  AND organization_id = sqlc.arg(organization_id);
+
+-- name: ArchiveAssessmentTarget :execrows
+UPDATE assessment_targets
+SET status = 'ARCHIVED',
+    updated_at = now()
+WHERE id = sqlc.arg(target_id)
+  AND organization_id = sqlc.arg(organization_id)
+  AND status = 'ACTIVE';
+
+-- name: UpdateAssessmentSectionPosition :execrows
+UPDATE assessment_sections
+SET position = sqlc.arg(position),
+    updated_at = now()
+WHERE id = sqlc.arg(section_id)
+  AND organization_id = sqlc.arg(organization_id)
+  AND status = 'ACTIVE';
+
+-- name: UpdateAssessmentItemPosition :execrows
+UPDATE assessment_items
+SET position = sqlc.arg(position),
+    updated_at = now()
+WHERE id = sqlc.arg(item_id)
+  AND organization_id = sqlc.arg(organization_id)
+  AND status = 'ACTIVE';
+
+-- name: ListQuestions :many
+SELECT q.id, q.question_bank_id, qv.id AS question_version_id, qv.status AS question_version_status, qv.prompt_json ->> 'text' AS prompt_text
+FROM questions q
+JOIN question_banks qb ON qb.id = q.question_bank_id
+LEFT JOIN LATERAL (
+    SELECT id, status, prompt_json
+    FROM question_versions
+    WHERE question_id = q.id
+      AND status = 'PUBLISHED'
+    ORDER BY version DESC, created_at DESC
+    LIMIT 1
+) qv ON true
+WHERE qb.organization_id = sqlc.arg(organization_id)
+  AND q.status = 'ACTIVE'
+  AND (sqlc.arg(bank_id)::text = '' OR q.question_bank_id::text = sqlc.arg(bank_id)::text)
+  AND (sqlc.arg(search_query)::text = '' OR qv.prompt_json ->> 'text' ILIKE '%' || sqlc.arg(search_query) || '%')
+ORDER BY q.created_at DESC
+LIMIT NULLIF(sqlc.arg(page_limit)::int, 0) OFFSET sqlc.arg(page_offset)::int;
+
+-- name: CountQuestions :one
+SELECT COUNT(*)
+FROM questions q
+JOIN question_banks qb ON qb.id = q.question_bank_id
+LEFT JOIN LATERAL (
+    SELECT id, status, prompt_json
+    FROM question_versions
+    WHERE question_id = q.id
+      AND status = 'PUBLISHED'
+    ORDER BY version DESC, created_at DESC
+    LIMIT 1
+) qv ON true
+WHERE qb.organization_id = sqlc.arg(organization_id)
+  AND q.status = 'ACTIVE'
+  AND (sqlc.arg(bank_id)::text = '' OR q.question_bank_id::text = sqlc.arg(bank_id)::text)
+  AND (sqlc.arg(search_query)::text = '' OR qv.prompt_json ->> 'text' ILIKE '%' || sqlc.arg(search_query) || '%');
+
+-- name: ListAssessmentPublications :many
+SELECT ap.id, ap.version, a.status, ap.published_at
+FROM assessment_publications ap
+JOIN assessments a ON a.id = ap.assessment_id AND a.organization_id = ap.organization_id
+WHERE ap.organization_id = sqlc.arg(organization_id)
+  AND ap.assessment_id = sqlc.arg(assessment_id)
+ORDER BY ap.version DESC;
+
+-- name: IsQuestionVersionPublished :one
+SELECT EXISTS (
+    SELECT 1
+    FROM question_versions qv
+    JOIN questions q ON q.id = qv.question_id
+    JOIN question_banks qb ON qb.id = q.question_bank_id
+    WHERE qv.id = sqlc.arg(question_version_id)
+      AND qb.organization_id = sqlc.arg(organization_id)
+      AND qv.status = 'PUBLISHED'
+);
+
+-- name: IsClassSectionActive :one
+SELECT EXISTS (
+    SELECT 1
+    FROM class_sections
+    WHERE id = sqlc.arg(class_section_id)
+      AND organization_id = sqlc.arg(organization_id)
+      AND status = 'ACTIVE'
 );

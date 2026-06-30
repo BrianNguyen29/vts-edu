@@ -125,6 +125,47 @@ paths:
           $ref: '#/components/responses/Unauthorized'
         '403':
           $ref: '#/components/responses/Forbidden'
+  /me/assessments:
+    get:
+      operationId: attempts.listAssignedAssessments
+      tags: [Attempts]
+      description: Student only. Returns the published/open assessments assigned to the current student.
+      responses:
+        '200':
+          description: Assigned assessments
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AssignedAssessmentList'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+  /assessments/{assessment_id}/attempts:
+    post:
+      operationId: attempts.start
+      tags: [Attempts]
+      description: Student only. Starts a new attempt or resumes an existing in-progress attempt for the assessment. Requires `X-CSRF-Token` header.
+      parameters:
+        - name: assessment_id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '201':
+          description: Attempt snapshot created or resumed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AttemptSnapshot'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
   /attempts/{attempt_id}:
     get:
       operationId: attempts.get
@@ -458,6 +499,36 @@ paths:
         '403':
           $ref: '#/components/responses/Forbidden'
   /academic-terms/{term_id}:
+    patch:
+      operationId: academics.updateTerm
+      tags: [Academics]
+      description: Admin only. Update an academic term. Requires `X-CSRF-Token` header.
+      parameters:
+        - name: term_id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateTermRequest'
+      responses:
+        '200':
+          description: Term updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Term'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
     delete:
       operationId: academics.archiveTerm
       tags: [Academics]
@@ -518,6 +589,38 @@ paths:
         '409':
           $ref: '#/components/responses/Conflict'
   /subjects/{subject_id}:
+    patch:
+      operationId: academics.updateSubject
+      tags: [Academics]
+      description: Admin only. Update a subject. Requires `X-CSRF-Token` header.
+      parameters:
+        - name: subject_id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateSubjectRequest'
+      responses:
+        '200':
+          description: Subject updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Subject'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
     delete:
       operationId: academics.archiveSubject
       tags: [Academics]
@@ -578,6 +681,38 @@ paths:
         '409':
           $ref: '#/components/responses/Conflict'
   /courses/{course_id}:
+    patch:
+      operationId: academics.updateCourse
+      tags: [Academics]
+      description: Admin only. Update a course. Requires `X-CSRF-Token` header.
+      parameters:
+        - name: course_id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateCourseRequest'
+      responses:
+        '200':
+          description: Course updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Course'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
     delete:
       operationId: academics.archiveCourse
       tags: [Academics]
@@ -636,6 +771,36 @@ paths:
         '403':
           $ref: '#/components/responses/Forbidden'
   /classes/{class_id}:
+    patch:
+      operationId: academics.updateClass
+      tags: [Academics]
+      description: Admin only. Update a class section. Requires `X-CSRF-Token` header.
+      parameters:
+        - name: class_id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateClassRequest'
+      responses:
+        '200':
+          description: Class section updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ClassSection'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
     delete:
       operationId: academics.archiveClass
       tags: [Academics]
@@ -903,6 +1068,247 @@ paths:
           $ref: '#/components/responses/Forbidden'
         '404':
           $ref: '#/components/responses/NotFound'
+  /assessments/{id}/sections/reorder:
+    post:
+      operationId: assessments.reorderSections
+      tags: [Assessments]
+      description: Teacher or admin only. Reorder all active sections of a draft assessment. Requires `X-CSRF-Token` header.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ReorderSectionsRequest'
+      responses:
+        '204':
+          description: Sections reordered
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /assessment-sections/{section_id}:
+    patch:
+      operationId: assessments.updateSection
+      tags: [Assessments]
+      description: Teacher or admin only. Update a draft section title/position. Requires `X-CSRF-Token` header.
+      parameters:
+        - name: section_id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateSectionRequest'
+      responses:
+        '200':
+          description: Section updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Section'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+    delete:
+      operationId: assessments.deleteSection
+      tags: [Assessments]
+      description: Teacher or admin only. Archive a draft section. Requires `X-CSRF-Token` header.
+      parameters:
+        - name: section_id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '204':
+          description: Section archived
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /assessment-sections/{section_id}/items/reorder:
+    post:
+      operationId: assessments.reorderItems
+      tags: [Assessments]
+      description: Teacher or admin only. Reorder all active items in a draft section. Requires `X-CSRF-Token` header.
+      parameters:
+        - name: section_id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ReorderItemsRequest'
+      responses:
+        '204':
+          description: Items reordered
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /assessment-items/{item_id}:
+    patch:
+      operationId: assessments.updateItem
+      tags: [Assessments]
+      description: Teacher or admin only. Update a draft item question version/points/position. Requires `X-CSRF-Token` header.
+      parameters:
+        - name: item_id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateItemRequest'
+      responses:
+        '200':
+          description: Item updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Item'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+    delete:
+      operationId: assessments.deleteItem
+      tags: [Assessments]
+      description: Teacher or admin only. Archive a draft item. Requires `X-CSRF-Token` header.
+      parameters:
+        - name: item_id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '204':
+          description: Item archived
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /assessments/{id}/targets/{target_id}:
+    delete:
+      operationId: assessments.deleteTarget
+      tags: [Assessments]
+      description: Teacher or admin only. Archive a draft target. Requires `X-CSRF-Token` header.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+        - name: target_id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '204':
+          description: Target archived
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /assessments/{id}/publications:
+    get:
+      operationId: assessments.listPublications
+      tags: [Assessments]
+      description: Teacher or admin only. List publication history for an assessment.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: Publication history
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/PublicationSummary'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /questions:
+    get:
+      operationId: assessments.listQuestions
+      tags: [Assessments]
+      description: Teacher or admin only. Question picker for published question versions.
+      parameters:
+        - name: q
+          in: query
+          schema: { type: string }
+        - name: bank_id
+          in: query
+          schema: { type: string, format: uuid }
+        - name: limit
+          in: query
+          schema: { type: integer, minimum: 1 }
+        - name: offset
+          in: query
+          schema: { type: integer, minimum: 0 }
+      responses:
+        '200':
+          description: Question picker list
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/QuestionPickerItem'
+                  page:
+                    $ref: '#/components/schemas/PageInfo'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
   /classes/{class_id}/teachers:
     get:
       operationId: academics.listClassTeachers
@@ -1167,7 +1573,7 @@ components:
       properties:
         data:
           type: object
-          required: [id, organization_id, assessment_id, status, items]
+          required: [id, organization_id, assessment_id, status, server_time, items]
           properties:
             id: { type: string, format: uuid }
             organization_id: { type: string, format: uuid }
@@ -1177,6 +1583,7 @@ components:
             started_at: { type: string, format: date-time, nullable: true }
             expires_at: { type: string, format: date-time, nullable: true }
             submitted_at: { type: string, format: date-time, nullable: true }
+            server_time: { type: string, format: date-time }
             items:
               type: array
               items:
@@ -1230,6 +1637,26 @@ components:
             score: { type: string }
             max_score: { type: string }
             grading_status: { type: string, enum: [GRADED] }
+    AssignedAssessmentList:
+      type: object
+      required: [data]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/AssignedAssessment'
+    AssignedAssessment:
+      type: object
+      required: [id, title, status, duration_minutes, max_attempts, revision, publication_id, published_at]
+      properties:
+        id: { type: string, format: uuid }
+        title: { type: string }
+        status: { type: string, enum: [OPEN, PUBLISHED] }
+        duration_minutes: { type: integer, minimum: 1 }
+        max_attempts: { type: integer, minimum: 1 }
+        revision: { type: integer, minimum: 1 }
+        publication_id: { type: string, format: uuid }
+        published_at: { type: string, format: date-time }
     PageInfo:
       type: object
       required: [limit, offset, has_more]
@@ -1493,6 +1920,38 @@ components:
       properties:
         course_id: { type: string, format: uuid }
         name: { type: string, minLength: 1 }
+    UpdateTermRequest:
+      type: object
+      additionalProperties: false
+      required: [name, start_date, end_date]
+      properties:
+        name: { type: string, minLength: 1 }
+        start_date: { type: string, format: date }
+        end_date: { type: string, format: date }
+    UpdateSubjectRequest:
+      type: object
+      additionalProperties: false
+      required: [code, name]
+      properties:
+        code: { type: string, minLength: 1 }
+        name: { type: string, minLength: 1 }
+        description: { type: string, nullable: true }
+    UpdateCourseRequest:
+      type: object
+      additionalProperties: false
+      required: [subject_id, academic_term_id, code, name]
+      properties:
+        subject_id: { type: string, format: uuid }
+        academic_term_id: { type: string, format: uuid }
+        code: { type: string, minLength: 1 }
+        name: { type: string, minLength: 1 }
+    UpdateClassRequest:
+      type: object
+      additionalProperties: false
+      required: [course_id, name]
+      properties:
+        course_id: { type: string, format: uuid }
+        name: { type: string, minLength: 1 }
     ClassTeacher:
       type: object
       required: [data]
@@ -1684,6 +2143,52 @@ components:
             status: { type: string, enum: [OPEN, PUBLISHED, CLOSED] }
             revision: { type: integer, minimum: 1 }
             published_at: { type: string, format: date-time }
+    UpdateSectionRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        title: { type: string, minLength: 1 }
+        position: { type: integer, minimum: 0 }
+    UpdateItemRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        question_version_id: { type: string, format: uuid }
+        position: { type: integer, minimum: 0 }
+        points: { type: string }
+    ReorderSectionsRequest:
+      type: object
+      additionalProperties: false
+      required: [section_ids]
+      properties:
+        section_ids:
+          type: array
+          items: { type: string, format: uuid }
+    ReorderItemsRequest:
+      type: object
+      additionalProperties: false
+      required: [item_ids]
+      properties:
+        item_ids:
+          type: array
+          items: { type: string, format: uuid }
+    QuestionPickerItem:
+      type: object
+      required: [id, question_bank_id, question_version_id, question_version_status, prompt]
+      properties:
+        id: { type: string, format: uuid }
+        question_bank_id: { type: string, format: uuid }
+        question_version_id: { type: string, format: uuid }
+        question_version_status: { type: string, enum: [DRAFT, PUBLISHED, ARCHIVED] }
+        prompt: { type: string }
+    PublicationSummary:
+      type: object
+      required: [id, version, status, published_at]
+      properties:
+        id: { type: string, format: uuid }
+        version: { type: integer, minimum: 1 }
+        status: { type: string, enum: [DRAFT, SCHEDULED, OPEN, CLOSED, GRADING, REVIEWED, PUBLISHED, ARCHIVED] }
+        published_at: { type: string, format: date-time }
     Problem:
       type: object
       required: [title, status, code]
