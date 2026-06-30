@@ -74,10 +74,16 @@ async function assertLoginLockout(username) {
 }
 
 async function me(token) {
+  const json = await meData(token);
+  console.log('  actor:', json.id, json.roles, '| must_change_password:', json.must_change_password);
+  return json;
+}
+
+async function meData(token) {
   const r = await fetch(`${API_PREFIX}/me`, { headers: headers(token) });
   if (!r.ok) throw new Error(`/me failed: ${r.status}`);
   const json = await r.json();
-  console.log('  actor:', json.data.id, json.data.roles, '| must_change_password:', json.data.must_change_password);
+  return json.data;
 }
 
 async function assertRoleLogin(username, expectedRole) {
@@ -164,6 +170,103 @@ async function assertStudentCannotListAssessments(token) {
     throw new Error(`expected student /assessments to return 403, got ${r.status}`);
   }
   console.log('  student /assessments correctly rejected:', r.status);
+}
+
+async function createAssessmentForClass(token, classID, title, durationMinutes) {
+  const r = await fetch(`${API_PREFIX}/classes/${classID}/assessments`, {
+    method: 'POST',
+    headers: headers(token, true),
+    body: JSON.stringify({ title, duration_minutes: durationMinutes, max_attempts: 1 }),
+  });
+  if (!r.ok) throw new Error(`create assessment failed: ${r.status}`);
+  const json = await r.json();
+  console.log('  created assessment:', json.data.title, json.data.id, 'status:', json.data.status);
+  return json.data;
+}
+
+async function listAssessmentsByClass(token, classID) {
+  const r = await fetch(`${API_PREFIX}/classes/${classID}/assessments`, { headers: headers(token) });
+  if (!r.ok) throw new Error(`list assessments by class failed: ${r.status}`);
+  const json = await r.json();
+  console.log('  assessments by class:', json.data.length);
+  return json.data;
+}
+
+async function getAssessment(token, assessmentID) {
+  const r = await fetch(`${API_PREFIX}/assessments/${assessmentID}`, { headers: headers(token) });
+  if (!r.ok) throw new Error(`get assessment failed: ${r.status}`);
+  const json = await r.json();
+  return json.data;
+}
+
+async function updateAssessment(token, assessmentID, payload) {
+  const r = await fetch(`${API_PREFIX}/assessments/${assessmentID}`, {
+    method: 'PATCH',
+    headers: headers(token, true),
+    body: JSON.stringify(payload),
+  });
+  if (!r.ok) throw new Error(`update assessment failed: ${r.status}`);
+  const json = await r.json();
+  console.log('  updated assessment:', json.data.title);
+  return json.data;
+}
+
+async function createSection(token, assessmentID, title, position) {
+  const r = await fetch(`${API_PREFIX}/assessments/${assessmentID}/sections`, {
+    method: 'POST',
+    headers: headers(token, true),
+    body: JSON.stringify({ title, position }),
+  });
+  if (!r.ok) throw new Error(`create section failed: ${r.status}`);
+  const json = await r.json();
+  console.log('  created section:', json.data.title, json.data.id);
+  return json.data;
+}
+
+async function createItem(token, sectionID, questionVersionID, position, points = '1.00') {
+  const r = await fetch(`${API_PREFIX}/assessment-sections/${sectionID}/items`, {
+    method: 'POST',
+    headers: headers(token, true),
+    body: JSON.stringify({ question_version_id: questionVersionID, position, points }),
+  });
+  if (!r.ok) throw new Error(`create item failed: ${r.status}`);
+  const json = await r.json();
+  console.log('  created item:', json.data.question_version_id, json.data.id);
+  return json.data;
+}
+
+async function createTarget(token, assessmentID, classSectionID) {
+  const r = await fetch(`${API_PREFIX}/assessments/${assessmentID}/targets`, {
+    method: 'POST',
+    headers: headers(token, true),
+    body: JSON.stringify({ class_section_id: classSectionID }),
+  });
+  if (!r.ok) throw new Error(`create target failed: ${r.status}`);
+  const json = await r.json();
+  console.log('  created target:', json.data.class_section_id);
+  return json.data;
+}
+
+async function validateAssessment(token, assessmentID) {
+  const r = await fetch(`${API_PREFIX}/assessments/${assessmentID}/validate`, {
+    method: 'POST',
+    headers: headers(token),
+  });
+  if (!r.ok) throw new Error(`validate assessment failed: ${r.status}`);
+  const json = await r.json();
+  console.log('  validation:', json.data.valid, json.data.errors?.length ? `errors: ${json.data.errors.length}` : '');
+  return json.data;
+}
+
+async function publishAssessment(token, assessmentID) {
+  const r = await fetch(`${API_PREFIX}/assessments/${assessmentID}/publish`, {
+    method: 'POST',
+    headers: headers(token, true),
+  });
+  if (!r.ok) throw new Error(`publish assessment failed: ${r.status}`);
+  const json = await r.json();
+  console.log('  published assessment:', json.data.status, 'revision:', json.data.revision);
+  return json.data;
 }
 
 async function listUsers(token) {
@@ -323,6 +426,142 @@ async function assertNonAdminCannotAccessAdmin(token, label) {
     throw new Error(`expected ${label} /users to return 403, got ${r.status}`);
   }
   console.log(`  ${label} /users correctly rejected:`, r.status);
+}
+
+async function listAcademicTerms(token) {
+  const r = await fetch(`${API_PREFIX}/academic-terms`, { headers: headers(token) });
+  if (!r.ok) throw new Error(`list academic terms failed: ${r.status}`);
+  const json = await r.json();
+  console.log('  academic terms:', json.data.length);
+  return json.data;
+}
+
+async function createAcademicTerm(token, name, startDate, endDate) {
+  const r = await fetch(`${API_PREFIX}/academic-terms`, {
+    method: 'POST',
+    headers: headers(token, true),
+    body: JSON.stringify({ name, start_date: startDate, end_date: endDate }),
+  });
+  if (!r.ok) throw new Error(`create academic term failed: ${r.status}`);
+  const json = await r.json();
+  console.log('  created term:', json.data.name, json.data.id);
+  return json.data;
+}
+
+async function listSubjects(token) {
+  const r = await fetch(`${API_PREFIX}/subjects`, { headers: headers(token) });
+  if (!r.ok) throw new Error(`list subjects failed: ${r.status}`);
+  const json = await r.json();
+  console.log('  subjects:', json.data.length);
+  return json.data;
+}
+
+async function createSubject(token, code, name) {
+  const r = await fetch(`${API_PREFIX}/subjects`, {
+    method: 'POST',
+    headers: headers(token, true),
+    body: JSON.stringify({ code, name }),
+  });
+  if (!r.ok) throw new Error(`create subject failed: ${r.status}`);
+  const json = await r.json();
+  console.log('  created subject:', json.data.code, json.data.id);
+  return json.data;
+}
+
+async function listCourses(token) {
+  const r = await fetch(`${API_PREFIX}/courses`, { headers: headers(token) });
+  if (!r.ok) throw new Error(`list courses failed: ${r.status}`);
+  const json = await r.json();
+  console.log('  courses:', json.data.length);
+  return json.data;
+}
+
+async function createCourse(token, subjectID, termID, code, name) {
+  const r = await fetch(`${API_PREFIX}/courses`, {
+    method: 'POST',
+    headers: headers(token, true),
+    body: JSON.stringify({ subject_id: subjectID, academic_term_id: termID, code, name }),
+  });
+  if (!r.ok) throw new Error(`create course failed: ${r.status}`);
+  const json = await r.json();
+  console.log('  created course:', json.data.code, json.data.id);
+  return json.data;
+}
+
+async function listClasses(token) {
+  const r = await fetch(`${API_PREFIX}/classes`, { headers: headers(token) });
+  if (!r.ok) throw new Error(`list classes failed: ${r.status}`);
+  const json = await r.json();
+  console.log('  classes:', json.data.length);
+  return json.data;
+}
+
+async function listMyTeachingClasses(token) {
+  const r = await fetch(`${API_PREFIX}/me/teaching/classes`, { headers: headers(token) });
+  if (!r.ok) throw new Error(`list my teaching classes failed: ${r.status}`);
+  const json = await r.json();
+  console.log('  my teaching classes:', json.data.length);
+  return json.data;
+}
+
+async function createClass(token, courseID, name) {
+  const r = await fetch(`${API_PREFIX}/classes`, {
+    method: 'POST',
+    headers: headers(token, true),
+    body: JSON.stringify({ course_id: courseID, name }),
+  });
+  if (!r.ok) throw new Error(`create class failed: ${r.status}`);
+  const json = await r.json();
+  console.log('  created class:', json.data.name, json.data.id);
+  return json.data;
+}
+
+async function listClassTeachers(token, classID) {
+  const r = await fetch(`${API_PREFIX}/classes/${classID}/teachers`, { headers: headers(token) });
+  if (!r.ok) throw new Error(`list class teachers failed: ${r.status}`);
+  const json = await r.json();
+  console.log('  class teachers:', json.data.length);
+  return json.data;
+}
+
+async function addClassTeacher(token, classID, userID) {
+  const r = await fetch(`${API_PREFIX}/classes/${classID}/teachers`, {
+    method: 'POST',
+    headers: headers(token, true),
+    body: JSON.stringify({ user_id: userID }),
+  });
+  if (!r.ok) throw new Error(`add class teacher failed: ${r.status}`);
+  const json = await r.json();
+  console.log('  added teacher:', json.data.user_id);
+  return json.data;
+}
+
+async function listEnrollments(token, classID) {
+  const r = await fetch(`${API_PREFIX}/classes/${classID}/enrollments`, { headers: headers(token) });
+  if (!r.ok) throw new Error(`list enrollments failed: ${r.status}`);
+  const json = await r.json();
+  console.log('  enrollments:', json.data.length);
+  return json.data;
+}
+
+async function enrollStudent(token, classID, userID) {
+  const r = await fetch(`${API_PREFIX}/classes/${classID}/enrollments`, {
+    method: 'POST',
+    headers: headers(token, true),
+    body: JSON.stringify({ user_id: userID }),
+  });
+  if (!r.ok) throw new Error(`enroll student failed: ${r.status}`);
+  const json = await r.json();
+  console.log('  enrolled student:', json.data.user_id);
+  return json.data;
+}
+
+async function assertStudentCannotAccessAcademics(token) {
+  const r = await fetch(`${API_PREFIX}/classes`, { headers: headers(token) });
+  if (r.status !== 403) {
+    throw new Error(`expected student /classes to return 403, got ${r.status}`);
+  }
+  console.log('  student /classes correctly rejected:', r.status);
 }
 
 async function listAuditLogs(token, filters = {}) {
@@ -553,6 +792,128 @@ async function main() {
 
   await assertNonAdminCannotAccessAdmin(token, 'student');
   await assertNonAdminCannotAccessAdmin(teacherAfter.data.access_token, 'teacher');
+
+  console.log('Checking academics foundation...');
+  const studentActor = await meData(token);
+
+  const seededTerms = await listAcademicTerms(adminAfter.data.access_token);
+  if (seededTerms.length === 0) throw new Error('expected at least one seeded academic term');
+
+  const seededSubjects = await listSubjects(adminAfter.data.access_token);
+  if (seededSubjects.length === 0) throw new Error('expected at least one seeded subject');
+
+  const seededCourses = await listCourses(adminAfter.data.access_token);
+  if (seededCourses.length === 0) throw new Error('expected at least one seeded course');
+
+  const seededClasses = await listClasses(adminAfter.data.access_token);
+  if (seededClasses.length === 0) throw new Error('expected at least one seeded class');
+  const seeded8A1 = seededClasses.find((c) => c.name === '8A1');
+  if (!seeded8A1) throw new Error('expected seeded class 8A1');
+  if (seeded8A1.student_count !== 1) throw new Error(`expected 1 enrollment in 8A1, got ${seeded8A1.student_count}`);
+  if (seeded8A1.teacher_count !== 1) throw new Error(`expected 1 teacher in 8A1, got ${seeded8A1.teacher_count}`);
+
+  await assertStudentCannotAccessAcademics(token);
+
+  const teacherClasses = await listClasses(teacherAfter.data.access_token);
+  if (!teacherClasses.some((c) => c.name === '8A1')) {
+    throw new Error('teacher should see assigned class 8A1');
+  }
+
+  console.log('Checking teacher my-teaching-classes endpoint...');
+  const myTeachingClasses = await listMyTeachingClasses(teacherAfter.data.access_token);
+  const my8A1 = myTeachingClasses.find((c) => c.name === '8A1');
+  if (!my8A1) throw new Error('teacher /me/teaching/classes should include 8A1');
+  if (my8A1.student_count !== 1) throw new Error(`expected 1 student in my teaching class 8A1, got ${my8A1.student_count}`);
+  if (my8A1.teacher_count !== 1) throw new Error(`expected 1 teacher in my teaching class 8A1, got ${my8A1.teacher_count}`);
+
+  const studentTeachingResp = await fetch(`${API_PREFIX}/me/teaching/classes`, { headers: headers(token) });
+  if (studentTeachingResp.status !== 403) throw new Error(`student /me/teaching/classes should be 403, got ${studentTeachingResp.status}`);
+
+  const adminTeachingResp = await fetch(`${API_PREFIX}/me/teaching/classes`, { headers: headers(adminAfter.data.access_token) });
+  if (adminTeachingResp.status !== 403) throw new Error(`admin /me/teaching/classes should be 403, got ${adminTeachingResp.status}`);
+
+  const seededTeachers = await listClassTeachers(teacherAfter.data.access_token, seeded8A1.id);
+  const teacherUserId = teacherAfter.data.user?.id;
+  if (!seededTeachers.some((t) => t.user_id === teacherUserId)) {
+    throw new Error('teacher should be listed for class 8A1');
+  }
+
+  const seededEnrollments = await listEnrollments(teacherAfter.data.access_token, seeded8A1.id);
+  if (!seededEnrollments.some((e) => e.user_id === studentActor.id)) {
+    throw new Error('student should be enrolled in class 8A1');
+  }
+
+  const newTerm = await createAcademicTerm(adminAfter.data.access_token, 'Học kỳ 1 2026-2027', '2026-09-01', '2027-01-31');
+  const newSubject = await createSubject(adminAfter.data.access_token, 'PHY', 'Vật lý');
+  const newCourse = await createCourse(adminAfter.data.access_token, newSubject.id, newTerm.id, 'PHY9-HK1', 'Vật lý 9 - HK1');
+  const newClass = await createClass(adminAfter.data.access_token, newCourse.id, '9A1');
+
+  await addClassTeacher(adminAfter.data.access_token, newClass.id, teacherUserId);
+  await enrollStudent(adminAfter.data.access_token, newClass.id, studentActor.id);
+
+  const teacherClassesAfter = await listClasses(teacherAfter.data.access_token);
+  if (!teacherClassesAfter.some((c) => c.name === '9A1')) {
+    throw new Error('teacher should see newly assigned class 9A1');
+  }
+
+  const newEnrollments = await listEnrollments(teacherAfter.data.access_token, newClass.id);
+  if (!newEnrollments.some((e) => e.user_id === studentActor.id)) {
+    throw new Error('student should be enrolled in newly created class 9A1');
+  }
+
+  console.log('Checking assessment builder...');
+  const FIXED_QUESTION_VERSION_ID = '00000000-0000-4000-8000-000000000002';
+  const draftAssessment = await createAssessmentForClass(teacherAfter.data.access_token, seeded8A1.id, 'Bài kiểm tra 8A1', 30);
+  if (draftAssessment.status !== 'DRAFT') {
+    throw new Error(`expected DRAFT status, got ${draftAssessment.status}`);
+  }
+
+  const updatedAssessment = await updateAssessment(teacherAfter.data.access_token, draftAssessment.id, { instructions: 'Làm cẩn thận' });
+  if (updatedAssessment.instructions !== 'Làm cẩn thận') {
+    throw new Error('assessment instructions not updated');
+  }
+
+  const builderSection = await createSection(teacherAfter.data.access_token, draftAssessment.id, 'Phần I', 1);
+  const builderItem = await createItem(teacherAfter.data.access_token, builderSection.id, FIXED_QUESTION_VERSION_ID, 1, '1.00');
+  if (builderItem.question_version_id !== FIXED_QUESTION_VERSION_ID) {
+    throw new Error('item question_version_id mismatch');
+  }
+
+  await createTarget(teacherAfter.data.access_token, draftAssessment.id, seeded8A1.id);
+
+  const validationBeforePublish = await validateAssessment(teacherAfter.data.access_token, draftAssessment.id);
+  if (!validationBeforePublish.valid) {
+    throw new Error(`expected valid assessment, got errors: ${JSON.stringify(validationBeforePublish.errors)}`);
+  }
+
+  const publishedAssessment = await publishAssessment(teacherAfter.data.access_token, draftAssessment.id);
+  if (publishedAssessment.status !== 'OPEN' && publishedAssessment.status !== 'PUBLISHED') {
+    throw new Error(`expected OPEN or PUBLISHED status, got ${publishedAssessment.status}`);
+  }
+  if (publishedAssessment.revision < 1) {
+    throw new Error('expected published revision >= 1');
+  }
+
+  const classAssessments = await listAssessmentsByClass(teacherAfter.data.access_token, seeded8A1.id);
+  if (!classAssessments.some((a) => a.id === draftAssessment.id)) {
+    throw new Error('published assessment should appear in class assessment list');
+  }
+
+  const assessmentDetail = await getAssessment(teacherAfter.data.access_token, draftAssessment.id);
+  if (assessmentDetail.sections.length !== 1) {
+    throw new Error(`expected 1 section in assessment detail, got ${assessmentDetail.sections.length}`);
+  }
+  if (assessmentDetail.targets.length !== 1) {
+    throw new Error(`expected 1 target in assessment detail, got ${assessmentDetail.targets.length}`);
+  }
+  const sectionWithItems = assessmentDetail.sections.find((s) => s.items && s.items.length > 0);
+  if (!sectionWithItems) {
+    throw new Error('expected at least one section with nested items in assessment detail');
+  }
+  if (sectionWithItems.items[0].question_version_id !== FIXED_QUESTION_VERSION_ID) {
+    throw new Error(`expected item question_version_id ${FIXED_QUESTION_VERSION_ID}, got ${sectionWithItems.items[0].question_version_id}`);
+  }
+  console.log('  assessment detail section has items:', sectionWithItems.items.length);
 
   console.log('Checking login lockout...');
   await assertLoginLockout('hs001');

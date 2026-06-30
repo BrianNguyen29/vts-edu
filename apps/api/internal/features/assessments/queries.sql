@@ -14,3 +14,189 @@ FROM assessments
 WHERE organization_id = sqlc.arg(organization_id)
   AND status IN ('OPEN', 'PUBLISHED')
   AND (sqlc.arg(search_query)::text = '' OR title ILIKE '%' || sqlc.arg(search_query) || '%');
+
+-- Assessment builder queries
+
+-- name: CreateAssessment :one
+INSERT INTO assessments (organization_id, class_section_id, title, duration_minutes, max_attempts, status)
+VALUES (sqlc.arg(organization_id), sqlc.arg(class_section_id), sqlc.arg(title), sqlc.arg(duration_minutes), sqlc.arg(max_attempts), 'DRAFT')
+RETURNING id, organization_id, class_section_id, title, duration_minutes, max_attempts, settings_json, status, revision, instructions, opens_at, closes_at, created_at, updated_at;
+
+-- name: ListAssessmentsByClass :many
+SELECT a.id, a.title, a.status, a.duration_minutes, a.revision, a.opens_at, a.closes_at, a.created_at
+FROM assessments a
+JOIN assessment_targets t ON t.assessment_id = a.id AND t.status = 'ACTIVE'
+WHERE a.organization_id = sqlc.arg(organization_id)
+  AND t.class_section_id = sqlc.arg(class_section_id)
+  AND a.status != 'ARCHIVED'
+ORDER BY a.created_at DESC;
+
+-- name: GetAssessment :one
+SELECT id, organization_id, class_section_id, title, duration_minutes, max_attempts, settings_json, status, revision, instructions, opens_at, closes_at, created_at, updated_at
+FROM assessments
+WHERE id = sqlc.arg(id)
+  AND organization_id = sqlc.arg(organization_id);
+
+-- name: UpdateAssessmentSettings :execrows
+UPDATE assessments
+SET title = sqlc.arg(title),
+    duration_minutes = sqlc.arg(duration_minutes),
+    max_attempts = sqlc.arg(max_attempts),
+    instructions = sqlc.arg(instructions),
+    opens_at = sqlc.arg(opens_at),
+    closes_at = sqlc.arg(closes_at),
+    settings_json = sqlc.arg(settings_json),
+    updated_at = now()
+WHERE id = sqlc.arg(id)
+  AND organization_id = sqlc.arg(organization_id)
+  AND status = 'DRAFT';
+
+-- name: PublishAssessment :execrows
+UPDATE assessments
+SET status = sqlc.arg(new_status),
+    revision = revision + 1,
+    updated_at = now()
+WHERE id = sqlc.arg(id)
+  AND organization_id = sqlc.arg(organization_id)
+  AND status = 'DRAFT';
+
+-- name: GetAssessmentRevision :one
+SELECT revision
+FROM assessments
+WHERE id = sqlc.arg(id)
+  AND organization_id = sqlc.arg(organization_id);
+
+-- name: InsertAssessmentPublication :one
+INSERT INTO assessment_publications (organization_id, assessment_id, version, snapshot_json, published_at)
+VALUES (sqlc.arg(organization_id), sqlc.arg(assessment_id), sqlc.arg(version), sqlc.arg(snapshot_json), now())
+RETURNING id, version, snapshot_json, published_at;
+
+-- name: CreateAssessmentSection :one
+INSERT INTO assessment_sections (organization_id, assessment_id, title, position)
+VALUES (sqlc.arg(organization_id), sqlc.arg(assessment_id), sqlc.arg(title), sqlc.arg(position))
+RETURNING id, assessment_id, title, position, settings_json, status;
+
+-- name: CreateAssessmentItem :one
+INSERT INTO assessment_items (organization_id, assessment_id, assessment_section_id, question_version_id, position, points)
+VALUES (sqlc.arg(organization_id), sqlc.arg(assessment_id), sqlc.arg(assessment_section_id), sqlc.arg(question_version_id), sqlc.arg(position), sqlc.arg(points))
+RETURNING id, assessment_section_id, question_version_id, position, points, status;
+
+-- name: CreateAssessmentTarget :one
+INSERT INTO assessment_targets (organization_id, assessment_id, class_section_id)
+VALUES (sqlc.arg(organization_id), sqlc.arg(assessment_id), sqlc.arg(class_section_id))
+RETURNING id, assessment_id, class_section_id, status;
+
+-- name: GetSectionAssessmentID :one
+SELECT assessment_id
+FROM assessment_sections
+WHERE id = sqlc.arg(section_id)
+  AND organization_id = sqlc.arg(organization_id);
+
+-- name: GetAssessmentSections :many
+SELECT id, assessment_id, title, position, settings_json, status
+FROM assessment_sections
+WHERE organization_id = sqlc.arg(organization_id)
+  AND assessment_id = sqlc.arg(assessment_id)
+  AND status = 'ACTIVE'
+ORDER BY position;
+
+-- name: GetAssessmentItems :many
+SELECT id, assessment_section_id, question_version_id, position, points, status
+FROM assessment_items
+WHERE organization_id = sqlc.arg(organization_id)
+  AND assessment_id = sqlc.arg(assessment_id)
+  AND status = 'ACTIVE'
+ORDER BY assessment_section_id, position;
+
+-- name: GetAssessmentItemsWithContent :many
+SELECT ai.id, ai.assessment_section_id, ai.question_version_id, ai.position, ai.points,
+       qv.prompt_json, qv.choices_json, qv.answer_key_json, qv.max_score
+FROM assessment_items ai
+JOIN question_versions qv ON qv.id = ai.question_version_id
+WHERE ai.organization_id = sqlc.arg(organization_id)
+  AND ai.assessment_id = sqlc.arg(assessment_id)
+  AND ai.status = 'ACTIVE'
+ORDER BY ai.assessment_section_id, ai.position;
+
+-- name: GetAssessmentTargets :many
+SELECT id, assessment_id, class_section_id, status
+FROM assessment_targets
+WHERE organization_id = sqlc.arg(organization_id)
+  AND assessment_id = sqlc.arg(assessment_id)
+  AND status = 'ACTIVE';
+
+-- name: CountAssessmentSections :one
+SELECT COUNT(*)
+FROM assessment_sections
+WHERE organization_id = sqlc.arg(organization_id)
+  AND assessment_id = sqlc.arg(assessment_id)
+  AND status = 'ACTIVE';
+
+-- name: CountAssessmentItems :one
+SELECT COUNT(*)
+FROM assessment_items
+WHERE organization_id = sqlc.arg(organization_id)
+  AND assessment_id = sqlc.arg(assessment_id)
+  AND status = 'ACTIVE';
+
+-- name: CountAssessmentTargets :one
+SELECT COUNT(*)
+FROM assessment_targets
+WHERE organization_id = sqlc.arg(organization_id)
+  AND assessment_id = sqlc.arg(assessment_id)
+  AND status = 'ACTIVE';
+
+-- name: IsClassManager :one
+SELECT EXISTS (
+    SELECT 1
+    FROM organization_memberships m
+    JOIN membership_roles mr ON mr.membership_id = m.id
+    WHERE m.organization_id = sqlc.arg(organization_id)
+      AND m.user_id = sqlc.arg(user_id)
+      AND m.status = 'ACTIVE'
+      AND mr.role = 'admin'
+) OR EXISTS (
+    SELECT 1
+    FROM organization_memberships m
+    JOIN class_teachers ct ON ct.membership_id = m.id AND ct.status = 'ACTIVE'
+    WHERE m.organization_id = sqlc.arg(organization_id)
+      AND m.user_id = sqlc.arg(user_id)
+      AND m.status = 'ACTIVE'
+      AND ct.class_section_id = sqlc.arg(class_section_id)
+);
+
+-- name: IsAssessmentManager :one
+SELECT EXISTS (
+    SELECT 1
+    FROM organization_memberships m
+    JOIN membership_roles mr ON mr.membership_id = m.id
+    WHERE m.organization_id = sqlc.arg(organization_id)
+      AND m.user_id = sqlc.arg(user_id)
+      AND m.status = 'ACTIVE'
+      AND mr.role = 'admin'
+) OR EXISTS (
+    SELECT 1
+    FROM organization_memberships m
+    JOIN class_teachers ct ON ct.membership_id = m.id AND ct.status = 'ACTIVE'
+    WHERE m.organization_id = sqlc.arg(organization_id)
+      AND m.user_id = sqlc.arg(user_id)
+      AND m.status = 'ACTIVE'
+      AND (
+          ct.class_section_id = (SELECT a.class_section_id FROM assessments a WHERE a.id = sqlc.arg(assessment_id) AND a.organization_id = sqlc.arg(organization_id))
+          OR ct.class_section_id IN (
+              SELECT class_section_id FROM assessment_targets
+              WHERE assessment_id = sqlc.arg(assessment_id) AND organization_id = sqlc.arg(organization_id) AND status = 'ACTIVE'
+          )
+      )
+);
+
+-- name: QuestionVersionExists :one
+SELECT EXISTS (
+    SELECT 1
+    FROM question_versions qv
+    JOIN questions q ON q.id = qv.question_id
+    JOIN question_banks qb ON qb.id = q.question_bank_id
+    WHERE qv.id = sqlc.arg(question_version_id)
+      AND qb.organization_id = sqlc.arg(organization_id)
+      AND qv.status = 'PUBLISHED'
+);

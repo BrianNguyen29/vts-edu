@@ -109,6 +109,22 @@ paths:
                 $ref: '#/components/schemas/MeResponse'
         '401':
           $ref: '#/components/responses/Unauthorized'
+  /me/teaching/classes:
+    get:
+      operationId: academics.listMyTeachingClasses
+      tags: [Academics]
+      description: Teacher only. Returns the classes assigned to the current teacher with student and teacher counts.
+      responses:
+        '200':
+          description: Class sections assigned to the teacher
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ClassSectionList'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
   /attempts/{attempt_id}:
     get:
       operationId: attempts.get
@@ -402,6 +418,647 @@ paths:
           $ref: '#/components/responses/Unauthorized'
         '403':
           $ref: '#/components/responses/Forbidden'
+  /academic-terms:
+    get:
+      operationId: academics.listTerms
+      tags: [Academics]
+      description: Teacher or admin only. List active academic terms.
+      responses:
+        '200':
+          description: Academic terms
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TermList'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+    post:
+      operationId: academics.createTerm
+      tags: [Academics]
+      description: Admin only. Requires `X-CSRF-Token` header.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateTermRequest'
+      responses:
+        '201':
+          description: Term created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Term'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+  /academic-terms/{term_id}:
+    delete:
+      operationId: academics.archiveTerm
+      tags: [Academics]
+      description: Admin only. Archive an academic term.
+      parameters:
+        - name: term_id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          $ref: '#/components/responses/SuccessResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /subjects:
+    get:
+      operationId: academics.listSubjects
+      tags: [Academics]
+      description: Teacher or admin only. List active subjects.
+      responses:
+        '200':
+          description: Subjects
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SubjectList'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+    post:
+      operationId: academics.createSubject
+      tags: [Academics]
+      description: Admin only. Requires `X-CSRF-Token` header.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateSubjectRequest'
+      responses:
+        '201':
+          description: Subject created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Subject'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          $ref: '#/components/responses/Conflict'
+  /subjects/{subject_id}:
+    delete:
+      operationId: academics.archiveSubject
+      tags: [Academics]
+      description: Admin only. Archive a subject.
+      parameters:
+        - name: subject_id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          $ref: '#/components/responses/SuccessResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /courses:
+    get:
+      operationId: academics.listCourses
+      tags: [Academics]
+      description: Teacher or admin only. List active courses.
+      responses:
+        '200':
+          description: Courses
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CourseList'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+    post:
+      operationId: academics.createCourse
+      tags: [Academics]
+      description: Admin only. Requires `X-CSRF-Token` header.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateCourseRequest'
+      responses:
+        '201':
+          description: Course created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Course'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          $ref: '#/components/responses/Conflict'
+  /courses/{course_id}:
+    delete:
+      operationId: academics.archiveCourse
+      tags: [Academics]
+      description: Admin only. Archive a course.
+      parameters:
+        - name: course_id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          $ref: '#/components/responses/SuccessResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /classes:
+    get:
+      operationId: academics.listClasses
+      tags: [Academics]
+      description: Teacher or admin only. Teachers see assigned classes; admins see all.
+      responses:
+        '200':
+          description: Class sections
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ClassSectionList'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+    post:
+      operationId: academics.createClass
+      tags: [Academics]
+      description: Admin only. Requires `X-CSRF-Token` header.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateClassRequest'
+      responses:
+        '201':
+          description: Class section created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ClassSection'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+  /classes/{class_id}:
+    delete:
+      operationId: academics.archiveClass
+      tags: [Academics]
+      description: Admin only. Archive a class section.
+      parameters:
+        - name: class_id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          $ref: '#/components/responses/SuccessResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /classes/{class_id}/assessments:
+    get:
+      operationId: assessments.listByClass
+      tags: [Assessments]
+      description: Teacher or admin only. List assessments targeting the class.
+      parameters:
+        - name: class_id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: Assessments for the class
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AssessmentList'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+    post:
+      operationId: assessments.createForClass
+      tags: [Assessments]
+      description: Teacher or admin only. Create a draft assessment for the class. Requires `X-CSRF-Token` header.
+      parameters:
+        - name: class_id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateAssessmentRequest'
+      responses:
+        '201':
+          description: Draft assessment created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AssessmentDetail'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+  /assessments/{id}:
+    get:
+      operationId: assessments.get
+      tags: [Assessments]
+      description: Teacher or admin only. Get assessment builder details including sections, items, and targets.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: Assessment detail
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AssessmentDetail'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    patch:
+      operationId: assessments.update
+      tags: [Assessments]
+      description: Teacher or admin only. Update draft assessment settings. Requires `X-CSRF-Token` header.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateAssessmentRequest'
+      responses:
+        '200':
+          description: Assessment updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AssessmentDetail'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /assessments/{id}/sections:
+    post:
+      operationId: assessments.createSection
+      tags: [Assessments]
+      description: Teacher or admin only. Add a section to a draft assessment. Requires `X-CSRF-Token` header.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateSectionRequest'
+      responses:
+        '201':
+          description: Section created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Section'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+  /assessment-sections/{section_id}/items:
+    post:
+      operationId: assessments.createItem
+      tags: [Assessments]
+      description: Teacher or admin only. Add an item from a question version to a section. Requires `X-CSRF-Token` header.
+      parameters:
+        - name: section_id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateItemRequest'
+      responses:
+        '201':
+          description: Item created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Item'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+  /assessments/{id}/targets:
+    post:
+      operationId: assessments.createTarget
+      tags: [Assessments]
+      description: Teacher or admin only. Target a class section for the assessment. Requires `X-CSRF-Token` header.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateTargetRequest'
+      responses:
+        '201':
+          description: Target created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Target'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+  /assessments/{id}/validate:
+    post:
+      operationId: assessments.validate
+      tags: [Assessments]
+      description: Teacher or admin only. Validate that the assessment is ready to publish.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: Validation result
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ValidationResult'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /assessments/{id}/publish:
+    post:
+      operationId: assessments.publish
+      tags: [Assessments]
+      description: Teacher or admin only. Validate, snapshot, and publish the assessment. Requires `X-CSRF-Token` header.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: Assessment published
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PublishResult'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /classes/{class_id}/teachers:
+    get:
+      operationId: academics.listClassTeachers
+      tags: [Academics]
+      description: Teacher or admin only. Teachers see only classes they are assigned to.
+      parameters:
+        - name: class_id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: Class teachers
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ClassTeacherList'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    post:
+      operationId: academics.addClassTeacher
+      tags: [Academics]
+      description: Admin only. Requires `X-CSRF-Token` header.
+      parameters:
+        - name: class_id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AddClassTeacherRequest'
+      responses:
+        '201':
+          description: Teacher assigned
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ClassTeacher'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+  /classes/{class_id}/teachers/{user_id}:
+    delete:
+      operationId: academics.removeClassTeacher
+      tags: [Academics]
+      description: Admin only. Remove a teacher from a class.
+      parameters:
+        - name: class_id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+        - name: user_id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          $ref: '#/components/responses/SuccessResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /classes/{class_id}/enrollments:
+    get:
+      operationId: academics.listEnrollments
+      tags: [Academics]
+      description: Teacher or admin only. Teachers see only classes they are assigned to.
+      parameters:
+        - name: class_id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: Enrollments
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EnrollmentList'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    post:
+      operationId: academics.enrollStudent
+      tags: [Academics]
+      description: Admin only. Requires `X-CSRF-Token` header.
+      parameters:
+        - name: class_id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EnrollStudentRequest'
+      responses:
+        '201':
+          description: Student enrolled
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Enrollment'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+  /classes/{class_id}/enrollments/{user_id}:
+    delete:
+      operationId: academics.unenrollStudent
+      tags: [Academics]
+      description: Admin only. Unenroll a student from a class.
+      parameters:
+        - name: class_id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+        - name: user_id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          $ref: '#/components/responses/SuccessResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
 components:
   securitySchemes:
     bearerAuth:
@@ -688,6 +1345,345 @@ components:
       required: [name]
       properties:
         name: { type: string, minLength: 1 }
+    Term:
+      type: object
+      required: [data]
+      properties:
+        data:
+          type: object
+          required: [id, name, start_date, end_date, status]
+          properties:
+            id: { type: string, format: uuid }
+            name: { type: string }
+            start_date: { type: string, format: date }
+            end_date: { type: string, format: date }
+            status: { type: string, enum: [ACTIVE, ARCHIVED] }
+    TermList:
+      type: object
+      required: [data]
+      properties:
+        data:
+          type: array
+          items:
+            type: object
+            required: [id, name, start_date, end_date, status]
+            properties:
+              id: { type: string, format: uuid }
+              name: { type: string }
+              start_date: { type: string, format: date }
+              end_date: { type: string, format: date }
+              status: { type: string, enum: [ACTIVE, ARCHIVED] }
+    CreateTermRequest:
+      type: object
+      additionalProperties: false
+      required: [name, start_date, end_date]
+      properties:
+        name: { type: string, minLength: 1 }
+        start_date: { type: string, format: date }
+        end_date: { type: string, format: date }
+    Subject:
+      type: object
+      required: [data]
+      properties:
+        data:
+          type: object
+          required: [id, code, name, status]
+          properties:
+            id: { type: string, format: uuid }
+            code: { type: string }
+            name: { type: string }
+            description: { type: string, nullable: true }
+            status: { type: string, enum: [ACTIVE, ARCHIVED] }
+    SubjectList:
+      type: object
+      required: [data]
+      properties:
+        data:
+          type: array
+          items:
+            type: object
+            required: [id, code, name, status]
+            properties:
+              id: { type: string, format: uuid }
+              code: { type: string }
+              name: { type: string }
+              description: { type: string, nullable: true }
+              status: { type: string, enum: [ACTIVE, ARCHIVED] }
+    CreateSubjectRequest:
+      type: object
+      additionalProperties: false
+      required: [code, name]
+      properties:
+        code: { type: string, minLength: 1 }
+        name: { type: string, minLength: 1 }
+        description: { type: string, nullable: true }
+    Course:
+      type: object
+      required: [data]
+      properties:
+        data:
+          type: object
+          required: [id, subject_id, academic_term_id, code, name, status]
+          properties:
+            id: { type: string, format: uuid }
+            subject_id: { type: string, format: uuid }
+            academic_term_id: { type: string, format: uuid }
+            code: { type: string }
+            name: { type: string }
+            status: { type: string, enum: [ACTIVE, ARCHIVED] }
+    CourseList:
+      type: object
+      required: [data]
+      properties:
+        data:
+          type: array
+          items:
+            type: object
+            required: [id, subject_id, academic_term_id, code, name, status]
+            properties:
+              id: { type: string, format: uuid }
+              subject_id: { type: string, format: uuid }
+              academic_term_id: { type: string, format: uuid }
+              code: { type: string }
+              name: { type: string }
+              status: { type: string, enum: [ACTIVE, ARCHIVED] }
+    CreateCourseRequest:
+      type: object
+      additionalProperties: false
+      required: [subject_id, academic_term_id, code, name]
+      properties:
+        subject_id: { type: string, format: uuid }
+        academic_term_id: { type: string, format: uuid }
+        code: { type: string, minLength: 1 }
+        name: { type: string, minLength: 1 }
+    ClassSection:
+      type: object
+      required: [data]
+      properties:
+        data:
+          type: object
+          required: [id, course_id, name, student_count, teacher_count, status]
+          properties:
+            id: { type: string, format: uuid }
+            course_id: { type: string, format: uuid }
+            name: { type: string }
+            student_count: { type: integer, minimum: 0 }
+            teacher_count: { type: integer, minimum: 0 }
+            status: { type: string, enum: [ACTIVE, ARCHIVED] }
+    ClassSectionList:
+      type: object
+      required: [data]
+      properties:
+        data:
+          type: array
+          items:
+            type: object
+            required: [id, course_id, name, student_count, teacher_count, status]
+            properties:
+              id: { type: string, format: uuid }
+              course_id: { type: string, format: uuid }
+              name: { type: string }
+              student_count: { type: integer, minimum: 0 }
+              teacher_count: { type: integer, minimum: 0 }
+              status: { type: string, enum: [ACTIVE, ARCHIVED] }
+    CreateClassRequest:
+      type: object
+      additionalProperties: false
+      required: [course_id, name]
+      properties:
+        course_id: { type: string, format: uuid }
+        name: { type: string, minLength: 1 }
+    ClassTeacher:
+      type: object
+      required: [data]
+      properties:
+        data:
+          type: object
+          required: [id, user_id, display_name, role, status]
+          properties:
+            id: { type: string, format: uuid }
+            user_id: { type: string, format: uuid }
+            display_name: { type: string }
+            role: { type: string, enum: [teacher, assistant] }
+            status: { type: string, enum: [ACTIVE, ARCHIVED] }
+    ClassTeacherList:
+      type: object
+      required: [data]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/ClassTeacher/properties/data'
+    AddClassTeacherRequest:
+      type: object
+      additionalProperties: false
+      required: [user_id]
+      properties:
+        user_id: { type: string, format: uuid }
+        role: { type: string, enum: [teacher, assistant] }
+    Enrollment:
+      type: object
+      required: [data]
+      properties:
+        data:
+          type: object
+          required: [id, user_id, display_name, status]
+          properties:
+            id: { type: string, format: uuid }
+            user_id: { type: string, format: uuid }
+            display_name: { type: string }
+            status: { type: string, enum: [ACTIVE, ARCHIVED] }
+    EnrollmentList:
+      type: object
+      required: [data]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/Enrollment/properties/data'
+    EnrollStudentRequest:
+      type: object
+      additionalProperties: false
+      required: [user_id]
+      properties:
+        user_id: { type: string, format: uuid }
+    AssessmentDetail:
+      type: object
+      required: [data]
+      properties:
+        data:
+          type: object
+          required: [id, title, status, duration_minutes, max_attempts, revision, sections, targets, created_at, updated_at]
+          properties:
+            id: { type: string, format: uuid }
+            class_section_id: { type: string, format: uuid, nullable: true }
+            title: { type: string }
+            status: { type: string, enum: [DRAFT, SCHEDULED, OPEN, CLOSED, GRADING, REVIEWED, PUBLISHED, ARCHIVED] }
+            duration_minutes: { type: integer, minimum: 1 }
+            max_attempts: { type: integer, minimum: 1 }
+            revision: { type: integer, minimum: 1 }
+            instructions: { type: string, nullable: true }
+            opens_at: { type: string, format: date-time, nullable: true }
+            closes_at: { type: string, format: date-time, nullable: true }
+            settings: { type: object, additionalProperties: true }
+            sections:
+              type: array
+              items:
+                $ref: '#/components/schemas/Section/properties/data'
+            targets:
+              type: array
+              items:
+                $ref: '#/components/schemas/Target/properties/data'
+            created_at: { type: string, format: date-time }
+            updated_at: { type: string, format: date-time }
+    Section:
+      type: object
+      required: [data]
+      properties:
+        data:
+          type: object
+          required: [id, title, position, items]
+          properties:
+            id: { type: string, format: uuid }
+            title: { type: string }
+            position: { type: integer, minimum: 0 }
+            settings: { type: object, additionalProperties: true }
+            items:
+              type: array
+              items:
+                $ref: '#/components/schemas/Item/properties/data'
+    Item:
+      type: object
+      required: [data]
+      properties:
+        data:
+          type: object
+          required: [id, assessment_section_id, question_version_id, position, points]
+          properties:
+            id: { type: string, format: uuid }
+            assessment_section_id: { type: string, format: uuid }
+            question_version_id: { type: string, format: uuid }
+            position: { type: integer, minimum: 0 }
+            points: { type: string }
+    Target:
+      type: object
+      required: [data]
+      properties:
+        data:
+          type: object
+          required: [id, class_section_id]
+          properties:
+            id: { type: string, format: uuid }
+            class_section_id: { type: string, format: uuid }
+    CreateAssessmentRequest:
+      type: object
+      additionalProperties: false
+      required: [title, duration_minutes]
+      properties:
+        title: { type: string, minLength: 1 }
+        duration_minutes: { type: integer, minimum: 1 }
+        max_attempts: { type: integer, minimum: 1 }
+    UpdateAssessmentRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        title: { type: string, minLength: 1 }
+        duration_minutes: { type: integer, minimum: 1 }
+        max_attempts: { type: integer, minimum: 1 }
+        instructions: { type: string, nullable: true }
+        opens_at: { type: string, format: date-time, nullable: true }
+        closes_at: { type: string, format: date-time, nullable: true }
+        settings: { type: object, additionalProperties: true }
+    CreateSectionRequest:
+      type: object
+      additionalProperties: false
+      required: [title, position]
+      properties:
+        title: { type: string, minLength: 1 }
+        position: { type: integer, minimum: 0 }
+    CreateItemRequest:
+      type: object
+      additionalProperties: false
+      required: [question_version_id, position]
+      properties:
+        question_version_id: { type: string, format: uuid }
+        position: { type: integer, minimum: 0 }
+        points: { type: string }
+    CreateTargetRequest:
+      type: object
+      additionalProperties: false
+      required: [class_section_id]
+      properties:
+        class_section_id: { type: string, format: uuid }
+    ValidationResult:
+      type: object
+      required: [data]
+      properties:
+        data:
+          type: object
+          required: [valid]
+          properties:
+            valid: { type: boolean }
+            errors:
+              type: array
+              items:
+                type: object
+                required: [field, message]
+                properties:
+                  field: { type: string }
+                  message: { type: string }
+    PublishResult:
+      type: object
+      required: [data]
+      properties:
+        data:
+          type: object
+          required: [id, status, revision]
+          properties:
+            id: { type: string, format: uuid }
+            status: { type: string, enum: [OPEN, PUBLISHED, CLOSED] }
+            revision: { type: integer, minimum: 1 }
+            published_at: { type: string, format: date-time }
     Problem:
       type: object
       required: [title, status, code]
@@ -729,6 +1725,12 @@ components:
         application/problem+json:
           schema:
             $ref: '#/components/schemas/Problem'
+    SuccessResponse:
+      description: Operation succeeded
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/SuccessResponse'
     TooManyRequests:
       description: Rate limit or temporary account lockout exceeded
       content:

@@ -8,6 +8,7 @@ import (
 	"os"
 
 	"github.com/BrianNguyen29/vts-edu/apps/api/internal/app"
+	"github.com/BrianNguyen29/vts-edu/apps/api/internal/features/academics"
 	"github.com/BrianNguyen29/vts-edu/apps/api/internal/features/admin"
 	"github.com/BrianNguyen29/vts-edu/apps/api/internal/features/assessments"
 	"github.com/BrianNguyen29/vts-edu/apps/api/internal/features/attempts"
@@ -58,6 +59,7 @@ func main() {
 	var attemptsHandler *attempts.Handler
 	var assessmentsHandler *assessments.Handler
 	var adminHandler *admin.Handler
+	var academicsHandler *academics.Handler
 	if !cfg.DatabaseSkip {
 		authIssuer := auth.NewTokenIssuer(cfg.JWTSigningKey, "vts-edu-api", "vts-edu-web", cfg.AccessTokenTTL)
 		authRepo := auth.NewRepository(pool.Pool)
@@ -69,12 +71,16 @@ func main() {
 		attemptsHandler = attempts.NewHandler(attemptsSvc, authIssuer)
 
 		assessmentsRepo := assessments.NewRepository(pool.Pool)
-		assessmentsSvc := assessments.NewService(assessmentsRepo)
+		assessmentsSvc := assessments.NewService(assessmentsRepo, srv.txManager)
 		assessmentsHandler = assessments.NewHandler(assessmentsSvc, authIssuer)
 
 		adminRepo := admin.NewRepository(pool.Pool)
 		adminSvc := admin.NewService(adminRepo, srv.txManager)
 		adminHandler = admin.NewHandler(adminSvc, authIssuer)
+
+		academicsRepo := academics.NewRepository(pool.Pool)
+		academicsSvc := academics.NewService(academicsRepo, srv.txManager)
+		academicsHandler = academics.NewHandler(academicsSvc, authIssuer)
 	}
 
 	r := chi.NewRouter()
@@ -94,12 +100,14 @@ func main() {
 		if authHandler != nil {
 			r.Post("/auth/login", authHandler.Login)
 			r.Get("/me", authHandler.Me)
+			r.Get("/me/teaching/classes", academicsHandler.ListMyTeachingClasses)
 			r.Post("/auth/refresh", authHandler.Refresh)
 			r.Post("/auth/logout", authHandler.Logout)
 			r.Post("/auth/change-password", authHandler.ChangePassword)
 		} else {
 			r.Post("/auth/login", srv.loginPlaceholderHandler)
 			r.Get("/me", srv.mePlaceholderHandler)
+			r.Get("/me/teaching/classes", srv.academicsPlaceholderHandler)
 			r.Post("/auth/refresh", srv.refreshPlaceholderHandler)
 			r.Post("/auth/logout", srv.logoutPlaceholderHandler)
 		}
@@ -119,8 +127,28 @@ func main() {
 		// Teacher/admin assessment endpoints.
 		if assessmentsHandler != nil {
 			r.Get("/assessments", assessmentsHandler.ListAssessments)
+
+			r.Post("/classes/{class_id}/assessments", assessmentsHandler.CreateAssessment)
+			r.Get("/classes/{class_id}/assessments", assessmentsHandler.ListAssessmentsByClass)
+			r.Get("/assessments/{id}", assessmentsHandler.GetAssessment)
+			r.Patch("/assessments/{id}", assessmentsHandler.UpdateAssessment)
+			r.Post("/assessments/{id}/sections", assessmentsHandler.CreateSection)
+			r.Post("/assessment-sections/{section_id}/items", assessmentsHandler.CreateItem)
+			r.Post("/assessments/{id}/targets", assessmentsHandler.CreateTarget)
+			r.Post("/assessments/{id}/validate", assessmentsHandler.ValidateAssessment)
+			r.Post("/assessments/{id}/publish", assessmentsHandler.PublishAssessment)
 		} else {
 			r.Get("/assessments", srv.listAssessmentsPlaceholderHandler)
+
+			r.Post("/classes/{class_id}/assessments", srv.listAssessmentsPlaceholderHandler)
+			r.Get("/classes/{class_id}/assessments", srv.listAssessmentsPlaceholderHandler)
+			r.Get("/assessments/{id}", srv.listAssessmentsPlaceholderHandler)
+			r.Patch("/assessments/{id}", srv.listAssessmentsPlaceholderHandler)
+			r.Post("/assessments/{id}/sections", srv.listAssessmentsPlaceholderHandler)
+			r.Post("/assessment-sections/{section_id}/items", srv.listAssessmentsPlaceholderHandler)
+			r.Post("/assessments/{id}/targets", srv.listAssessmentsPlaceholderHandler)
+			r.Post("/assessments/{id}/validate", srv.listAssessmentsPlaceholderHandler)
+			r.Post("/assessments/{id}/publish", srv.listAssessmentsPlaceholderHandler)
 		}
 
 		// Admin endpoints.
@@ -140,6 +168,50 @@ func main() {
 			r.Get("/organizations/current", srv.adminPlaceholderHandler)
 			r.Patch("/organizations/current", srv.adminPlaceholderHandler)
 			r.Get("/audit-logs", srv.adminPlaceholderHandler)
+		}
+
+		// Academics endpoints.
+		if academicsHandler != nil {
+			r.Get("/academic-terms", academicsHandler.ListTerms)
+			r.Post("/academic-terms", academicsHandler.CreateTerm)
+			r.Delete("/academic-terms/{term_id}", academicsHandler.ArchiveTerm)
+
+			r.Get("/subjects", academicsHandler.ListSubjects)
+			r.Post("/subjects", academicsHandler.CreateSubject)
+			r.Delete("/subjects/{subject_id}", academicsHandler.ArchiveSubject)
+
+			r.Get("/courses", academicsHandler.ListCourses)
+			r.Post("/courses", academicsHandler.CreateCourse)
+			r.Delete("/courses/{course_id}", academicsHandler.ArchiveCourse)
+
+			r.Get("/classes", academicsHandler.ListClasses)
+			r.Post("/classes", academicsHandler.CreateClass)
+			r.Delete("/classes/{class_id}", academicsHandler.ArchiveClass)
+			r.Get("/classes/{class_id}/teachers", academicsHandler.ListClassTeachers)
+			r.Post("/classes/{class_id}/teachers", academicsHandler.AddClassTeacher)
+			r.Delete("/classes/{class_id}/teachers/{user_id}", academicsHandler.RemoveClassTeacher)
+			r.Get("/classes/{class_id}/enrollments", academicsHandler.ListEnrollments)
+			r.Post("/classes/{class_id}/enrollments", academicsHandler.EnrollStudent)
+			r.Delete("/classes/{class_id}/enrollments/{user_id}", academicsHandler.UnenrollStudent)
+		} else {
+			r.Get("/academic-terms", srv.academicsPlaceholderHandler)
+			r.Post("/academic-terms", srv.academicsPlaceholderHandler)
+			r.Delete("/academic-terms/{term_id}", srv.academicsPlaceholderHandler)
+			r.Get("/subjects", srv.academicsPlaceholderHandler)
+			r.Post("/subjects", srv.academicsPlaceholderHandler)
+			r.Delete("/subjects/{subject_id}", srv.academicsPlaceholderHandler)
+			r.Get("/courses", srv.academicsPlaceholderHandler)
+			r.Post("/courses", srv.academicsPlaceholderHandler)
+			r.Delete("/courses/{course_id}", srv.academicsPlaceholderHandler)
+			r.Get("/classes", srv.academicsPlaceholderHandler)
+			r.Post("/classes", srv.academicsPlaceholderHandler)
+			r.Delete("/classes/{class_id}", srv.academicsPlaceholderHandler)
+			r.Get("/classes/{class_id}/teachers", srv.academicsPlaceholderHandler)
+			r.Post("/classes/{class_id}/teachers", srv.academicsPlaceholderHandler)
+			r.Delete("/classes/{class_id}/teachers/{user_id}", srv.academicsPlaceholderHandler)
+			r.Get("/classes/{class_id}/enrollments", srv.academicsPlaceholderHandler)
+			r.Post("/classes/{class_id}/enrollments", srv.academicsPlaceholderHandler)
+			r.Delete("/classes/{class_id}/enrollments/{user_id}", srv.academicsPlaceholderHandler)
 		}
 	})
 
@@ -242,6 +314,10 @@ func (s *server) listAssessmentsPlaceholderHandler(w http.ResponseWriter, r *htt
 
 func (s *server) adminPlaceholderHandler(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusServiceUnavailable, map[string]string{"message": "admin placeholder; database unavailable"})
+}
+
+func (s *server) academicsPlaceholderHandler(w http.ResponseWriter, r *http.Request) {
+	writeJSON(w, http.StatusServiceUnavailable, map[string]string{"message": "academics placeholder; database unavailable"})
 }
 
 func (s *server) getAttemptPlaceholderHandler(w http.ResponseWriter, r *http.Request) {

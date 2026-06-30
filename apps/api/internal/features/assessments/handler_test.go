@@ -21,6 +21,42 @@ func (f *fakeService) ListAssessments(ctx context.Context, orgID string, opts as
 	return f.listFunc(ctx, orgID, opts)
 }
 
+func (f *fakeService) CreateAssessment(ctx context.Context, actor auth.Actor, classSectionID string, req assessments.CreateAssessmentRequest) (assessments.AssessmentDetail, error) {
+	return assessments.AssessmentDetail{}, nil
+}
+
+func (f *fakeService) ListAssessmentsByClass(ctx context.Context, actor auth.Actor, classSectionID string) ([]assessments.AssessmentListItem, error) {
+	return nil, nil
+}
+
+func (f *fakeService) GetAssessment(ctx context.Context, actor auth.Actor, assessmentID string) (assessments.AssessmentDetail, error) {
+	return assessments.AssessmentDetail{}, nil
+}
+
+func (f *fakeService) UpdateAssessment(ctx context.Context, actor auth.Actor, assessmentID string, req assessments.UpdateAssessmentRequest) (assessments.AssessmentDetail, error) {
+	return assessments.AssessmentDetail{}, nil
+}
+
+func (f *fakeService) CreateSection(ctx context.Context, actor auth.Actor, assessmentID string, req assessments.CreateSectionRequest) (assessments.SectionDetail, error) {
+	return assessments.SectionDetail{}, nil
+}
+
+func (f *fakeService) CreateItem(ctx context.Context, actor auth.Actor, sectionID string, req assessments.CreateItemRequest) (assessments.ItemDetail, error) {
+	return assessments.ItemDetail{}, nil
+}
+
+func (f *fakeService) CreateTarget(ctx context.Context, actor auth.Actor, assessmentID string, req assessments.CreateTargetRequest) (assessments.TargetDetail, error) {
+	return assessments.TargetDetail{}, nil
+}
+
+func (f *fakeService) ValidateAssessment(ctx context.Context, actor auth.Actor, assessmentID string) (assessments.ValidationResult, error) {
+	return assessments.ValidationResult{}, nil
+}
+
+func (f *fakeService) PublishAssessment(ctx context.Context, actor auth.Actor, assessmentID string) (assessments.PublishResult, error) {
+	return assessments.PublishResult{}, nil
+}
+
 func tokenWithRoles(roles []string) string {
 	issuer := auth.NewTokenIssuer("test-signing-key-minimum-32-bytes-long", "test-issuer", "test-audience", 15*time.Minute)
 	token, _, err := issuer.IssueAccessToken("user-id", "org-id", "session-id", roles, 1, false)

@@ -103,6 +103,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/me/teaching/classes": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Teacher only. Returns the classes assigned to the current teacher with student and teacher counts. */
+        get: operations["academics.listMyTeachingClasses"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/attempts/{attempt_id}": {
         parameters: {
             query?: never;
@@ -252,6 +269,337 @@ export interface paths {
         put?: never;
         post?: never;
         delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/academic-terms": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Teacher or admin only. List active academic terms. */
+        get: operations["academics.listTerms"];
+        put?: never;
+        /** @description Admin only. Requires `X-CSRF-Token` header. */
+        post: operations["academics.createTerm"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/academic-terms/{term_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** @description Admin only. Archive an academic term. */
+        delete: operations["academics.archiveTerm"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/subjects": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Teacher or admin only. List active subjects. */
+        get: operations["academics.listSubjects"];
+        put?: never;
+        /** @description Admin only. Requires `X-CSRF-Token` header. */
+        post: operations["academics.createSubject"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/subjects/{subject_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** @description Admin only. Archive a subject. */
+        delete: operations["academics.archiveSubject"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/courses": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Teacher or admin only. List active courses. */
+        get: operations["academics.listCourses"];
+        put?: never;
+        /** @description Admin only. Requires `X-CSRF-Token` header. */
+        post: operations["academics.createCourse"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/courses/{course_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** @description Admin only. Archive a course. */
+        delete: operations["academics.archiveCourse"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/classes": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Teacher or admin only. Teachers see assigned classes; admins see all. */
+        get: operations["academics.listClasses"];
+        put?: never;
+        /** @description Admin only. Requires `X-CSRF-Token` header. */
+        post: operations["academics.createClass"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/classes/{class_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** @description Admin only. Archive a class section. */
+        delete: operations["academics.archiveClass"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/classes/{class_id}/assessments": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Teacher or admin only. List assessments targeting the class. */
+        get: operations["assessments.listByClass"];
+        put?: never;
+        /** @description Teacher or admin only. Create a draft assessment for the class. Requires `X-CSRF-Token` header. */
+        post: operations["assessments.createForClass"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/assessments/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Teacher or admin only. Get assessment builder details including sections, items, and targets. */
+        get: operations["assessments.get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** @description Teacher or admin only. Update draft assessment settings. Requires `X-CSRF-Token` header. */
+        patch: operations["assessments.update"];
+        trace?: never;
+    };
+    "/assessments/{id}/sections": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Teacher or admin only. Add a section to a draft assessment. Requires `X-CSRF-Token` header. */
+        post: operations["assessments.createSection"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/assessment-sections/{section_id}/items": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Teacher or admin only. Add an item from a question version to a section. Requires `X-CSRF-Token` header. */
+        post: operations["assessments.createItem"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/assessments/{id}/targets": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Teacher or admin only. Target a class section for the assessment. Requires `X-CSRF-Token` header. */
+        post: operations["assessments.createTarget"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/assessments/{id}/validate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Teacher or admin only. Validate that the assessment is ready to publish. */
+        post: operations["assessments.validate"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/assessments/{id}/publish": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Teacher or admin only. Validate, snapshot, and publish the assessment. Requires `X-CSRF-Token` header. */
+        post: operations["assessments.publish"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/classes/{class_id}/teachers": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Teacher or admin only. Teachers see only classes they are assigned to. */
+        get: operations["academics.listClassTeachers"];
+        put?: never;
+        /** @description Admin only. Requires `X-CSRF-Token` header. */
+        post: operations["academics.addClassTeacher"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/classes/{class_id}/teachers/{user_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** @description Admin only. Remove a teacher from a class. */
+        delete: operations["academics.removeClassTeacher"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/classes/{class_id}/enrollments": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Teacher or admin only. Teachers see only classes they are assigned to. */
+        get: operations["academics.listEnrollments"];
+        put?: never;
+        /** @description Admin only. Requires `X-CSRF-Token` header. */
+        post: operations["academics.enrollStudent"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/classes/{class_id}/enrollments/{user_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** @description Admin only. Unenroll a student from a class. */
+        delete: operations["academics.unenrollStudent"];
         options?: never;
         head?: never;
         patch?: never;
@@ -475,6 +823,285 @@ export interface components {
         UpdateOrganizationRequest: {
             name: string;
         };
+        Term: {
+            data: {
+                /** Format: uuid */
+                id: string;
+                name: string;
+                /** Format: date */
+                start_date: string;
+                /** Format: date */
+                end_date: string;
+                /** @enum {string} */
+                status: "ACTIVE" | "ARCHIVED";
+            };
+        };
+        TermList: {
+            data: {
+                /** Format: uuid */
+                id: string;
+                name: string;
+                /** Format: date */
+                start_date: string;
+                /** Format: date */
+                end_date: string;
+                /** @enum {string} */
+                status: "ACTIVE" | "ARCHIVED";
+            }[];
+        };
+        CreateTermRequest: {
+            name: string;
+            /** Format: date */
+            start_date: string;
+            /** Format: date */
+            end_date: string;
+        };
+        Subject: {
+            data: {
+                /** Format: uuid */
+                id: string;
+                code: string;
+                name: string;
+                description?: string | null;
+                /** @enum {string} */
+                status: "ACTIVE" | "ARCHIVED";
+            };
+        };
+        SubjectList: {
+            data: {
+                /** Format: uuid */
+                id: string;
+                code: string;
+                name: string;
+                description?: string | null;
+                /** @enum {string} */
+                status: "ACTIVE" | "ARCHIVED";
+            }[];
+        };
+        CreateSubjectRequest: {
+            code: string;
+            name: string;
+            description?: string | null;
+        };
+        Course: {
+            data: {
+                /** Format: uuid */
+                id: string;
+                /** Format: uuid */
+                subject_id: string;
+                /** Format: uuid */
+                academic_term_id: string;
+                code: string;
+                name: string;
+                /** @enum {string} */
+                status: "ACTIVE" | "ARCHIVED";
+            };
+        };
+        CourseList: {
+            data: {
+                /** Format: uuid */
+                id: string;
+                /** Format: uuid */
+                subject_id: string;
+                /** Format: uuid */
+                academic_term_id: string;
+                code: string;
+                name: string;
+                /** @enum {string} */
+                status: "ACTIVE" | "ARCHIVED";
+            }[];
+        };
+        CreateCourseRequest: {
+            /** Format: uuid */
+            subject_id: string;
+            /** Format: uuid */
+            academic_term_id: string;
+            code: string;
+            name: string;
+        };
+        ClassSection: {
+            data: {
+                /** Format: uuid */
+                id: string;
+                /** Format: uuid */
+                course_id: string;
+                name: string;
+                student_count: number;
+                teacher_count: number;
+                /** @enum {string} */
+                status: "ACTIVE" | "ARCHIVED";
+            };
+        };
+        ClassSectionList: {
+            data: {
+                /** Format: uuid */
+                id: string;
+                /** Format: uuid */
+                course_id: string;
+                name: string;
+                student_count: number;
+                teacher_count: number;
+                /** @enum {string} */
+                status: "ACTIVE" | "ARCHIVED";
+            }[];
+        };
+        CreateClassRequest: {
+            /** Format: uuid */
+            course_id: string;
+            name: string;
+        };
+        ClassTeacher: {
+            data: {
+                /** Format: uuid */
+                id: string;
+                /** Format: uuid */
+                user_id: string;
+                display_name: string;
+                /** @enum {string} */
+                role: "teacher" | "assistant";
+                /** @enum {string} */
+                status: "ACTIVE" | "ARCHIVED";
+            };
+        };
+        ClassTeacherList: {
+            data: components["schemas"]["ClassTeacher"]["data"][];
+        };
+        AddClassTeacherRequest: {
+            /** Format: uuid */
+            user_id: string;
+            /** @enum {string} */
+            role?: "teacher" | "assistant";
+        };
+        Enrollment: {
+            data: {
+                /** Format: uuid */
+                id: string;
+                /** Format: uuid */
+                user_id: string;
+                display_name: string;
+                /** @enum {string} */
+                status: "ACTIVE" | "ARCHIVED";
+            };
+        };
+        EnrollmentList: {
+            data: components["schemas"]["Enrollment"]["data"][];
+        };
+        EnrollStudentRequest: {
+            /** Format: uuid */
+            user_id: string;
+        };
+        AssessmentDetail: {
+            data: {
+                /** Format: uuid */
+                id: string;
+                /** Format: uuid */
+                class_section_id?: string | null;
+                title: string;
+                /** @enum {string} */
+                status: "DRAFT" | "SCHEDULED" | "OPEN" | "CLOSED" | "GRADING" | "REVIEWED" | "PUBLISHED" | "ARCHIVED";
+                duration_minutes: number;
+                max_attempts: number;
+                revision: number;
+                instructions?: string | null;
+                /** Format: date-time */
+                opens_at?: string | null;
+                /** Format: date-time */
+                closes_at?: string | null;
+                settings?: {
+                    [key: string]: unknown;
+                };
+                sections: components["schemas"]["Section"]["data"][];
+                targets: components["schemas"]["Target"]["data"][];
+                /** Format: date-time */
+                created_at: string;
+                /** Format: date-time */
+                updated_at: string;
+            };
+        };
+        Section: {
+            data: {
+                /** Format: uuid */
+                id: string;
+                title: string;
+                position: number;
+                settings?: {
+                    [key: string]: unknown;
+                };
+                items: components["schemas"]["Item"]["data"][];
+            };
+        };
+        Item: {
+            data: {
+                /** Format: uuid */
+                id: string;
+                /** Format: uuid */
+                assessment_section_id: string;
+                /** Format: uuid */
+                question_version_id: string;
+                position: number;
+                points: string;
+            };
+        };
+        Target: {
+            data: {
+                /** Format: uuid */
+                id: string;
+                /** Format: uuid */
+                class_section_id: string;
+            };
+        };
+        CreateAssessmentRequest: {
+            title: string;
+            duration_minutes: number;
+            max_attempts?: number;
+        };
+        UpdateAssessmentRequest: {
+            title?: string;
+            duration_minutes?: number;
+            max_attempts?: number;
+            instructions?: string | null;
+            /** Format: date-time */
+            opens_at?: string | null;
+            /** Format: date-time */
+            closes_at?: string | null;
+            settings?: {
+                [key: string]: unknown;
+            };
+        };
+        CreateSectionRequest: {
+            title: string;
+            position: number;
+        };
+        CreateItemRequest: {
+            /** Format: uuid */
+            question_version_id: string;
+            position: number;
+            points?: string;
+        };
+        CreateTargetRequest: {
+            /** Format: uuid */
+            class_section_id: string;
+        };
+        ValidationResult: {
+            data: {
+                valid: boolean;
+                errors?: {
+                    field: string;
+                    message: string;
+                }[];
+            };
+        };
+        PublishResult: {
+            data: {
+                /** Format: uuid */
+                id: string;
+                /** @enum {string} */
+                status: "OPEN" | "PUBLISHED" | "CLOSED";
+                revision: number;
+                /** Format: date-time */
+                published_at?: string;
+            };
+        };
         Problem: {
             /** Format: uri-reference */
             type?: string;
@@ -529,6 +1156,15 @@ export interface components {
             };
             content: {
                 "application/problem+json": components["schemas"]["Problem"];
+            };
+        };
+        /** @description Operation succeeded */
+        SuccessResponse: {
+            headers: {
+                [name: string]: unknown;
+            };
+            content: {
+                "application/json": components["schemas"]["SuccessResponse"];
             };
         };
         /** @description Rate limit or temporary account lockout exceeded */
@@ -693,6 +1329,28 @@ export interface operations {
                 };
             };
             401: components["responses"]["Unauthorized"];
+        };
+    };
+    "academics.listMyTeachingClasses": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Class sections assigned to the teacher */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ClassSectionList"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
         };
     };
     "attempts.get": {
@@ -1019,6 +1677,672 @@ export interface operations {
             400: components["responses"]["BadRequest"];
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["Forbidden"];
+        };
+    };
+    "academics.listTerms": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Academic terms */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TermList"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+        };
+    };
+    "academics.createTerm": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateTermRequest"];
+            };
+        };
+        responses: {
+            /** @description Term created */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Term"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+        };
+    };
+    "academics.archiveTerm": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                term_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: components["responses"]["SuccessResponse"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    "academics.listSubjects": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Subjects */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SubjectList"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+        };
+    };
+    "academics.createSubject": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateSubjectRequest"];
+            };
+        };
+        responses: {
+            /** @description Subject created */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Subject"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            409: components["responses"]["Conflict"];
+        };
+    };
+    "academics.archiveSubject": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                subject_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: components["responses"]["SuccessResponse"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    "academics.listCourses": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Courses */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CourseList"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+        };
+    };
+    "academics.createCourse": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateCourseRequest"];
+            };
+        };
+        responses: {
+            /** @description Course created */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Course"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            409: components["responses"]["Conflict"];
+        };
+    };
+    "academics.archiveCourse": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                course_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: components["responses"]["SuccessResponse"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    "academics.listClasses": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Class sections */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ClassSectionList"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+        };
+    };
+    "academics.createClass": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateClassRequest"];
+            };
+        };
+        responses: {
+            /** @description Class section created */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ClassSection"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+        };
+    };
+    "academics.archiveClass": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                class_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: components["responses"]["SuccessResponse"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    "assessments.listByClass": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                class_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Assessments for the class */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AssessmentList"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+        };
+    };
+    "assessments.createForClass": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                class_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateAssessmentRequest"];
+            };
+        };
+        responses: {
+            /** @description Draft assessment created */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AssessmentDetail"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+        };
+    };
+    "assessments.get": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Assessment detail */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AssessmentDetail"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    "assessments.update": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateAssessmentRequest"];
+            };
+        };
+        responses: {
+            /** @description Assessment updated */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AssessmentDetail"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    "assessments.createSection": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateSectionRequest"];
+            };
+        };
+        responses: {
+            /** @description Section created */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Section"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+        };
+    };
+    "assessments.createItem": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                section_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateItemRequest"];
+            };
+        };
+        responses: {
+            /** @description Item created */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Item"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+        };
+    };
+    "assessments.createTarget": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateTargetRequest"];
+            };
+        };
+        responses: {
+            /** @description Target created */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Target"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+        };
+    };
+    "assessments.validate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Validation result */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationResult"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    "assessments.publish": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Assessment published */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PublishResult"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    "academics.listClassTeachers": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                class_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Class teachers */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ClassTeacherList"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    "academics.addClassTeacher": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                class_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AddClassTeacherRequest"];
+            };
+        };
+        responses: {
+            /** @description Teacher assigned */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ClassTeacher"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+        };
+    };
+    "academics.removeClassTeacher": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                class_id: string;
+                user_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: components["responses"]["SuccessResponse"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    "academics.listEnrollments": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                class_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Enrollments */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EnrollmentList"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    "academics.enrollStudent": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                class_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["EnrollStudentRequest"];
+            };
+        };
+        responses: {
+            /** @description Student enrolled */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Enrollment"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+        };
+    };
+    "academics.unenrollStudent": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                class_id: string;
+                user_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: components["responses"]["SuccessResponse"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
         };
     };
 }

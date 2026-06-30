@@ -8,6 +8,17 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+type AcademicTerm struct {
+	ID             pgtype.UUID        `json:"id"`
+	OrganizationID pgtype.UUID        `json:"organization_id"`
+	Name           string             `json:"name"`
+	StartDate      pgtype.Date        `json:"start_date"`
+	EndDate        pgtype.Date        `json:"end_date"`
+	Status         string             `json:"status"`
+	CreatedAt      pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt      pgtype.Timestamptz `json:"updated_at"`
+}
+
 type Assessment struct {
 	ID              pgtype.UUID        `json:"id"`
 	OrganizationID  pgtype.UUID        `json:"organization_id"`
@@ -19,6 +30,24 @@ type Assessment struct {
 	Status          string             `json:"status"`
 	CreatedAt       pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt       pgtype.Timestamptz `json:"updated_at"`
+	Revision        int32              `json:"revision"`
+	Instructions    pgtype.Text        `json:"instructions"`
+	OpensAt         pgtype.Timestamptz `json:"opens_at"`
+	ClosesAt        pgtype.Timestamptz `json:"closes_at"`
+}
+
+type AssessmentItem struct {
+	ID                  pgtype.UUID        `json:"id"`
+	OrganizationID      pgtype.UUID        `json:"organization_id"`
+	AssessmentID        pgtype.UUID        `json:"assessment_id"`
+	AssessmentSectionID pgtype.UUID        `json:"assessment_section_id"`
+	QuestionVersionID   pgtype.UUID        `json:"question_version_id"`
+	Position            int32              `json:"position"`
+	Points              pgtype.Numeric     `json:"points"`
+	SettingsJson        []byte             `json:"settings_json"`
+	Status              string             `json:"status"`
+	CreatedAt           pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt           pgtype.Timestamptz `json:"updated_at"`
 }
 
 type AssessmentPublication struct {
@@ -29,6 +58,28 @@ type AssessmentPublication struct {
 	SnapshotJson   []byte             `json:"snapshot_json"`
 	PublishedAt    pgtype.Timestamptz `json:"published_at"`
 	CreatedAt      pgtype.Timestamptz `json:"created_at"`
+}
+
+type AssessmentSection struct {
+	ID             pgtype.UUID        `json:"id"`
+	OrganizationID pgtype.UUID        `json:"organization_id"`
+	AssessmentID   pgtype.UUID        `json:"assessment_id"`
+	Title          string             `json:"title"`
+	Position       int32              `json:"position"`
+	SettingsJson   []byte             `json:"settings_json"`
+	Status         string             `json:"status"`
+	CreatedAt      pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt      pgtype.Timestamptz `json:"updated_at"`
+}
+
+type AssessmentTarget struct {
+	ID             pgtype.UUID        `json:"id"`
+	OrganizationID pgtype.UUID        `json:"organization_id"`
+	AssessmentID   pgtype.UUID        `json:"assessment_id"`
+	ClassSectionID pgtype.UUID        `json:"class_section_id"`
+	Status         string             `json:"status"`
+	CreatedAt      pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt      pgtype.Timestamptz `json:"updated_at"`
 }
 
 type Attempt struct {
@@ -87,6 +138,49 @@ type AuditLog struct {
 	AfterJson      []byte             `json:"after_json"`
 	MetadataJson   []byte             `json:"metadata_json"`
 	CreatedAt      pgtype.Timestamptz `json:"created_at"`
+}
+
+type ClassSection struct {
+	ID             pgtype.UUID        `json:"id"`
+	OrganizationID pgtype.UUID        `json:"organization_id"`
+	CourseID       pgtype.UUID        `json:"course_id"`
+	Name           string             `json:"name"`
+	Status         string             `json:"status"`
+	CreatedAt      pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt      pgtype.Timestamptz `json:"updated_at"`
+}
+
+type ClassTeacher struct {
+	ID             pgtype.UUID        `json:"id"`
+	OrganizationID pgtype.UUID        `json:"organization_id"`
+	ClassSectionID pgtype.UUID        `json:"class_section_id"`
+	MembershipID   pgtype.UUID        `json:"membership_id"`
+	Role           string             `json:"role"`
+	Status         string             `json:"status"`
+	CreatedAt      pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt      pgtype.Timestamptz `json:"updated_at"`
+}
+
+type Course struct {
+	ID             pgtype.UUID        `json:"id"`
+	OrganizationID pgtype.UUID        `json:"organization_id"`
+	SubjectID      pgtype.UUID        `json:"subject_id"`
+	AcademicTermID pgtype.UUID        `json:"academic_term_id"`
+	Code           string             `json:"code"`
+	Name           string             `json:"name"`
+	Status         string             `json:"status"`
+	CreatedAt      pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt      pgtype.Timestamptz `json:"updated_at"`
+}
+
+type Enrollment struct {
+	ID             pgtype.UUID        `json:"id"`
+	OrganizationID pgtype.UUID        `json:"organization_id"`
+	ClassSectionID pgtype.UUID        `json:"class_section_id"`
+	MembershipID   pgtype.UUID        `json:"membership_id"`
+	Status         string             `json:"status"`
+	CreatedAt      pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt      pgtype.Timestamptz `json:"updated_at"`
 }
 
 type IdempotencyKey struct {
@@ -194,6 +288,17 @@ type RefreshSession struct {
 	RevokedAt           pgtype.Timestamptz `json:"revoked_at"`
 	CreatedAt           pgtype.Timestamptz `json:"created_at"`
 	ReplacedByTokenHash pgtype.Text        `json:"replaced_by_token_hash"`
+}
+
+type Subject struct {
+	ID             pgtype.UUID        `json:"id"`
+	OrganizationID pgtype.UUID        `json:"organization_id"`
+	Code           string             `json:"code"`
+	Name           string             `json:"name"`
+	Description    pgtype.Text        `json:"description"`
+	Status         string             `json:"status"`
+	CreatedAt      pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt      pgtype.Timestamptz `json:"updated_at"`
 }
 
 type User struct {

@@ -14,7 +14,15 @@ Tiếp cận từng giai đoạn:
 1. **Hiện tại**: Duy trì OpenAPI skeleton bằng tay (`docs/backend/backend-technical-spec/openapi/openapi-skeleton.yaml`) phản ánh đúng API surface đã implement. Sinh TypeScript types từ skeleton (`apps/web/src/shared/api/openapi-schema.d.ts`) dùng `openapi-typescript`, type-only, không thay thế runtime `apiClient`.
 2. **Stage 1 — sqlc (hoàn tất)**: Đã migrate `assessments`, `admin`, `auth`, và `attempts` repositories sang sqlc generated queries qua wrapper giữ nguyên các `Repository` interfaces. Không thay đổi service/handler contracts.
 3. **Stage 2 — Huma (deferred)**: Huma vẫn tạm hoãn cho đến khi OpenAPI maintenance cost vượt quá chi phí rewrite router/handlers sang Huma, hoặc đến khi API contract ổn định hơn sau khi có thêm endpoints. OpenAPI skeleton vẫn được duy trì thủ công trong giai đoạn này.
-4. **Stage 3 — Client generation**: Sinh frontend API client/types từ OpenAPI contract sau khi spec ổn định.
+4. **Stage 3 — Typed client (partially adopted)**: Đã thêm `openapi-fetch` runtime dependency, tạo wrapper `apps/web/src/shared/api/openapi-client.ts` với middleware auth/CSRF, và migrate hai helper read-only đầu tiên (`listClasses`, `listEnrollments`). Các helper còn lại vẫn dùng `apiClient` để giảm rủi ro regression; Huma vẫn tạm hoãn.
+
+## openapi-fetch evaluation (Stage 3)
+
+`openapi-fetch` được đánh giá tích cực cho frontend runtime client:
+
+- **Lợi ích**: type-safe paths/parameters/body/response, nhỏ gọn (~6 kb min), dùng native `fetch`, dễ kết hợp middleware cho bearer token và CSRF.
+- **Hạn chế**: middleware chạy theo request; cần đảm bảo `credentials: 'include'` và async CSRF fetch tương thích với flow hiện tại.
+- **Quyết định**: migrate từng bước, bắt đầu với GET read-only để tránh rủi ro CSRF, sau đó mở rộng sang POST/PUT/PATCH khi đã kiểm chứng kỹ. Existing `apiClient` vẫn giữ lại như fallback.
 
 ## Huma evaluation (post-sqlc)
 

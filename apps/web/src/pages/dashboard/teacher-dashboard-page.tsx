@@ -1,10 +1,14 @@
 import { useEffect, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/app/providers/auth-provider';
+import { ApiResponseError } from '@/shared/api/attempts';
 import {
-  ApiResponseError,
+  createAssessment,
   listAssessments,
   type AssessmentListItem,
 } from '@/shared/api/assessments';
+import { listClasses, type ClassSection } from '@/shared/api/academics';
+import { ClassRosterPanel } from './class-roster-panel';
 
 function formatFriendlyError(err: unknown): string {
   if (err instanceof ApiResponseError) {
@@ -12,9 +16,11 @@ function formatFriendlyError(err: unknown): string {
       case 401:
         return 'Phiên làm việc đã hết hạn. Vui lòng đăng nhập lại.';
       case 403:
-        return 'Bạn không có quyền xem danh sách đề thi.';
+        return 'Bạn không có quyền xem nội dung này.';
+      case 404:
+        return 'Không tìm thấy dữ liệu.';
       default:
-        return err.body.error.message || 'Không thể tải danh sách đề thi.';
+        return err.body.error.message || 'Không thể tải dữ liệu.';
     }
   }
   if (err instanceof Error && err.message === 'network') {
@@ -25,21 +31,34 @@ function formatFriendlyError(err: unknown): string {
 
 export function TeacherDashboardPage() {
   const auth = useAuth();
+  const navigate = useNavigate();
 
   const [assessments, setAssessments] = useState<AssessmentListItem[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const [assessmentsLoading, setAssessmentsLoading] = useState(true);
+  const [assessmentsError, setAssessmentsError] = useState<string | null>(null);
   const [searchInput, setSearchInput] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
   const [assessmentCursor, setAssessmentCursor] = useState<string | undefined>();
   const [assessmentHasMore, setAssessmentHasMore] = useState(false);
   const [isLoadingMoreAssessments, setIsLoadingMoreAssessments] = useState(false);
 
+  const [classes, setClasses] = useState<ClassSection[]>([]);
+  const [classesLoading, setClassesLoading] = useState(true);
+  const [classesError, setClassesError] = useState<string | null>(null);
+  const [selectedClass, setSelectedClass] = useState<ClassSection | null>(null);
+
+  const [showCreateForm, setShowCreateForm] = useState(false);
+  const [createTitle, setCreateTitle] = useState('');
+  const [createClassId, setCreateClassId] = useState('');
+  const [creating, setCreating] = useState(false);
+  const [createError, setCreateError] = useState<string | null>(null);
+
   useEffect(() => {
     let cancelled = false;
 
     async function load() {
-      setLoading(true);
+      setAssessmentsLoading(true);
+      setAssessmentsError(null);
       setAssessmentCursor(undefined);
       setAssessmentHasMore(false);
       try {
@@ -53,9 +72,9 @@ export function TeacherDashboardPage() {
         setAssessmentHasMore(response.page?.has_more ?? false);
       } catch (err) {
         if (cancelled) return;
-        setError(formatFriendlyError(err));
+        setAssessmentsError(formatFriendlyError(err));
       } finally {
-        if (!cancelled) setLoading(false);
+        if (!cancelled) setAssessmentsLoading(false);
       }
     }
 
@@ -79,7 +98,7 @@ export function TeacherDashboardPage() {
       setAssessmentCursor(response.page?.next_cursor ?? undefined);
       setAssessmentHasMore(response.page?.has_more ?? false);
     } catch (err) {
-      setError(formatFriendlyError(err));
+      setAssessmentsError(formatFriendlyError(err));
     } finally {
       setIsLoadingMoreAssessments(false);
     }
@@ -91,6 +110,49 @@ export function TeacherDashboardPage() {
     }, 300);
     return () => clearTimeout(timer);
   }, [searchInput]);
+
+  async function handleCreateAssessment(e: React.FormEvent) {
+    e.preventDefault();
+    if (!createClassId || !createTitle.trim()) return;
+    setCreating(true);
+    setCreateError(null);
+    try {
+      const assessment = await createAssessment(createClassId, {
+        title: createTitle.trim(),
+        duration_minutes: 45,
+        max_attempts: 1,
+      });
+      navigate(`/app/teacher/assessments/${assessment.id}`);
+    } catch (err) {
+      setCreating(false);
+      setCreateError(formatFriendlyError(err));
+    }
+  }
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function load() {
+      setClassesLoading(true);
+      setClassesError(null);
+      try {
+        const response = await listClasses();
+        if (cancelled) return;
+        setClasses(response.data);
+      } catch (err) {
+        if (cancelled) return;
+        setClassesError(formatFriendlyError(err));
+      } finally {
+        if (!cancelled) setClassesLoading(false);
+      }
+    }
+
+    void load();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   return (
     <div className="dashboard-page">
@@ -111,16 +173,86 @@ export function TeacherDashboardPage() {
           />
         </div>
 
-        {loading && <p className="dashboard-status">Đang tải danh sách đề thi…</p>}
+        {!showCreateForm && (
+          <button
+            type="button"
+            className="primary"
+            onClick={() => setShowCreateForm(true)}
+            style={{ marginBottom: '1rem' }}
+          >
+            + Tạo đề thi
+          </button>
+        )}
 
-        {error && (
+        {showCreateForm && (
+          <form onSubmit={handleCreateAssessment} className="admin-form">
+            <h3>Tạo đề thi mới</h3>
+            {createError && (
+              <div className="error-banner" role="alert">
+                {createError}
+              </div>
+            )}
+            <div className="field">
+              <label htmlFor="create-title">Tên đề thi</label>
+              <input
+                id="create-title"
+                type="text"
+                value={createTitle}
+                onChange={(e) => setCreateTitle(e.target.value)}
+                placeholder="Ví dụ: Kiểm tra 15 phút"
+                required
+              />
+            </div>
+            <div className="field">
+              <label htmlFor="create-class">Lớp</label>
+              <select
+                id="create-class"
+                value={createClassId}
+                onChange={(e) => setCreateClassId(e.target.value)}
+                required
+                disabled={classesLoading || classes.length === 0}
+              >
+                <option value="">
+                  {classesLoading
+                    ? 'Đang tải…'
+                    : classes.length === 0
+                    ? 'Không có lớp'
+                    : 'Chọn lớp…'}
+                </option>
+                {classes.map((cls) => (
+                  <option key={cls.id} value={cls.id}>
+                    {cls.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div className="form-actions">
+              <button type="submit" className="primary" disabled={creating}>
+                {creating ? 'Đang tạo…' : 'Tạo đề thi'}
+              </button>
+              <button
+                type="button"
+                onClick={() => setShowCreateForm(false)}
+                disabled={creating}
+              >
+                Hủy
+              </button>
+            </div>
+          </form>
+        )}
+
+        {assessmentsLoading && (
+          <p className="dashboard-status">Đang tải danh sách đề thi…</p>
+        )}
+
+        {assessmentsError && !assessmentsLoading && (
           <div className="error-banner" role="alert">
-            {error}
+            {assessmentsError}
           </div>
         )}
 
-        {!loading &&
-          !error &&
+        {!assessmentsLoading &&
+          !assessmentsError &&
           assessments.length === 0 &&
           (searchQuery ? (
             <p className="dashboard-status">Không tìm thấy đề thi phù hợp.</p>
@@ -128,7 +260,7 @@ export function TeacherDashboardPage() {
             <p className="dashboard-status">Chưa có đề thi nào.</p>
           ))}
 
-        {!loading && !error && assessments.length > 0 && (
+        {!assessmentsLoading && !assessmentsError && assessments.length > 0 && (
           <>
             <ul className="assessment-list">
               {assessments.map((assessment) => (
@@ -158,11 +290,54 @@ export function TeacherDashboardPage() {
         )}
       </section>
 
+      <section className="dashboard-section">
+        <h2>Lớp học</h2>
+
+        {selectedClass ? (
+          <ClassRosterPanel
+            classSection={selectedClass}
+            onClose={() => setSelectedClass(null)}
+          />
+        ) : (
+          <>
+            {classesLoading && (
+              <p className="dashboard-status">Đang tải danh sách lớp…</p>
+            )}
+
+            {classesError && !classesLoading && (
+              <div className="error-banner" role="alert">
+                {classesError}
+              </div>
+            )}
+
+            {!classesLoading && !classesError && classes.length === 0 && (
+              <p className="dashboard-status">Bạn chưa được phân công lớp nào.</p>
+            )}
+
+            {!classesLoading && !classesError && classes.length > 0 && (
+              <ul className="class-list">
+                {classes.map((classSection) => (
+                  <li key={classSection.id} className="class-item">
+                    <button
+                      type="button"
+                      className="class-button"
+                      onClick={() => setSelectedClass(classSection)}
+                    >
+                      <span className="class-name">{classSection.name}</span>
+                      <span className="class-meta">
+                        {classSection.student_count} học sinh ·{' '}
+                        {classSection.teacher_count} giáo viên
+                      </span>
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </>
+        )}
+      </section>
+
       <div className="dashboard-cards">
-        <article className="dashboard-card">
-          <h2>Lớp học</h2>
-          <p>Quản lý danh sách lớp và học sinh.</p>
-        </article>
         <article className="dashboard-card">
           <h2>Chấm điểm</h2>
           <p>Xem bài làm và cập nhật điểm.</p>

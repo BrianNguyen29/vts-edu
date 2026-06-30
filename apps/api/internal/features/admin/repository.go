@@ -196,7 +196,7 @@ func (r *sqlcRepository) ListAuditLogs(ctx context.Context, orgID string, opts A
 			Before:       json.RawMessage(row.BeforeJson),
 			After:        json.RawMessage(row.AfterJson),
 			Metadata:     json.RawMessage(row.MetadataJson),
-			CreatedAt:    row.CreatedAt.Time.Format(time.RFC3339),
+			CreatedAt:    row.CreatedAt.Time.Format(time.RFC3339Nano),
 		}
 	}
 	return logs, nil

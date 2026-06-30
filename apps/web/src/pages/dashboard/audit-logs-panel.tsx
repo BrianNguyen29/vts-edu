@@ -206,9 +206,9 @@ export function AuditLogsPanel() {
             <table className="audit-logs-table">
               <thead>
                 <tr>
-                  <th>Thờii gian</th>
+                  <th>Thời gian</th>
                   <th>Hành động</th>
-                  <th>Ngườii thực hiện</th>
+                  <th>Người thực hiện</th>
                   <th>Đối tượng</th>
                   <th>Thông tin thêm</th>
                 </tr>

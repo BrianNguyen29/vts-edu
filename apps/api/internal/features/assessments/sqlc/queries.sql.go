@@ -11,6 +11,66 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const countAssessmentItems = `-- name: CountAssessmentItems :one
+SELECT COUNT(*)
+FROM assessment_items
+WHERE organization_id = $1
+  AND assessment_id = $2
+  AND status = 'ACTIVE'
+`
+
+type CountAssessmentItemsParams struct {
+	OrganizationID pgtype.UUID `json:"organization_id"`
+	AssessmentID   pgtype.UUID `json:"assessment_id"`
+}
+
+func (q *Queries) CountAssessmentItems(ctx context.Context, arg CountAssessmentItemsParams) (int64, error) {
+	row := q.db.QueryRow(ctx, countAssessmentItems, arg.OrganizationID, arg.AssessmentID)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
+const countAssessmentSections = `-- name: CountAssessmentSections :one
+SELECT COUNT(*)
+FROM assessment_sections
+WHERE organization_id = $1
+  AND assessment_id = $2
+  AND status = 'ACTIVE'
+`
+
+type CountAssessmentSectionsParams struct {
+	OrganizationID pgtype.UUID `json:"organization_id"`
+	AssessmentID   pgtype.UUID `json:"assessment_id"`
+}
+
+func (q *Queries) CountAssessmentSections(ctx context.Context, arg CountAssessmentSectionsParams) (int64, error) {
+	row := q.db.QueryRow(ctx, countAssessmentSections, arg.OrganizationID, arg.AssessmentID)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
+const countAssessmentTargets = `-- name: CountAssessmentTargets :one
+SELECT COUNT(*)
+FROM assessment_targets
+WHERE organization_id = $1
+  AND assessment_id = $2
+  AND status = 'ACTIVE'
+`
+
+type CountAssessmentTargetsParams struct {
+	OrganizationID pgtype.UUID `json:"organization_id"`
+	AssessmentID   pgtype.UUID `json:"assessment_id"`
+}
+
+func (q *Queries) CountAssessmentTargets(ctx context.Context, arg CountAssessmentTargetsParams) (int64, error) {
+	row := q.db.QueryRow(ctx, countAssessmentTargets, arg.OrganizationID, arg.AssessmentID)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
 const countPublishedByOrganization = `-- name: CountPublishedByOrganization :one
 SELECT COUNT(*)
 FROM assessments
@@ -29,6 +89,640 @@ func (q *Queries) CountPublishedByOrganization(ctx context.Context, arg CountPub
 	var count int64
 	err := row.Scan(&count)
 	return count, err
+}
+
+const createAssessment = `-- name: CreateAssessment :one
+
+INSERT INTO assessments (organization_id, class_section_id, title, duration_minutes, max_attempts, status)
+VALUES ($1, $2, $3, $4, $5, 'DRAFT')
+RETURNING id, organization_id, class_section_id, title, duration_minutes, max_attempts, settings_json, status, revision, instructions, opens_at, closes_at, created_at, updated_at
+`
+
+type CreateAssessmentParams struct {
+	OrganizationID  pgtype.UUID `json:"organization_id"`
+	ClassSectionID  pgtype.UUID `json:"class_section_id"`
+	Title           string      `json:"title"`
+	DurationMinutes int32       `json:"duration_minutes"`
+	MaxAttempts     int32       `json:"max_attempts"`
+}
+
+type CreateAssessmentRow struct {
+	ID              pgtype.UUID        `json:"id"`
+	OrganizationID  pgtype.UUID        `json:"organization_id"`
+	ClassSectionID  pgtype.UUID        `json:"class_section_id"`
+	Title           string             `json:"title"`
+	DurationMinutes int32              `json:"duration_minutes"`
+	MaxAttempts     int32              `json:"max_attempts"`
+	SettingsJson    []byte             `json:"settings_json"`
+	Status          string             `json:"status"`
+	Revision        int32              `json:"revision"`
+	Instructions    pgtype.Text        `json:"instructions"`
+	OpensAt         pgtype.Timestamptz `json:"opens_at"`
+	ClosesAt        pgtype.Timestamptz `json:"closes_at"`
+	CreatedAt       pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt       pgtype.Timestamptz `json:"updated_at"`
+}
+
+// Assessment builder queries
+func (q *Queries) CreateAssessment(ctx context.Context, arg CreateAssessmentParams) (CreateAssessmentRow, error) {
+	row := q.db.QueryRow(ctx, createAssessment,
+		arg.OrganizationID,
+		arg.ClassSectionID,
+		arg.Title,
+		arg.DurationMinutes,
+		arg.MaxAttempts,
+	)
+	var i CreateAssessmentRow
+	err := row.Scan(
+		&i.ID,
+		&i.OrganizationID,
+		&i.ClassSectionID,
+		&i.Title,
+		&i.DurationMinutes,
+		&i.MaxAttempts,
+		&i.SettingsJson,
+		&i.Status,
+		&i.Revision,
+		&i.Instructions,
+		&i.OpensAt,
+		&i.ClosesAt,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const createAssessmentItem = `-- name: CreateAssessmentItem :one
+INSERT INTO assessment_items (organization_id, assessment_id, assessment_section_id, question_version_id, position, points)
+VALUES ($1, $2, $3, $4, $5, $6)
+RETURNING id, assessment_section_id, question_version_id, position, points, status
+`
+
+type CreateAssessmentItemParams struct {
+	OrganizationID      pgtype.UUID    `json:"organization_id"`
+	AssessmentID        pgtype.UUID    `json:"assessment_id"`
+	AssessmentSectionID pgtype.UUID    `json:"assessment_section_id"`
+	QuestionVersionID   pgtype.UUID    `json:"question_version_id"`
+	Position            int32          `json:"position"`
+	Points              pgtype.Numeric `json:"points"`
+}
+
+type CreateAssessmentItemRow struct {
+	ID                  pgtype.UUID    `json:"id"`
+	AssessmentSectionID pgtype.UUID    `json:"assessment_section_id"`
+	QuestionVersionID   pgtype.UUID    `json:"question_version_id"`
+	Position            int32          `json:"position"`
+	Points              pgtype.Numeric `json:"points"`
+	Status              string         `json:"status"`
+}
+
+func (q *Queries) CreateAssessmentItem(ctx context.Context, arg CreateAssessmentItemParams) (CreateAssessmentItemRow, error) {
+	row := q.db.QueryRow(ctx, createAssessmentItem,
+		arg.OrganizationID,
+		arg.AssessmentID,
+		arg.AssessmentSectionID,
+		arg.QuestionVersionID,
+		arg.Position,
+		arg.Points,
+	)
+	var i CreateAssessmentItemRow
+	err := row.Scan(
+		&i.ID,
+		&i.AssessmentSectionID,
+		&i.QuestionVersionID,
+		&i.Position,
+		&i.Points,
+		&i.Status,
+	)
+	return i, err
+}
+
+const createAssessmentSection = `-- name: CreateAssessmentSection :one
+INSERT INTO assessment_sections (organization_id, assessment_id, title, position)
+VALUES ($1, $2, $3, $4)
+RETURNING id, assessment_id, title, position, settings_json, status
+`
+
+type CreateAssessmentSectionParams struct {
+	OrganizationID pgtype.UUID `json:"organization_id"`
+	AssessmentID   pgtype.UUID `json:"assessment_id"`
+	Title          string      `json:"title"`
+	Position       int32       `json:"position"`
+}
+
+type CreateAssessmentSectionRow struct {
+	ID           pgtype.UUID `json:"id"`
+	AssessmentID pgtype.UUID `json:"assessment_id"`
+	Title        string      `json:"title"`
+	Position     int32       `json:"position"`
+	SettingsJson []byte      `json:"settings_json"`
+	Status       string      `json:"status"`
+}
+
+func (q *Queries) CreateAssessmentSection(ctx context.Context, arg CreateAssessmentSectionParams) (CreateAssessmentSectionRow, error) {
+	row := q.db.QueryRow(ctx, createAssessmentSection,
+		arg.OrganizationID,
+		arg.AssessmentID,
+		arg.Title,
+		arg.Position,
+	)
+	var i CreateAssessmentSectionRow
+	err := row.Scan(
+		&i.ID,
+		&i.AssessmentID,
+		&i.Title,
+		&i.Position,
+		&i.SettingsJson,
+		&i.Status,
+	)
+	return i, err
+}
+
+const createAssessmentTarget = `-- name: CreateAssessmentTarget :one
+INSERT INTO assessment_targets (organization_id, assessment_id, class_section_id)
+VALUES ($1, $2, $3)
+RETURNING id, assessment_id, class_section_id, status
+`
+
+type CreateAssessmentTargetParams struct {
+	OrganizationID pgtype.UUID `json:"organization_id"`
+	AssessmentID   pgtype.UUID `json:"assessment_id"`
+	ClassSectionID pgtype.UUID `json:"class_section_id"`
+}
+
+type CreateAssessmentTargetRow struct {
+	ID             pgtype.UUID `json:"id"`
+	AssessmentID   pgtype.UUID `json:"assessment_id"`
+	ClassSectionID pgtype.UUID `json:"class_section_id"`
+	Status         string      `json:"status"`
+}
+
+func (q *Queries) CreateAssessmentTarget(ctx context.Context, arg CreateAssessmentTargetParams) (CreateAssessmentTargetRow, error) {
+	row := q.db.QueryRow(ctx, createAssessmentTarget, arg.OrganizationID, arg.AssessmentID, arg.ClassSectionID)
+	var i CreateAssessmentTargetRow
+	err := row.Scan(
+		&i.ID,
+		&i.AssessmentID,
+		&i.ClassSectionID,
+		&i.Status,
+	)
+	return i, err
+}
+
+const getAssessment = `-- name: GetAssessment :one
+SELECT id, organization_id, class_section_id, title, duration_minutes, max_attempts, settings_json, status, revision, instructions, opens_at, closes_at, created_at, updated_at
+FROM assessments
+WHERE id = $1
+  AND organization_id = $2
+`
+
+type GetAssessmentParams struct {
+	ID             pgtype.UUID `json:"id"`
+	OrganizationID pgtype.UUID `json:"organization_id"`
+}
+
+type GetAssessmentRow struct {
+	ID              pgtype.UUID        `json:"id"`
+	OrganizationID  pgtype.UUID        `json:"organization_id"`
+	ClassSectionID  pgtype.UUID        `json:"class_section_id"`
+	Title           string             `json:"title"`
+	DurationMinutes int32              `json:"duration_minutes"`
+	MaxAttempts     int32              `json:"max_attempts"`
+	SettingsJson    []byte             `json:"settings_json"`
+	Status          string             `json:"status"`
+	Revision        int32              `json:"revision"`
+	Instructions    pgtype.Text        `json:"instructions"`
+	OpensAt         pgtype.Timestamptz `json:"opens_at"`
+	ClosesAt        pgtype.Timestamptz `json:"closes_at"`
+	CreatedAt       pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt       pgtype.Timestamptz `json:"updated_at"`
+}
+
+func (q *Queries) GetAssessment(ctx context.Context, arg GetAssessmentParams) (GetAssessmentRow, error) {
+	row := q.db.QueryRow(ctx, getAssessment, arg.ID, arg.OrganizationID)
+	var i GetAssessmentRow
+	err := row.Scan(
+		&i.ID,
+		&i.OrganizationID,
+		&i.ClassSectionID,
+		&i.Title,
+		&i.DurationMinutes,
+		&i.MaxAttempts,
+		&i.SettingsJson,
+		&i.Status,
+		&i.Revision,
+		&i.Instructions,
+		&i.OpensAt,
+		&i.ClosesAt,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const getAssessmentItems = `-- name: GetAssessmentItems :many
+SELECT id, assessment_section_id, question_version_id, position, points, status
+FROM assessment_items
+WHERE organization_id = $1
+  AND assessment_id = $2
+  AND status = 'ACTIVE'
+ORDER BY assessment_section_id, position
+`
+
+type GetAssessmentItemsParams struct {
+	OrganizationID pgtype.UUID `json:"organization_id"`
+	AssessmentID   pgtype.UUID `json:"assessment_id"`
+}
+
+type GetAssessmentItemsRow struct {
+	ID                  pgtype.UUID    `json:"id"`
+	AssessmentSectionID pgtype.UUID    `json:"assessment_section_id"`
+	QuestionVersionID   pgtype.UUID    `json:"question_version_id"`
+	Position            int32          `json:"position"`
+	Points              pgtype.Numeric `json:"points"`
+	Status              string         `json:"status"`
+}
+
+func (q *Queries) GetAssessmentItems(ctx context.Context, arg GetAssessmentItemsParams) ([]GetAssessmentItemsRow, error) {
+	rows, err := q.db.Query(ctx, getAssessmentItems, arg.OrganizationID, arg.AssessmentID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []GetAssessmentItemsRow
+	for rows.Next() {
+		var i GetAssessmentItemsRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.AssessmentSectionID,
+			&i.QuestionVersionID,
+			&i.Position,
+			&i.Points,
+			&i.Status,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const getAssessmentItemsWithContent = `-- name: GetAssessmentItemsWithContent :many
+SELECT ai.id, ai.assessment_section_id, ai.question_version_id, ai.position, ai.points,
+       qv.prompt_json, qv.choices_json, qv.answer_key_json, qv.max_score
+FROM assessment_items ai
+JOIN question_versions qv ON qv.id = ai.question_version_id
+WHERE ai.organization_id = $1
+  AND ai.assessment_id = $2
+  AND ai.status = 'ACTIVE'
+ORDER BY ai.assessment_section_id, ai.position
+`
+
+type GetAssessmentItemsWithContentParams struct {
+	OrganizationID pgtype.UUID `json:"organization_id"`
+	AssessmentID   pgtype.UUID `json:"assessment_id"`
+}
+
+type GetAssessmentItemsWithContentRow struct {
+	ID                  pgtype.UUID    `json:"id"`
+	AssessmentSectionID pgtype.UUID    `json:"assessment_section_id"`
+	QuestionVersionID   pgtype.UUID    `json:"question_version_id"`
+	Position            int32          `json:"position"`
+	Points              pgtype.Numeric `json:"points"`
+	PromptJson          []byte         `json:"prompt_json"`
+	ChoicesJson         []byte         `json:"choices_json"`
+	AnswerKeyJson       []byte         `json:"answer_key_json"`
+	MaxScore            pgtype.Numeric `json:"max_score"`
+}
+
+func (q *Queries) GetAssessmentItemsWithContent(ctx context.Context, arg GetAssessmentItemsWithContentParams) ([]GetAssessmentItemsWithContentRow, error) {
+	rows, err := q.db.Query(ctx, getAssessmentItemsWithContent, arg.OrganizationID, arg.AssessmentID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []GetAssessmentItemsWithContentRow
+	for rows.Next() {
+		var i GetAssessmentItemsWithContentRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.AssessmentSectionID,
+			&i.QuestionVersionID,
+			&i.Position,
+			&i.Points,
+			&i.PromptJson,
+			&i.ChoicesJson,
+			&i.AnswerKeyJson,
+			&i.MaxScore,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const getAssessmentRevision = `-- name: GetAssessmentRevision :one
+SELECT revision
+FROM assessments
+WHERE id = $1
+  AND organization_id = $2
+`
+
+type GetAssessmentRevisionParams struct {
+	ID             pgtype.UUID `json:"id"`
+	OrganizationID pgtype.UUID `json:"organization_id"`
+}
+
+func (q *Queries) GetAssessmentRevision(ctx context.Context, arg GetAssessmentRevisionParams) (int32, error) {
+	row := q.db.QueryRow(ctx, getAssessmentRevision, arg.ID, arg.OrganizationID)
+	var revision int32
+	err := row.Scan(&revision)
+	return revision, err
+}
+
+const getAssessmentSections = `-- name: GetAssessmentSections :many
+SELECT id, assessment_id, title, position, settings_json, status
+FROM assessment_sections
+WHERE organization_id = $1
+  AND assessment_id = $2
+  AND status = 'ACTIVE'
+ORDER BY position
+`
+
+type GetAssessmentSectionsParams struct {
+	OrganizationID pgtype.UUID `json:"organization_id"`
+	AssessmentID   pgtype.UUID `json:"assessment_id"`
+}
+
+type GetAssessmentSectionsRow struct {
+	ID           pgtype.UUID `json:"id"`
+	AssessmentID pgtype.UUID `json:"assessment_id"`
+	Title        string      `json:"title"`
+	Position     int32       `json:"position"`
+	SettingsJson []byte      `json:"settings_json"`
+	Status       string      `json:"status"`
+}
+
+func (q *Queries) GetAssessmentSections(ctx context.Context, arg GetAssessmentSectionsParams) ([]GetAssessmentSectionsRow, error) {
+	rows, err := q.db.Query(ctx, getAssessmentSections, arg.OrganizationID, arg.AssessmentID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []GetAssessmentSectionsRow
+	for rows.Next() {
+		var i GetAssessmentSectionsRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.AssessmentID,
+			&i.Title,
+			&i.Position,
+			&i.SettingsJson,
+			&i.Status,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const getAssessmentTargets = `-- name: GetAssessmentTargets :many
+SELECT id, assessment_id, class_section_id, status
+FROM assessment_targets
+WHERE organization_id = $1
+  AND assessment_id = $2
+  AND status = 'ACTIVE'
+`
+
+type GetAssessmentTargetsParams struct {
+	OrganizationID pgtype.UUID `json:"organization_id"`
+	AssessmentID   pgtype.UUID `json:"assessment_id"`
+}
+
+type GetAssessmentTargetsRow struct {
+	ID             pgtype.UUID `json:"id"`
+	AssessmentID   pgtype.UUID `json:"assessment_id"`
+	ClassSectionID pgtype.UUID `json:"class_section_id"`
+	Status         string      `json:"status"`
+}
+
+func (q *Queries) GetAssessmentTargets(ctx context.Context, arg GetAssessmentTargetsParams) ([]GetAssessmentTargetsRow, error) {
+	rows, err := q.db.Query(ctx, getAssessmentTargets, arg.OrganizationID, arg.AssessmentID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []GetAssessmentTargetsRow
+	for rows.Next() {
+		var i GetAssessmentTargetsRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.AssessmentID,
+			&i.ClassSectionID,
+			&i.Status,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const getSectionAssessmentID = `-- name: GetSectionAssessmentID :one
+SELECT assessment_id
+FROM assessment_sections
+WHERE id = $1
+  AND organization_id = $2
+`
+
+type GetSectionAssessmentIDParams struct {
+	SectionID      pgtype.UUID `json:"section_id"`
+	OrganizationID pgtype.UUID `json:"organization_id"`
+}
+
+func (q *Queries) GetSectionAssessmentID(ctx context.Context, arg GetSectionAssessmentIDParams) (pgtype.UUID, error) {
+	row := q.db.QueryRow(ctx, getSectionAssessmentID, arg.SectionID, arg.OrganizationID)
+	var assessment_id pgtype.UUID
+	err := row.Scan(&assessment_id)
+	return assessment_id, err
+}
+
+const insertAssessmentPublication = `-- name: InsertAssessmentPublication :one
+INSERT INTO assessment_publications (organization_id, assessment_id, version, snapshot_json, published_at)
+VALUES ($1, $2, $3, $4, now())
+RETURNING id, version, snapshot_json, published_at
+`
+
+type InsertAssessmentPublicationParams struct {
+	OrganizationID pgtype.UUID `json:"organization_id"`
+	AssessmentID   pgtype.UUID `json:"assessment_id"`
+	Version        int32       `json:"version"`
+	SnapshotJson   []byte      `json:"snapshot_json"`
+}
+
+type InsertAssessmentPublicationRow struct {
+	ID           pgtype.UUID        `json:"id"`
+	Version      int32              `json:"version"`
+	SnapshotJson []byte             `json:"snapshot_json"`
+	PublishedAt  pgtype.Timestamptz `json:"published_at"`
+}
+
+func (q *Queries) InsertAssessmentPublication(ctx context.Context, arg InsertAssessmentPublicationParams) (InsertAssessmentPublicationRow, error) {
+	row := q.db.QueryRow(ctx, insertAssessmentPublication,
+		arg.OrganizationID,
+		arg.AssessmentID,
+		arg.Version,
+		arg.SnapshotJson,
+	)
+	var i InsertAssessmentPublicationRow
+	err := row.Scan(
+		&i.ID,
+		&i.Version,
+		&i.SnapshotJson,
+		&i.PublishedAt,
+	)
+	return i, err
+}
+
+const isAssessmentManager = `-- name: IsAssessmentManager :one
+SELECT EXISTS (
+    SELECT 1
+    FROM organization_memberships m
+    JOIN membership_roles mr ON mr.membership_id = m.id
+    WHERE m.organization_id = $1
+      AND m.user_id = $2
+      AND m.status = 'ACTIVE'
+      AND mr.role = 'admin'
+) OR EXISTS (
+    SELECT 1
+    FROM organization_memberships m
+    JOIN class_teachers ct ON ct.membership_id = m.id AND ct.status = 'ACTIVE'
+    WHERE m.organization_id = $1
+      AND m.user_id = $2
+      AND m.status = 'ACTIVE'
+      AND (
+          ct.class_section_id = (SELECT a.class_section_id FROM assessments a WHERE a.id = $3 AND a.organization_id = $1)
+          OR ct.class_section_id IN (
+              SELECT class_section_id FROM assessment_targets
+              WHERE assessment_id = $3 AND organization_id = $1 AND status = 'ACTIVE'
+          )
+      )
+)
+`
+
+type IsAssessmentManagerParams struct {
+	OrganizationID pgtype.UUID `json:"organization_id"`
+	UserID         pgtype.UUID `json:"user_id"`
+	AssessmentID   pgtype.UUID `json:"assessment_id"`
+}
+
+func (q *Queries) IsAssessmentManager(ctx context.Context, arg IsAssessmentManagerParams) (pgtype.Bool, error) {
+	row := q.db.QueryRow(ctx, isAssessmentManager, arg.OrganizationID, arg.UserID, arg.AssessmentID)
+	var column_1 pgtype.Bool
+	err := row.Scan(&column_1)
+	return column_1, err
+}
+
+const isClassManager = `-- name: IsClassManager :one
+SELECT EXISTS (
+    SELECT 1
+    FROM organization_memberships m
+    JOIN membership_roles mr ON mr.membership_id = m.id
+    WHERE m.organization_id = $1
+      AND m.user_id = $2
+      AND m.status = 'ACTIVE'
+      AND mr.role = 'admin'
+) OR EXISTS (
+    SELECT 1
+    FROM organization_memberships m
+    JOIN class_teachers ct ON ct.membership_id = m.id AND ct.status = 'ACTIVE'
+    WHERE m.organization_id = $1
+      AND m.user_id = $2
+      AND m.status = 'ACTIVE'
+      AND ct.class_section_id = $3
+)
+`
+
+type IsClassManagerParams struct {
+	OrganizationID pgtype.UUID `json:"organization_id"`
+	UserID         pgtype.UUID `json:"user_id"`
+	ClassSectionID pgtype.UUID `json:"class_section_id"`
+}
+
+func (q *Queries) IsClassManager(ctx context.Context, arg IsClassManagerParams) (pgtype.Bool, error) {
+	row := q.db.QueryRow(ctx, isClassManager, arg.OrganizationID, arg.UserID, arg.ClassSectionID)
+	var column_1 pgtype.Bool
+	err := row.Scan(&column_1)
+	return column_1, err
+}
+
+const listAssessmentsByClass = `-- name: ListAssessmentsByClass :many
+SELECT a.id, a.title, a.status, a.duration_minutes, a.revision, a.opens_at, a.closes_at, a.created_at
+FROM assessments a
+JOIN assessment_targets t ON t.assessment_id = a.id AND t.status = 'ACTIVE'
+WHERE a.organization_id = $1
+  AND t.class_section_id = $2
+  AND a.status != 'ARCHIVED'
+ORDER BY a.created_at DESC
+`
+
+type ListAssessmentsByClassParams struct {
+	OrganizationID pgtype.UUID `json:"organization_id"`
+	ClassSectionID pgtype.UUID `json:"class_section_id"`
+}
+
+type ListAssessmentsByClassRow struct {
+	ID              pgtype.UUID        `json:"id"`
+	Title           string             `json:"title"`
+	Status          string             `json:"status"`
+	DurationMinutes int32              `json:"duration_minutes"`
+	Revision        int32              `json:"revision"`
+	OpensAt         pgtype.Timestamptz `json:"opens_at"`
+	ClosesAt        pgtype.Timestamptz `json:"closes_at"`
+	CreatedAt       pgtype.Timestamptz `json:"created_at"`
+}
+
+func (q *Queries) ListAssessmentsByClass(ctx context.Context, arg ListAssessmentsByClassParams) ([]ListAssessmentsByClassRow, error) {
+	rows, err := q.db.Query(ctx, listAssessmentsByClass, arg.OrganizationID, arg.ClassSectionID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListAssessmentsByClassRow
+	for rows.Next() {
+		var i ListAssessmentsByClassRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Title,
+			&i.Status,
+			&i.DurationMinutes,
+			&i.Revision,
+			&i.OpensAt,
+			&i.ClosesAt,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const listPublishedByOrganization = `-- name: ListPublishedByOrganization :many
@@ -90,4 +784,97 @@ func (q *Queries) ListPublishedByOrganization(ctx context.Context, arg ListPubli
 		return nil, err
 	}
 	return items, nil
+}
+
+const publishAssessment = `-- name: PublishAssessment :execrows
+UPDATE assessments
+SET status = $1,
+    revision = revision + 1,
+    updated_at = now()
+WHERE id = $2
+  AND organization_id = $3
+  AND status = 'DRAFT'
+`
+
+type PublishAssessmentParams struct {
+	NewStatus      string      `json:"new_status"`
+	ID             pgtype.UUID `json:"id"`
+	OrganizationID pgtype.UUID `json:"organization_id"`
+}
+
+func (q *Queries) PublishAssessment(ctx context.Context, arg PublishAssessmentParams) (int64, error) {
+	result, err := q.db.Exec(ctx, publishAssessment, arg.NewStatus, arg.ID, arg.OrganizationID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const questionVersionExists = `-- name: QuestionVersionExists :one
+SELECT EXISTS (
+    SELECT 1
+    FROM question_versions qv
+    JOIN questions q ON q.id = qv.question_id
+    JOIN question_banks qb ON qb.id = q.question_bank_id
+    WHERE qv.id = $1
+      AND qb.organization_id = $2
+      AND qv.status = 'PUBLISHED'
+)
+`
+
+type QuestionVersionExistsParams struct {
+	QuestionVersionID pgtype.UUID `json:"question_version_id"`
+	OrganizationID    pgtype.UUID `json:"organization_id"`
+}
+
+func (q *Queries) QuestionVersionExists(ctx context.Context, arg QuestionVersionExistsParams) (bool, error) {
+	row := q.db.QueryRow(ctx, questionVersionExists, arg.QuestionVersionID, arg.OrganizationID)
+	var exists bool
+	err := row.Scan(&exists)
+	return exists, err
+}
+
+const updateAssessmentSettings = `-- name: UpdateAssessmentSettings :execrows
+UPDATE assessments
+SET title = $1,
+    duration_minutes = $2,
+    max_attempts = $3,
+    instructions = $4,
+    opens_at = $5,
+    closes_at = $6,
+    settings_json = $7,
+    updated_at = now()
+WHERE id = $8
+  AND organization_id = $9
+  AND status = 'DRAFT'
+`
+
+type UpdateAssessmentSettingsParams struct {
+	Title           string             `json:"title"`
+	DurationMinutes int32              `json:"duration_minutes"`
+	MaxAttempts     int32              `json:"max_attempts"`
+	Instructions    pgtype.Text        `json:"instructions"`
+	OpensAt         pgtype.Timestamptz `json:"opens_at"`
+	ClosesAt        pgtype.Timestamptz `json:"closes_at"`
+	SettingsJson    []byte             `json:"settings_json"`
+	ID              pgtype.UUID        `json:"id"`
+	OrganizationID  pgtype.UUID        `json:"organization_id"`
+}
+
+func (q *Queries) UpdateAssessmentSettings(ctx context.Context, arg UpdateAssessmentSettingsParams) (int64, error) {
+	result, err := q.db.Exec(ctx, updateAssessmentSettings,
+		arg.Title,
+		arg.DurationMinutes,
+		arg.MaxAttempts,
+		arg.Instructions,
+		arg.OpensAt,
+		arg.ClosesAt,
+		arg.SettingsJson,
+		arg.ID,
+		arg.OrganizationID,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
 }

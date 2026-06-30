@@ -1,0 +1,131 @@
+package academics
+
+import "time"
+
+// Term is an academic term such as a semester or school year.
+type Term struct {
+	ID        string `json:"id"`
+	Name      string `json:"name"`
+	StartDate string `json:"start_date"`
+	EndDate   string `json:"end_date"`
+	Status    string `json:"status"`
+}
+
+// CreateTermRequest is the payload for POST /api/v1/academic-terms.
+type CreateTermRequest struct {
+	Name      string `json:"name"`
+	StartDate string `json:"start_date"`
+	EndDate   string `json:"end_date"`
+}
+
+// Subject is a subject taught in an organization.
+type Subject struct {
+	ID          string `json:"id"`
+	Code        string `json:"code"`
+	Name        string `json:"name"`
+	Description string `json:"description,omitempty"`
+	Status      string `json:"status"`
+}
+
+// CreateSubjectRequest is the payload for POST /api/v1/subjects.
+type CreateSubjectRequest struct {
+	Code        string `json:"code"`
+	Name        string `json:"name"`
+	Description string `json:"description,omitempty"`
+}
+
+// Course is a subject offered during a specific term.
+type Course struct {
+	ID             string `json:"id"`
+	SubjectID      string `json:"subject_id"`
+	AcademicTermID string `json:"academic_term_id"`
+	Code           string `json:"code"`
+	Name           string `json:"name"`
+	Status         string `json:"status"`
+}
+
+// CreateCourseRequest is the payload for POST /api/v1/courses.
+type CreateCourseRequest struct {
+	SubjectID      string `json:"subject_id"`
+	AcademicTermID string `json:"academic_term_id"`
+	Code           string `json:"code"`
+	Name           string `json:"name"`
+}
+
+// ClassSection is a concrete class section for a course.
+type ClassSection struct {
+	ID           string `json:"id"`
+	CourseID     string `json:"course_id"`
+	Name         string `json:"name"`
+	StudentCount int64  `json:"student_count"`
+	TeacherCount int64  `json:"teacher_count"`
+	Status       string `json:"status"`
+}
+
+// CreateClassRequest is the payload for POST /api/v1/classes.
+type CreateClassRequest struct {
+	CourseID string `json:"course_id"`
+	Name     string `json:"name"`
+}
+
+// ClassTeacher is a teacher assignment for a class.
+type ClassTeacher struct {
+	ID          string `json:"id"`
+	UserID      string `json:"user_id"`
+	DisplayName string `json:"display_name"`
+	Role        string `json:"role"`
+	Status      string `json:"status"`
+}
+
+// AddClassTeacherRequest is the payload for POST /api/v1/classes/{class_id}/teachers.
+type AddClassTeacherRequest struct {
+	UserID string `json:"user_id"`
+	Role   string `json:"role,omitempty"`
+}
+
+// Enrollment is a student enrollment in a class.
+type Enrollment struct {
+	ID          string `json:"id"`
+	UserID      string `json:"user_id"`
+	DisplayName string `json:"display_name"`
+	Status      string `json:"status"`
+}
+
+// EnrollStudentRequest is the payload for POST /api/v1/classes/{class_id}/enrollments.
+type EnrollStudentRequest struct {
+	UserID string `json:"user_id"`
+}
+
+// MembershipInfo identifies an organization membership and its roles.
+type MembershipInfo struct {
+	ID     string
+	UserID string
+	Roles  []string
+}
+
+// PageInfo is returned with paginated list responses.
+type PageInfo struct {
+	Limit      int     `json:"limit"`
+	Offset     int     `json:"offset"`
+	NextCursor *string `json:"next_cursor,omitempty"`
+	HasMore    bool    `json:"has_more"`
+	TotalCount *int64  `json:"total_count,omitempty"`
+}
+
+// DataEnvelope wraps successful API responses.
+type DataEnvelope struct {
+	Data any       `json:"data"`
+	Page *PageInfo `json:"page,omitempty"`
+}
+
+// ErrorEnvelope wraps API error responses.
+type ErrorEnvelope struct {
+	Error struct {
+		Code    string `json:"code"`
+		Message string `json:"message"`
+	} `json:"error"`
+}
+
+func formatDate(t time.Time) string {
+	return t.Format("2006-01-02")
+}

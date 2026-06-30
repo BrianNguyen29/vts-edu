@@ -343,6 +343,68 @@ Repo-wide implementation tracking. Append-only; do not delete historical entries
 | 2026-06-30 | Cursor pagination | `apps/api/internal/platform/pagination/cursor.go`, `apps/api/internal/features/admin/*`, `apps/api/internal/features/assessments/*`, `apps/web/src/shared/api/admin.ts`, `apps/web/src/shared/api/assessments.ts`, `apps/web/src/shared/api/attempts.ts`, `apps/web/src/pages/dashboard/admin-dashboard-page.tsx`, `apps/web/src/pages/dashboard/teacher-dashboard-page.tsx`, `apps/web/src/pages/dashboard/audit-logs-panel.tsx`, `docs/backend/backend-technical-spec/openapi/openapi-skeleton.yaml`, `apps/web/src/shared/api/openapi-schema.d.ts`, `scripts/e2e_smoke_api.mjs`, `docs/implementation-audit.md` | `pnpm api:types`, `pnpm api:sqlc`, `pnpm check`, `pnpm e2e:smoke` xanh; cursor và count hoạt động cho users/audit/assessments; UI load-more có mặt. |
 | 2026-06-30 | Password history + login lockout | `supabase/migrations/000013_*`, `apps/api/internal/features/auth/password_policy.go`, `apps/api/internal/features/auth/service.go`, `apps/api/internal/features/auth/handler.go`, `apps/api/internal/features/auth/repository.go`, `apps/api/internal/features/auth/queries.sql`, `apps/api/internal/features/admin/service.go`, `apps/api/internal/features/admin/handler.go`, `apps/api/internal/features/admin/repository.go`, `apps/api/internal/features/admin/queries.sql`, `apps/api/internal/features/auth/sqlc/*`, `apps/api/internal/features/admin/sqlc/*`, `apps/web/src/shared/api/openapi-schema.d.ts`, `scripts/e2e_smoke_api.mjs`, `docs/backend/backend-technical-spec/openapi/openapi-skeleton.yaml`, `docs/implementation-audit.md` | `pnpm api:sqlc`, `pnpm api:types`, `pnpm check`, `pnpm e2e:smoke` xanh; lịch sử 5 mật khẩu, khóa đăng nhập sau 5 lần sai trong 15 phút. |
 
+## 2026-06-30 — OpenAPI fetch client migration (academic-slice4-openapi-fetch)
+
+### Done
+
+- [x] Added `openapi-fetch` runtime dependency to `apps/web`.
+- [x] Created `apps/web/src/shared/api/openapi-client.ts` typed client wrapper:
+  - Loads base URL from runtime config lazily (singleton).
+  - Attaches bearer token from auth session store via middleware.
+  - Sends `credentials: 'include'` on every request.
+  - Adds `X-CSRF-Token` header on unsafe methods (POST/PUT/PATCH/DELETE) by reusing existing `csrf-middleware` helpers.
+- [x] Migrated two read-only academics helpers to `openapi-fetch`:
+  - `listClasses()` → `GET /classes`
+  - `listEnrollments(classId)` → `GET /classes/{class_id}/enrollments`
+- [x] Kept all other helpers (`assessments.ts`, `attempts.ts`, admin users, etc.) on the existing `apiClient`; exported helper names unchanged.
+- [x] Updated ADR-0010 to record Stage 3 partial adoption and keep Huma deferred.
+
+### Deferred / not in scope
+
+- Full migration of mutating helpers to `openapi-fetch`.
+- Removal or deprecation of `apiClient`.
+- Huma runtime migration.
+
+### Decisions / notes
+
+- First migration intentionally limited to GET endpoints to avoid CSRF complexity in the new middleware path; the wrapper is already CSRF-ready for future unsafe methods.
+- `openapi-fetch` types the request path, query, body, and response via the generated `paths` type from `openapi-schema.d.ts`.
+- Error handling converts `openapi-fetch` error bodies through the existing `createApiError` helper to preserve `ApiResponseError` behavior.
+- No backend changes were made; cookie/CSRF contract remains identical.
+
+## Change log
+
+| Date | Task | Files changed | Verification |
+|---|---|---|---|
+| 2026-06-30 | OpenAPI fetch client migration | `apps/web/package.json`, `apps/web/src/shared/api/openapi-client.ts`, `apps/web/src/shared/api/academics.ts`, `pnpm-lock.yaml`, `docs/backend/backend-technical-spec/adr/0010-huma-sqlc-staged-groundwork.md`, `docs/implementation-audit.md` | `pnpm api:types`, `pnpm web:typecheck`, `pnpm web:build`, `pnpm check`, `pnpm e2e:smoke` xanh; `listClasses`/`listEnrollments` sử dụng `openapi-fetch`. |
+
+## 2026-06-30 — Fix assessment detail item nesting (fix-assessment-detail-items)
+
+### Done
+
+- [x] Added `AssessmentSectionID` field to `ItemDetail` model.
+- [x] Updated `GetAssessmentItems` repository mapping to populate `AssessmentSectionID` from the sqlc row.
+- [x] Fixed `loadAssessmentDetail` in service to map items into sections using `items[i].AssessmentSectionID` instead of `items[i].ID`.
+- [x] Updated OpenAPI skeleton `Item.data` schema to include `assessment_section_id` and regenerated TypeScript types.
+- [x] Added `TestService_GetAssessment_NestsItemsUnderSections` to assert items appear under the correct sections in detail view.
+
+### Deferred / not in scope
+
+- No broader assessment builder refactor.
+- No frontend UI changes beyond generated type update.
+
+### Decisions / notes
+
+- The bug was purely a mapping key mismatch; `GetAssessmentItems` query already selected `assessment_section_id`, so no migration or sqlc query change was required.
+- Publish snapshot flow was already correct because it uses `GetAssessmentItemsWithContent` and maps by `AssessmentSectionID`.
+
+## Change log
+
+| Date | Task | Files changed | Verification |
+|---|---|---|---|
+| 2026-06-30 | Fix assessment detail item nesting | `apps/api/internal/features/assessments/models.go`, `apps/api/internal/features/assessments/repository.go`, `apps/api/internal/features/assessments/service.go`, `apps/api/internal/features/assessments/service_test.go`, `docs/backend/backend-technical-spec/openapi/openapi-skeleton.yaml`, `apps/web/src/shared/api/openapi-schema.d.ts`, `docs/implementation-audit.md` | `go test ./internal/features/assessments/...`, `pnpm check`, `pnpm e2e:smoke` xanh; test mới xác nhận items nằm đúng section. |
+| 2026-06-30 | Add assessment detail smoke assertion | `scripts/e2e_smoke_api.mjs`, `docs/implementation-audit.md` | `pnpm e2e:smoke` xanh; assertion kiểm tra section trong detail có ít nhất một item với đúng `question_version_id`. |
+
 ## 2026-06-30 — Password history and login lockout
 
 ### Done

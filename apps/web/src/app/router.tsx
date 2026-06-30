@@ -7,6 +7,7 @@ import { DiagnosticsPage } from '@/pages/diagnostics/diagnostics-page';
 import { DashboardPage } from '@/pages/dashboard/dashboard-page';
 import { TeacherDashboardPage } from '@/pages/dashboard/teacher-dashboard-page';
 import { AdminDashboardPage } from '@/pages/dashboard/admin-dashboard-page';
+import { AssessmentBuilderPage } from '@/pages/assessment-builder/assessment-builder-page';
 import { ChangePasswordPage } from '@/pages/change-password/change-password-page';
 import { ExamPage } from '@/pages/exam/exam-page';
 import { NotFoundPage } from '@/pages/not-found/not-found-page';
@@ -134,6 +135,10 @@ export const router = createBrowserRouter([
       {
         path: 'teacher',
         element: <TeacherDashboardPage />,
+      },
+      {
+        path: 'teacher/assessments/:assessmentId',
+        element: <AssessmentBuilderPage />,
       },
       {
         path: 'admin',
