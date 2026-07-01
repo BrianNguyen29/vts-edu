@@ -29,6 +29,10 @@ type Config struct {
 	SupabaseServiceRoleKey string
 	SupabaseStorageBucket  string
 
+	ResourceStorageType string
+	ResourceLocalPath   string
+	MaxUploadSize       int64
+
 	RateLimitEnabled bool
 	RateLimitRPS     float64
 	RateLimitBurst   int
@@ -59,6 +63,10 @@ func LoadConfig() (*Config, error) {
 		SupabaseURL:            getEnv("SUPABASE_URL", ""),
 		SupabaseServiceRoleKey: getEnv("SUPABASE_SERVICE_ROLE_KEY", ""),
 		SupabaseStorageBucket:  getEnv("SUPABASE_STORAGE_BUCKET", "vts-edu-files"),
+
+		ResourceStorageType: getEnv("RESOURCE_STORAGE_TYPE", "local"),
+		ResourceLocalPath:   getEnv("RESOURCE_LOCAL_PATH", "/tmp/vts-edu-resources"),
+		MaxUploadSize:       parseInt64(getEnv("MAX_UPLOAD_SIZE", "10485760")),
 
 		RateLimitEnabled: getEnv("RATE_LIMIT_ENABLED", "false") == "true",
 		RateLimitRPS:     parseFloat(getEnv("RATE_LIMIT_RPS", "10")),
@@ -99,6 +107,15 @@ func parseInt(s string) int {
 	fmt.Sscanf(s, "%d", &n)
 	if n <= 0 {
 		return 5
+	}
+	return n
+}
+
+func parseInt64(s string) int64 {
+	var n int64
+	fmt.Sscanf(s, "%d", &n)
+	if n <= 0 {
+		return 10 * 1024 * 1024 // 10 MiB
 	}
 	return n
 }

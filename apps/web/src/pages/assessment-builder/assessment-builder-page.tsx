@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { ApiResponseError } from '@/shared/api/attempts';
 import {
@@ -32,6 +32,7 @@ import {
   type ValidationResult,
 } from '@/shared/api/assessments';
 import { listClasses, type ClassSection } from '@/shared/api/academics';
+import { useDocumentTitle } from '@/shared/lib/use-document-title';
 
 function formatFriendlyError(err: unknown): string {
   if (err instanceof ApiResponseError) {
@@ -54,6 +55,8 @@ function formatFriendlyError(err: unknown): string {
 
 export function AssessmentBuilderPage() {
   const { assessmentId } = useParams<{ assessmentId: string }>();
+
+  useDocumentTitle('Trình soạn đề thi');
 
   const [assessment, setAssessment] = useState<AssessmentDetail | null>(null);
   const [classes, setClasses] = useState<ClassSection[]>([]);
@@ -94,6 +97,9 @@ export function AssessmentBuilderPage() {
   const [pickerQuestionId, setPickerQuestionId] = useState('');
   const [pickerPoints, setPickerPoints] = useState('1.00');
   const [questionSearch, setQuestionSearch] = useState('');
+
+  const previewCloseButtonRef = useRef<HTMLButtonElement | null>(null);
+  const lastFocusedBeforePreview = useRef<HTMLElement | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -490,6 +496,9 @@ export function AssessmentBuilderPage() {
 
   async function handleOpenPreview() {
     if (!assessmentId) return;
+    if (typeof document !== 'undefined' && typeof document.activeElement === 'object') {
+      lastFocusedBeforePreview.current = document.activeElement as HTMLElement | null;
+    }
     setPreviewOpen(true);
     setPreviewLoading(true);
     setPreview(null);
@@ -506,7 +515,19 @@ export function AssessmentBuilderPage() {
   function handleClosePreview() {
     setPreviewOpen(false);
     setPreview(null);
+    // Return focus to the element that opened the dialog.
+    const previous = lastFocusedBeforePreview.current;
+    if (previous && typeof previous.focus === 'function') {
+      previous.focus();
+    }
   }
+
+  // When the preview dialog opens, move focus to its close button.
+  useEffect(() => {
+    if (previewOpen) {
+      previewCloseButtonRef.current?.focus();
+    }
+  }, [previewOpen]);
 
   function getPreviewPromptText(prompt: unknown): string {
     if (typeof prompt === 'string' && prompt.trim().length > 0) {
@@ -1079,11 +1100,14 @@ export function AssessmentBuilderPage() {
           <h2>Lịch sử xuất bản</h2>
           <div className="publication-table-wrapper">
             <table className="publication-table" data-testid="publication-table">
+              <caption className="visually-hidden">
+                Lịch sử xuất bản của đề thi
+              </caption>
               <thead>
                 <tr>
-                  <th>Phiên bản</th>
-                  <th>Trạng thái</th>
-                  <th>Thời gian</th>
+                  <th scope="col">Phiên bản</th>
+                  <th scope="col">Trạng thái</th>
+                  <th scope="col">Thời gian</th>
                 </tr>
               </thead>
               <tbody>
@@ -1091,7 +1115,11 @@ export function AssessmentBuilderPage() {
                   <tr key={pub.id}>
                     <td>{pub.version}</td>
                     <td>{pub.status}</td>
-                    <td>{new Date(pub.published_at).toLocaleString('vi-VN')}</td>
+                    <td>
+                      <time dateTime={pub.published_at}>
+                        {new Date(pub.published_at).toLocaleString('vi-VN')}
+                      </time>
+                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -1101,11 +1129,16 @@ export function AssessmentBuilderPage() {
       )}
 
       {previewOpen && (
-        <div className="preview-overlay" role="dialog" aria-modal="true" aria-label="Xem trước đề thi">
+        <div className="preview-overlay" role="dialog" aria-modal="true" aria-labelledby="preview-dialog-title">
           <div className="preview-panel">
             <div className="preview-header">
-              <h2>Xem trước đề thi</h2>
-              <button type="button" onClick={handleClosePreview}>
+              <h2 id="preview-dialog-title">Xem trước đề thi</h2>
+              <button
+                type="button"
+                onClick={handleClosePreview}
+                ref={previewCloseButtonRef}
+                aria-label="Đóng bản xem trước"
+              >
                 Đóng
               </button>
             </div>

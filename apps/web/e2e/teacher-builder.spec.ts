@@ -21,11 +21,15 @@ test.describe('teacher assessment builder', () => {
 
     // Add the first available question to the section.
     await page.getByTestId('add-question-button').first().click();
-    await page.getByTestId('picker-question-select').selectOption({ index: 1 });
+    const pickerSelect = page.getByTestId('picker-question-select');
+    await expect.poll(async () => await pickerSelect.locator('option').count()).toBeGreaterThan(1);
+    await pickerSelect.selectOption({ index: 1 });
     await page.getByTestId('picker-add-button').click();
 
     // Assign the same class as target.
-    await page.getByTestId('target-class-select').selectOption({ index: 1 });
+    const targetSelect = page.getByTestId('target-class-select');
+    await expect.poll(async () => await targetSelect.locator('option').count()).toBeGreaterThan(1);
+    await targetSelect.selectOption({ index: 1 });
     await page.getByTestId('add-target-button').click();
 
     // Validate.

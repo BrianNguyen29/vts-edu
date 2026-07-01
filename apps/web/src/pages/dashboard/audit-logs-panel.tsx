@@ -188,10 +188,14 @@ export function AuditLogsPanel() {
         </div>
       </div>
 
-      {loading && <p className="dashboard-status">Đang tải nhật ký…</p>}
+      {loading && (
+        <p className="dashboard-status" role="status" aria-live="polite">
+          Đang tải nhật ký…
+        </p>
+      )}
 
       {error && (
-        <div className="error-banner" role="alert">
+        <div className="error-banner" role="alert" aria-live="assertive">
           {error}
         </div>
       )}
@@ -204,6 +208,9 @@ export function AuditLogsPanel() {
         <>
           <div className="audit-logs-table-wrapper">
             <table className="audit-logs-table">
+              <caption className="visually-hidden">
+                Nhật ký hoạt động của tổ chức
+              </caption>
               <thead>
                 <tr>
                   <th>Thời gian</th>
@@ -236,6 +243,7 @@ export function AuditLogsPanel() {
                 type="button"
                 onClick={loadMoreAuditLogs}
                 disabled={isLoadingMoreAudit}
+                aria-busy={isLoadingMoreAudit}
               >
                 {isLoadingMoreAudit ? 'Đang tải…' : 'Tải thêm'}
               </button>

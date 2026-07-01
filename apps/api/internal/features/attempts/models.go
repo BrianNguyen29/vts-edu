@@ -155,9 +155,27 @@ type AttemptSubmitted struct {
 	GradingStatus string    `json:"grading_status"`
 }
 
+// ListOptions filters and paginates list queries.
+type ListOptions struct {
+	Limit  int
+	Offset int
+	Cursor string
+	Count  bool
+}
+
+// PageInfo is returned with paginated list responses.
+type PageInfo struct {
+	Limit      int     `json:"limit"`
+	Offset     int     `json:"offset"`
+	NextCursor *string `json:"next_cursor,omitempty"`
+	HasMore    bool    `json:"has_more"`
+	TotalCount *int64  `json:"total_count,omitempty"`
+}
+
 // DataEnvelope wraps successful API responses.
 type DataEnvelope struct {
-	Data any `json:"data"`
+	Data any       `json:"data"`
+	Page *PageInfo `json:"page,omitempty"`
 }
 
 // ErrorEnvelope wraps API error responses.

@@ -1,11 +1,14 @@
 import { useState, type FormEvent } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '@/app/providers/auth-provider';
+import { useDocumentTitle } from '@/shared/lib/use-document-title';
 
 export function LoginPage() {
   const auth = useAuth();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
+
+  useDocumentTitle('Đăng nhập');
 
   const [organizationCode, setOrganizationCode] = useState('');
   const [username, setUsername] = useState('');
@@ -38,15 +41,29 @@ export function LoginPage() {
   };
 
   return (
-    <form onSubmit={handleSubmit} className="login-form" noValidate data-testid="login-form">
+    <form
+      onSubmit={handleSubmit}
+      className="login-form"
+      noValidate
+      aria-describedby={error ? 'login-error' : undefined}
+      data-testid="login-form"
+    >
       {error && (
-        <div className="error-banner" role="alert" data-testid="login-error">
+        <div
+          className="error-banner"
+          id="login-error"
+          role="alert"
+          aria-live="assertive"
+          data-testid="login-error"
+        >
           {error}
         </div>
       )}
 
       <div className="field">
-        <label htmlFor="organizationCode">Mã tổ chức</label>
+        <label htmlFor="organizationCode">
+          Mã tổ chức
+        </label>
         <input
           id="organizationCode"
           name="organizationCode"
@@ -87,11 +104,17 @@ export function LoginPage() {
         />
       </div>
 
-      <button type="submit" disabled={isSubmitting} className="primary" data-testid="login-submit">
+      <button
+        type="submit"
+        disabled={isSubmitting}
+        className="primary"
+        aria-busy={isSubmitting}
+        data-testid="login-submit"
+      >
         {isSubmitting ? 'Đang đăng nhập…' : 'Đăng nhập'}
       </button>
 
-      <p className="login-hint">
+      <p className="login-hint" id="login-hint">
         Bản MVP hiện yêu cầu backend đang chạy. Nếu backend chưa sẵn sàng, bạn
         sẽ thấy lỗi kết nối.
       </p>

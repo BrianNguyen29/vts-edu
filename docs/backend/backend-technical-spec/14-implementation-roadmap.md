@@ -46,45 +46,48 @@ Exit criteria:
 - Enrollment/bulk import (single + bulk).
 - Authorization class scope (teacher sees assigned classes; student access gated via enrollment).
 
-### Phase 3 — Resources/files (2–3 tuần)
+### Phase 3 — Resources/files (2–3 tuần) — MVP implemented (local storage)
 
-- Upload intent/complete.
-- File states.
-- Resource CRUD/publish.
-- Signed download.
-- Basic processing job.
+- Upload (multipart) and storage seam (local provider; S3/Supabase adapter deferred). ✅
+- File states (`ACTIVE` / `ARCHIVED`); latest upload replaces the previous active file. ✅
+- Resource CRUD/publish (DRAFT → PUBLISHED → ARCHIVED) with tenant + role checks. ✅
+- Bearer-auth download; `Content-Disposition` filename is sanitized; size cap (`MAX_UPLOAD_SIZE`, default 10 MiB). ✅
+- Storage keys are server-generated random hex; user-controlled paths never reach the filesystem. ✅
+- Basic processing job — deferred.
 
 ### Phase 4 — Question bank (3–5 tuần) — Minimal version implemented
 
 - Bank/question/version schema ✅
 - Snapshot prompt/choices/answer key into `attempt_items` ✅
-- 6 MVP types.
-- Validation/publish.
-- Search/filter.
+- 6 MVP types — deferred; currently MCQ only.
+- Validation/publish — deferred until more question types are added.
+- Search/filter ✅ (basic picker for builder).
 
-### Phase 5 — Assessment builder (3–4 tuần)
+### Phase 5 — Assessment builder (3–4 tuần) — Core implemented
 
-- Assessment/sections/items.
-- Settings/targets/accommodation.
-- Validate/publish snapshots.
+- Assessment/sections/items ✅
+- Settings/targets/accommodation ✅ (settings + schedule + targets)
+- Validate/publish snapshots ✅
+- Duplicate section/item ✅
+- Preview ✅
 - Teacher assessment list ✅
 
 ### Phase 6 — Attempt runtime (4–6 tuần) — Core implemented
 
-- Start/resume.
-- Item selection/shuffle.
+- Start/resume ✅
 - Save answer/revision ✅
-- Heartbeat/deadline.
 - Submit/expire ✅
 - Auto-grade/manual review (MCQ auto-grade ✅)
-- Load/concurrency tests.
+- Heartbeat/deadline — partial (request-time expiry only; no client heartbeat).
+- Load/concurrency tests — deferred.
 
-### Phase 7 — Assignment & gradebook (4–5 tuần)
+### Phase 7 — Assignment & gradebook (4–5 tuần) — Core implemented
 
-- Assignment/submission versions/files.
-- Feedback/grade.
-- Grade items/entries/history.
-- Publish/export.
+- Assignment/submission versions/files — deferred.
+- Feedback/grade — deferred (MCQ auto-graded; manual review not built).
+- Grade items/entries/history ✅
+- Publish/export ✅
+- Teacher gradebook grid + CSV export ✅
 
 ### Phase 8 — Hardening & pilot (3–5 tuần)
 
@@ -110,6 +113,13 @@ Exit criteria:
 - **Large CSV import**: Remains synchronous with a 100-row cap until a durable queue is justified.
 - **Async grading**: MCQ grading stays synchronous. Non-MCQ / manual-review async grading is deferred until those question types are implemented.
 - **Triggers for River adoption**: need durability/retry (e.g., large CSV, async grading), multi-instance scale-out requiring duplicate-job prevention, cron-like scheduling, or an approved infrastructure sprint covering migration, worker process, monitoring, and dead-letter handling.
+
+## 2.7 Current next backlog (not started)
+
+- Resources/files signed download + processing job (multipart upload + local storage seam are in place).
+- Non-MCQ question types and manual review workflow.
+- Accessibility audit.
+- Generated OpenAPI client (Huma deferred; hand-maintained skeleton still sufficient).
 
 ## 3. Effort estimate
 

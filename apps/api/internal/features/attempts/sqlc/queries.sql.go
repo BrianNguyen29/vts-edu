@@ -484,17 +484,22 @@ func (q *Queries) ListAssignedAssessments(ctx context.Context, arg ListAssignedA
 }
 
 const listStudentAttempts = `-- name: ListStudentAttempts :many
-SELECT a.id, a.assessment_id, a.publication_id, a.status, a.started_at, a.expires_at, a.submitted_at, CASE WHEN a.score IS NULL THEN ''::text ELSE a.score::text END AS score, CASE WHEN a.max_score IS NULL THEN ''::text ELSE a.max_score::text END AS max_score, a.grading_status, asmt.title AS assessment_title
+SELECT a.id, a.assessment_id, a.publication_id, a.status, a.started_at, a.expires_at, a.submitted_at, a.created_at, CASE WHEN a.score IS NULL THEN ''::text ELSE a.score::text END AS score, CASE WHEN a.max_score IS NULL THEN ''::text ELSE a.max_score::text END AS max_score, a.grading_status, asmt.title AS assessment_title
 FROM attempts a
 JOIN assessments asmt ON asmt.id = a.assessment_id AND asmt.organization_id = a.organization_id
 WHERE a.organization_id = $1
   AND a.student_user_id = $2
-ORDER BY a.created_at DESC, a.started_at DESC
+  AND ($3::text = '' OR a.created_at < $3::timestamptz OR (a.created_at = $3::timestamptz AND a.id::text < $4))
+ORDER BY a.created_at DESC, a.id DESC
+LIMIT $5::int
 `
 
 type ListStudentAttemptsParams struct {
 	OrganizationID pgtype.UUID `json:"organization_id"`
 	StudentUserID  pgtype.UUID `json:"student_user_id"`
+	CursorKey      string      `json:"cursor_key"`
+	CursorID       pgtype.UUID `json:"cursor_id"`
+	PageLimit      int32       `json:"page_limit"`
 }
 
 type ListStudentAttemptsRow struct {
@@ -505,6 +510,7 @@ type ListStudentAttemptsRow struct {
 	StartedAt       pgtype.Timestamptz `json:"started_at"`
 	ExpiresAt       pgtype.Timestamptz `json:"expires_at"`
 	SubmittedAt     pgtype.Timestamptz `json:"submitted_at"`
+	CreatedAt       pgtype.Timestamptz `json:"created_at"`
 	Score           string             `json:"score"`
 	MaxScore        string             `json:"max_score"`
 	GradingStatus   pgtype.Text        `json:"grading_status"`
@@ -512,7 +518,13 @@ type ListStudentAttemptsRow struct {
 }
 
 func (q *Queries) ListStudentAttempts(ctx context.Context, arg ListStudentAttemptsParams) ([]ListStudentAttemptsRow, error) {
-	rows, err := q.db.Query(ctx, listStudentAttempts, arg.OrganizationID, arg.StudentUserID)
+	rows, err := q.db.Query(ctx, listStudentAttempts,
+		arg.OrganizationID,
+		arg.StudentUserID,
+		arg.CursorKey,
+		arg.CursorID,
+		arg.PageLimit,
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -528,6 +540,7 @@ func (q *Queries) ListStudentAttempts(ctx context.Context, arg ListStudentAttemp
 			&i.StartedAt,
 			&i.ExpiresAt,
 			&i.SubmittedAt,
+			&i.CreatedAt,
 			&i.Score,
 			&i.MaxScore,
 			&i.GradingStatus,

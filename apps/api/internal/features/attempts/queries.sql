@@ -132,12 +132,14 @@ WHERE a.organization_id = $2
 ORDER BY a.created_at DESC;
 
 -- name: ListStudentAttempts :many
-SELECT a.id, a.assessment_id, a.publication_id, a.status, a.started_at, a.expires_at, a.submitted_at, CASE WHEN a.score IS NULL THEN ''::text ELSE a.score::text END AS score, CASE WHEN a.max_score IS NULL THEN ''::text ELSE a.max_score::text END AS max_score, a.grading_status, asmt.title AS assessment_title
+SELECT a.id, a.assessment_id, a.publication_id, a.status, a.started_at, a.expires_at, a.submitted_at, a.created_at, CASE WHEN a.score IS NULL THEN ''::text ELSE a.score::text END AS score, CASE WHEN a.max_score IS NULL THEN ''::text ELSE a.max_score::text END AS max_score, a.grading_status, asmt.title AS assessment_title
 FROM attempts a
 JOIN assessments asmt ON asmt.id = a.assessment_id AND asmt.organization_id = a.organization_id
 WHERE a.organization_id = $1
   AND a.student_user_id = $2
-ORDER BY a.created_at DESC, a.started_at DESC;
+  AND (sqlc.arg(cursor_key)::text = '' OR a.created_at < sqlc.arg(cursor_key)::timestamptz OR (a.created_at = sqlc.arg(cursor_key)::timestamptz AND a.id::text < sqlc.arg(cursor_id)))
+ORDER BY a.created_at DESC, a.id DESC
+LIMIT sqlc.arg(page_limit)::int;
 
 -- name: GetLatestPublication :one
 SELECT id, snapshot_json, published_at

@@ -1,32 +1,8 @@
-import { useEffect, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
-import {
-  ApiResponseError,
-  getAttemptResult,
-  type AttemptResult,
-  type AttemptResultItem,
-} from '@/shared/api/attempts';
-
-function formatFriendlyError(err: unknown): string {
-  if (err instanceof ApiResponseError) {
-    switch (err.status) {
-      case 401:
-        return 'Phiên làm việc đã hết hạn. Vui lòng đăng nhập lại.';
-      case 403:
-        return 'Không có quyền truy cập kết quả này.';
-      case 404:
-        return 'Không tìm thấy kết quả bài làm.';
-      case 409:
-        return 'Bài làm chưa được nộp hoặc chưa chấm điểm.';
-      default:
-        return err.body.error.message || 'Không thể tải kết quả.';
-    }
-  }
-  if (err instanceof Error && err.message === 'network') {
-    return 'Không thể kết nối đến máy chủ. Vui lòng thử lại.';
-  }
-  return 'Đã xảy ra lỗi không mong muốn.';
-}
+import { useAttemptResult } from '@/shared/api/attempts-queries';
+import { type AttemptResultItem } from '@/shared/api/attempts';
+import { ErrorState } from '@/shared/components/error-state';
+import { useDocumentTitle } from '@/shared/lib/use-document-title';
 
 function getPromptText(prompt: unknown): string {
   if (typeof prompt === 'string' && prompt.trim().length > 0) {
@@ -99,39 +75,23 @@ function getCorrectOption(payload: unknown): string | undefined {
 
 export function AttemptReviewPage() {
   const { attemptId } = useParams<{ attemptId: string }>();
+  const {
+    data: result,
+    isPending: loading,
+    error,
+  } = useAttemptResult(attemptId);
 
-  const [result, setResult] = useState<AttemptResult | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  useDocumentTitle('Kết quả bài làm');
 
-  useEffect(() => {
-    if (!attemptId) {
-      setError('Thiếu mã bài làm.');
-      setLoading(false);
-      return;
-    }
-
-    let cancelled = false;
-
-    async function load() {
-      try {
-        const data = await getAttemptResult(attemptId!);
-        if (cancelled) return;
-        setResult(data);
-      } catch (err) {
-        if (cancelled) return;
-        setError(formatFriendlyError(err));
-      } finally {
-        if (!cancelled) setLoading(false);
-      }
-    }
-
-    void load();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [attemptId]);
+  if (!attemptId) {
+    return (
+      <div className="dashboard-page">
+        <div className="error-banner" role="alert">
+          Thiếu mã bài làm.
+        </div>
+      </div>
+    );
+  }
 
   if (loading) {
     return (
@@ -144,9 +104,14 @@ export function AttemptReviewPage() {
   if (error && !result) {
     return (
       <div className="dashboard-page">
-        <div className="error-banner" role="alert">
-          {error}
-        </div>
+        <ErrorState
+          error={error}
+          overrides={{
+            403: 'Không có quyền truy cập kết quả này.',
+            404: 'Không tìm thấy kết quả bài làm.',
+            409: 'Bài làm chưa được nộp hoặc chưa chấm điểm.',
+          }}
+        />
         <p>
           <Link to="/app/student">← Quay lại trang làm việc</Link>
         </p>

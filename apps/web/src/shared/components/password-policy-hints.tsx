@@ -2,13 +2,19 @@ import { validatePassword } from '@/shared/lib/password-policy';
 
 interface PasswordPolicyHintsProps {
   password: string;
+  /** Optional id so the list can be associated with its input via aria-describedby. */
+  id?: string;
 }
 
-export function PasswordPolicyHints({ password }: PasswordPolicyHintsProps) {
+export function PasswordPolicyHints({ password, id }: PasswordPolicyHintsProps) {
   const result = validatePassword(password);
 
   return (
-    <ul className="password-policy-hints" aria-label="Yêu cầu mật khẩu">
+    <ul
+      id={id}
+      className="password-policy-hints"
+      aria-label="Yêu cầu mật khẩu"
+    >
       <li className={result.minLength ? 'valid' : ''}>
         Ít nhất 8 ký tự
       </li>

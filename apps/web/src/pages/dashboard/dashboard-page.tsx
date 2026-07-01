@@ -1,94 +1,79 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '@/app/providers/auth-provider';
 import { DEMO_ATTEMPT_ID } from '@/shared/config/demo-attempt';
 import {
+  useAssignedAssessments,
+  useAttemptHistory,
+  useStartAttempt,
+} from '@/shared/api/attempts-queries';
+import {
   ApiResponseError,
-  listAssignedAssessments,
-  listAttemptHistory,
-  startAttempt,
   type AssignedAssessment,
   type StudentAttempt,
 } from '@/shared/api/attempts';
-
-type DashboardStatus =
-  | { type: 'loading' }
-  | { type: 'error'; message: string }
-  | { type: 'ready' };
-
-function formatFriendlyError(err: unknown): string {
-  if (err instanceof ApiResponseError) {
-    switch (err.status) {
-      case 401:
-        return 'Phiên làm việc đã hết hạn. Vui lòng đăng nhập lại.';
-      case 403:
-        return 'Không có quyền truy cập.';
-      case 404:
-        return 'Không tìm thấy bài kiểm tra.';
-      case 409:
-        return err.body.error.code === 'attempt_limit_reached'
-          ? 'Bạn đã hết số lần làm bài này.'
-          : 'Bài kiểm tra chưa mở hoặc đã hết thời gian.';
-      default:
-        return err.body.error.message || 'Không thể tải danh sách bài kiểm tra.';
-    }
-  }
-  if (err instanceof Error && err.message === 'network') {
-    return 'Không thể kết nối đến máy chủ. Vui lòng thử lại.';
-  }
-  return 'Đã xảy ra lỗi không mong muốn.';
-}
+import { ErrorState } from '@/shared/components/error-state';
+import { useDocumentTitle } from '@/shared/lib/use-document-title';
 
 function formatDateTime(iso: string | undefined | null): string {
   if (!iso) return '—';
   return new Date(iso).toLocaleString('vi-VN');
 }
 
+function statusLabel(status: StudentAttempt['status']): string {
+  switch (status) {
+    case 'SUBMITTED':
+      return 'Đã nộp';
+    case 'EXPIRED':
+      return 'Hết hạn';
+    case 'IN_PROGRESS':
+      return 'Đang làm';
+    default:
+      return status;
+  }
+}
+
 export function DashboardPage() {
   const auth = useAuth();
   const navigate = useNavigate();
 
-  const [status, setStatus] = useState<DashboardStatus>({ type: 'loading' });
-  const [assessments, setAssessments] = useState<AssignedAssessment[]>([]);
-  const [history, setHistory] = useState<StudentAttempt[]>([]);
-  const [startingId, setStartingId] = useState<string | null>(null);
+  useDocumentTitle('Trang làm việc');
 
-  useEffect(() => {
-    let cancelled = false;
+  const {
+    data: assessments = [],
+    isPending: assessmentsLoading,
+    error: assessmentsError,
+  } = useAssignedAssessments();
+  const {
+    data: historyData,
+    isPending: historyLoading,
+    error: historyError,
+    fetchNextPage,
+    hasNextPage,
+    isFetchingNextPage,
+  } = useAttemptHistory();
+  const startAttempt = useStartAttempt();
 
-    async function load() {
-      try {
-        const [assessmentData, historyData] = await Promise.all([
-          listAssignedAssessments(),
-          listAttemptHistory(),
-        ]);
-        if (cancelled) return;
-        setAssessments(assessmentData);
-        setHistory(historyData);
-        setStatus({ type: 'ready' });
-      } catch (err) {
-        if (cancelled) return;
-        setStatus({ type: 'error', message: formatFriendlyError(err) });
-      }
-    }
+  const history = useMemo(
+    () => historyData?.pages.flatMap((page) => page.data) ?? [],
+    [historyData]
+  );
 
-    void load();
+  const isLoading = assessmentsLoading || historyLoading;
+  const error = assessmentsError || historyError;
 
-    return () => {
-      cancelled = true;
-    };
-  }, []);
+  const startErrorMessage =
+    startAttempt.error instanceof ApiResponseError &&
+    startAttempt.error.code === 'attempt_limit_reached'
+      ? 'Bạn đã hết số lần làm bài này.'
+      : undefined;
 
   async function handleStart(assessment: AssignedAssessment) {
-    if (startingId) return;
-    setStartingId(assessment.id);
-
     try {
-      const snapshot = await startAttempt(assessment.id);
+      const snapshot = await startAttempt.mutateAsync(assessment.id);
       navigate(`/exam/attempts/${snapshot.id}`);
-    } catch (err) {
-      setStatus({ type: 'error', message: formatFriendlyError(err) });
-      setStartingId(null);
+    } catch {
+      // Error is surfaced via startAttempt.error below.
     }
   }
 
@@ -137,20 +122,27 @@ export function DashboardPage() {
         Xin chào, <strong>{auth.actor?.displayName ?? 'bạn'}</strong>.
       </p>
 
-      {status.type === 'error' && (
-        <div className="error-banner" role="alert">
-          {status.message}
-        </div>
+      {(error || startAttempt.error) && (
+        <ErrorState
+          error={error || startAttempt.error}
+          message={startErrorMessage}
+          overrides={{
+            404: 'Không tìm thấy bài kiểm tra.',
+            409: 'Bài kiểm tra chưa mở hoặc đã hết thời gian.',
+          }}
+        />
       )}
 
       <section className="dashboard-section" aria-labelledby="assigned-heading" data-testid="assigned-assessments-section">
         <h2 id="assigned-heading">Bài kiểm tra được giao</h2>
 
-        {status.type === 'loading' && (
-          <p className="dashboard-status">Đang tải dữ liệu…</p>
+        {isLoading && (
+          <p className="dashboard-status" role="status" aria-live="polite">
+            Đang tải dữ liệu…
+          </p>
         )}
 
-        {status.type === 'ready' && assessments.length === 0 && (
+        {!isLoading && assessments.length === 0 && (
           <div className="dashboard-empty">
             <p>Hiện chưa có bài kiểm tra nào được giao cho bạn.</p>
             <p className="dashboard-empty-hint">
@@ -159,26 +151,26 @@ export function DashboardPage() {
           </div>
         )}
 
-        {status.type === 'ready' && assessments.length > 0 && (
+        {!isLoading && assessments.length > 0 && (
           <>
             <AssessmentGroup
               title="Đang mở"
               assessments={open}
-              startingId={startingId}
+              startingId={startAttempt.isPending ? startAttempt.variables : null}
               onStart={handleStart}
               emptyText="Không có bài kiểm tra nào đang mở."
             />
             <AssessmentGroup
               title="Sắp mở"
               assessments={upcoming}
-              startingId={startingId}
+              startingId={startAttempt.isPending ? startAttempt.variables : null}
               onStart={handleStart}
               emptyText="Không có bài kiểm tra nào sắp mở."
             />
             <AssessmentGroup
               title="Đã đóng"
               assessments={closed}
-              startingId={startingId}
+              startingId={startAttempt.isPending ? startAttempt.variables : null}
               onStart={handleStart}
               emptyText="Không có bài kiểm tra nào đã đóng."
             />
@@ -189,14 +181,16 @@ export function DashboardPage() {
       <section className="dashboard-section" aria-labelledby="history-heading">
         <h2 id="history-heading">Lịch sử làm bài</h2>
 
-        {status.type === 'loading' ? (
-          <p className="dashboard-status">Đang tải lịch sử…</p>
+        {isLoading ? (
+          <p className="dashboard-status" role="status" aria-live="polite">
+            Đang tải lịch sử…
+          </p>
         ) : history.length === 0 ? (
           <div className="dashboard-empty">
             <p>Bạn chưa có lần làm bài nào.</p>
           </div>
         ) : (
-          <ul className="attempt-history-list">
+          <ul className="attempt-history-list" aria-label="Danh sách lần làm bài">
             {history.map((attempt) => (
               <li key={attempt.id} className="attempt-history-item">
                 <div className="attempt-history-info">
@@ -205,19 +199,13 @@ export function DashboardPage() {
                     <span
                       className={`attempt-status status-${attempt.status.toLowerCase()}`}
                     >
-                      {attempt.status === 'SUBMITTED'
-                        ? 'Đã nộp'
-                        : attempt.status === 'EXPIRED'
-                          ? 'Hết hạn'
-                          : attempt.status === 'IN_PROGRESS'
-                            ? 'Đang làm'
-                            : attempt.status}
+                      {statusLabel(attempt.status)}
                     </span>
-                    <span>·</span>
+                    <span aria-hidden="true">·</span>
                     <span>Bắt đầu: {formatDateTime(attempt.started_at)}</span>
                     {attempt.submitted_at && (
                       <>
-                        <span>·</span>
+                        <span aria-hidden="true">·</span>
                         <span>Nộp: {formatDateTime(attempt.submitted_at)}</span>
                       </>
                     )}
@@ -226,7 +214,7 @@ export function DashboardPage() {
                       attempt.max_score !== undefined &&
                       attempt.max_score !== null && (
                         <>
-                          <span>·</span>
+                          <span aria-hidden="true">·</span>
                           <span>
                             Điểm: {attempt.score} / {attempt.max_score}
                           </span>
@@ -249,6 +237,7 @@ export function DashboardPage() {
                     <Link
                       to={`/attempts/${attempt.id}/result`}
                       className="button-link"
+                      aria-label={`Xem kết quả bài ${attempt.assessment_title}`}
                     >
                       Xem kết quả
                     </Link>
@@ -258,17 +247,31 @@ export function DashboardPage() {
             ))}
           </ul>
         )}
+
+        {hasNextPage && (
+          <div className="load-more">
+            <button
+              type="button"
+              onClick={() => fetchNextPage()}
+              disabled={isFetchingNextPage}
+              aria-busy={isFetchingNextPage}
+              data-testid="load-more-history"
+            >
+              {isFetchingNextPage ? 'Đang tải…' : 'Tải thêm lịch sử'}
+            </button>
+          </div>
+        )}
       </section>
 
       <section className="dashboard-section" aria-labelledby="tools-heading">
         <h2 id="tools-heading">Tiện ích</h2>
         <div className="dashboard-cards">
           <article className="dashboard-card">
-            <h2>Cài đặt</h2>
+            <h3>Cài đặt</h3>
             <p>Quản lý thông tin cá nhân và bảo mật.</p>
           </article>
           <article className="dashboard-card">
-            <h2>Thi thử demo</h2>
+            <h3>Thi thử demo</h3>
             <p>Làm bài thử nghiệm để làm quen giao diện.</p>
             <Link to={`/exam/attempts/${DEMO_ATTEMPT_ID}`} className="card-link">
               Thi thử demo
@@ -289,7 +292,7 @@ function AssessmentGroup({
 }: {
   title: string;
   assessments: AssignedAssessment[];
-  startingId: string | null;
+  startingId: string | null | undefined;
   onStart: (assessment: AssignedAssessment) => void;
   emptyText: string;
 }) {
@@ -299,14 +302,14 @@ function AssessmentGroup({
       {assessments.length === 0 ? (
         <p className="dashboard-status">{emptyText}</p>
       ) : (
-        <ul className="assessment-list">
+        <ul className="assessment-list" aria-label={title}>
           {assessments.map((assessment) => (
             <li key={assessment.id} className="assessment-list-item">
               <div className="assessment-info">
-                <h3>{assessment.title}</h3>
+                <h4 className="assessment-info-title">{assessment.title}</h4>
                 <p className="assessment-meta">
                   <span>{assessment.duration_minutes} phút</span>
-                  <span>·</span>
+                  <span aria-hidden="true">·</span>
                   <span>Tối đa {assessment.max_attempts} lần làm</span>
                 </p>
               </div>
@@ -315,8 +318,7 @@ function AssessmentGroup({
                 className="primary"
                 onClick={() => onStart(assessment)}
                 disabled={
-                  startingId === assessment.id ||
-                  assessment.status !== 'OPEN'
+                  startingId === assessment.id || assessment.status !== 'OPEN'
                 }
                 aria-busy={startingId === assessment.id}
                 data-testid="start-assessment-button"

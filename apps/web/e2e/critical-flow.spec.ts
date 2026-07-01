@@ -17,10 +17,14 @@ async function createAndPublishAssessment(page: Page) {
   await expect(page.getByTestId('builder-section')).toHaveCount(1);
 
   await page.getByTestId('add-question-button').first().click();
-  await page.getByTestId('picker-question-select').selectOption({ index: 1 });
+  const pickerSelect = page.getByTestId('picker-question-select');
+  await expect.poll(async () => await pickerSelect.locator('option').count()).toBeGreaterThan(1);
+  await pickerSelect.selectOption({ index: 1 });
   await page.getByTestId('picker-add-button').click();
 
-  await page.getByTestId('target-class-select').selectOption({ index: 1 });
+  const targetSelect = page.getByTestId('target-class-select');
+  await expect.poll(async () => await targetSelect.locator('option').count()).toBeGreaterThan(1);
+  await targetSelect.selectOption({ index: 1 });
   await page.getByTestId('add-target-button').click();
 
   await page.getByTestId('validate-button').click();
@@ -59,6 +63,13 @@ test.describe.serial('critical end-to-end flow', () => {
     for (let i = 0; i < count; i++) {
       await questions.nth(i).locator('input[type="radio"]').first().check();
     }
+
+    // Verify local IndexedDB drafts survive a page reload before submit.
+    const checkedBeforeReload = await studentPage.locator('input[type="radio"]:checked').count();
+    await studentPage.reload();
+    await expect(studentPage.getByTestId('exam-question').first()).toBeVisible({ timeout: 10_000 });
+    const checkedAfterReload = await studentPage.locator('input[type="radio"]:checked').count();
+    expect(checkedAfterReload).toBe(checkedBeforeReload);
 
     studentPage.on('dialog', (dialog) => dialog.accept());
     await studentPage.getByTestId('submit-exam-button').click();

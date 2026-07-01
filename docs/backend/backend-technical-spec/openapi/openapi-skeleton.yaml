@@ -146,6 +146,15 @@ paths:
       operationId: attempts.listAttemptHistory
       tags: [Attempts]
       description: Student only. Returns the current student's attempt history.
+      parameters:
+        - name: limit
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 50 }
+          description: Maximum number of attempts to return.
+        - name: cursor
+          in: query
+          schema: { type: string }
+          description: Opaque cursor for keyset pagination.
       responses:
         '200':
           description: Attempt history
@@ -1846,6 +1855,160 @@ paths:
           $ref: '#/components/responses/Forbidden'
         '404':
           $ref: '#/components/responses/NotFound'
+  /resources:
+    get:
+      operationId: resources.list
+      tags: [Resources]
+      description: |
+        List resources for the current organization.
+        - Students receive only PUBLISHED resources.
+        - Teachers and admins receive DRAFT and PUBLISHED resources.
+      responses:
+        '200':
+          description: Resources visible to the caller
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ResourceList'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+    post:
+      operationId: resources.create
+      tags: [Resources]
+      description: Teacher or admin only. Create a new resource in DRAFT status.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateResourceRequest'
+      responses:
+        '201':
+          description: Resource created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Resource'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+  /resources/{id}/publish:
+    post:
+      operationId: resources.publish
+      tags: [Resources]
+      description: Teacher or admin only. Transition a resource to PUBLISHED.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: Resource published
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Resource'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /resources/{id}:
+    delete:
+      operationId: resources.archive
+      tags: [Resources]
+      description: Teacher or admin only. Archive a resource.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '204':
+          description: Resource archived
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /resources/{id}/files:
+    post:
+      operationId: resources.uploadFile
+      tags: [Resources]
+      description: |
+        Teacher or admin only. Upload a file (multipart/form-data, field `file`)
+        that becomes the active file for the resource. Replaces any existing
+        ACTIVE file for the same resource. Capped by server `MAX_UPLOAD_SIZE`.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file]
+              properties:
+                file:
+                  type: string
+                  format: binary
+      responses:
+        '201':
+          description: File stored
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ResourceFile'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '413':
+          description: File exceeds MAX_UPLOAD_SIZE
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+  /resources/{id}/download:
+    get:
+      operationId: resources.downloadFile
+      tags: [Resources]
+      description: |
+        Download the active file for a resource. Students may only download
+        resources that are PUBLISHED. Teachers and admins may download any
+        non-archived resource.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: File payload (octet-stream, attachment)
+          content:
+            application/octet-stream:
+              schema:
+                type: string
+                format: binary
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
 components:
   securitySchemes:
     bearerAuth:
@@ -2050,6 +2213,8 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/StudentAttempt'
+        page:
+          $ref: '#/components/schemas/PageInfo'
     StudentAttempt:
       type: object
       required: [id, assessment_id, assessment_title, status, started_at]
@@ -2844,6 +3009,60 @@ components:
         score: { type: string, nullable: true }
         max_score: { type: string, nullable: true }
         submitted_at: { type: string, format: date-time, nullable: true }
+    Resource:
+      type: object
+      required: [data]
+      properties:
+        data:
+          type: object
+          required: [id, organization_id, title, context_type, context_id, status, created_by, created_at, updated_at]
+          properties:
+            id: { type: string, format: uuid }
+            organization_id: { type: string, format: uuid }
+            title: { type: string }
+            description: { type: string, nullable: true }
+            context_type: { type: string, enum: [organization, class] }
+            context_id: { type: string, format: uuid }
+            status: { type: string, enum: [DRAFT, PUBLISHED, ARCHIVED] }
+            created_by: { type: string, format: uuid }
+            created_at: { type: string, format: date-time }
+            updated_at: { type: string, format: date-time }
+            published_at: { type: string, format: date-time, nullable: true }
+    ResourceList:
+      type: object
+      required: [data]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/Resource'
+    ResourceFile:
+      type: object
+      required: [data]
+      properties:
+        data:
+          type: object
+          required: [id, resource_id, organization_id, original_name, storage_key, content_type, size_bytes, status, created_by, created_at]
+          properties:
+            id: { type: string, format: uuid }
+            resource_id: { type: string, format: uuid }
+            organization_id: { type: string, format: uuid }
+            original_name: { type: string }
+            storage_key: { type: string }
+            content_type: { type: string }
+            size_bytes: { type: integer, format: int64 }
+            status: { type: string, enum: [ACTIVE, ARCHIVED] }
+            created_by: { type: string, format: uuid }
+            created_at: { type: string, format: date-time }
+    CreateResourceRequest:
+      type: object
+      additionalProperties: false
+      required: [title, context_type, context_id]
+      properties:
+        title: { type: string, minLength: 1, maxLength: 255 }
+        description: { type: string, maxLength: 2000 }
+        context_type: { type: string, enum: [organization, class] }
+        context_id: { type: string, format: uuid }
     Problem:
       type: object
       required: [title, status, code]

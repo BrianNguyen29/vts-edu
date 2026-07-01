@@ -12,7 +12,9 @@ import { GradebookPage } from '@/pages/gradebook/gradebook-page';
 import { ChangePasswordPage } from '@/pages/change-password/change-password-page';
 import { ExamPage } from '@/pages/exam/exam-page';
 import { AttemptReviewPage } from '@/pages/attempt-review/attempt-review-page';
+import { ResourcesPage } from '@/pages/resources/resources-page';
 import { NotFoundPage } from '@/pages/not-found/not-found-page';
+import { ErrorPage } from '@/pages/error/error-page';
 import { useAuth } from '@/app/providers/auth-provider';
 import type { ReactNode } from 'react';
 
@@ -147,6 +149,10 @@ export const router = createBrowserRouter([
         element: <GradebookPage />,
       },
       {
+        path: 'resources',
+        element: <ResourcesPage />,
+      },
+      {
         path: 'admin',
         element: <AdminDashboardPage />,
       },
@@ -183,6 +189,10 @@ export const router = createBrowserRouter([
         element: <AttemptReviewPage />,
       },
     ],
+  },
+  {
+    path: '/error/:status?',
+    element: <ErrorPage />,
   },
   {
     path: '*',

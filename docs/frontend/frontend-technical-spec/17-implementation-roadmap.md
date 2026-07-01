@@ -18,7 +18,7 @@ foundation
 
 Không xây dashboard đẹp đầy đủ trước khi luồng thi và điểm hoạt động.
 
-## 2. Phase 0 — Contract & UX foundation (Tuần 1–2)
+## 2. Phase 0 — Contract & UX foundation (Tuần 1–2) ✅ Implemented
 
 ### Deliverables
 
@@ -38,7 +38,7 @@ Không xây dashboard đẹp đầy đủ trước khi luồng thi và điểm h
 - Generated API type không sửa tay.
 - CI chạy typecheck/lint/test/build.
 
-## 3. Phase 1 — Authentication & app shell (Tuần 3–4) — Backend ready
+## 3. Phase 1 — Authentication & app shell (Tuần 3–4) ✅ Implemented
 
 - Login.
 - Refresh bootstrap.
@@ -48,49 +48,52 @@ Không xây dashboard đẹp đầy đủ trước khi luồng thi và điểm h
 - Sidebar/header responsive.
 - Profile/session list.
 - Global error mapping.
+- Role-based redirects (`/app/student`, `/app/teacher`, `/app/admin`).
 
 Exit:
 
 - Token không persistent.
 - 401 refresh single-flight test.
-- 403/404 states.
+- 403/404 states — basic UI exists; `request_id` display pending.
 - Mobile shell usable.
 - Forced password change redirect works.
 
-## 4. Phase 2 — Classes & resources (Tuần 5–7)
+## 4. Phase 2 — Classes & resources (Tuần 5–7) 🟡 Partial
 
-- Class list/detail.
-- Student list teacher/admin.
-- Resource folder/list.
-- Direct upload + progress/cancel.
-- Signed download/preview.
-- URL filters.
-
-Exit:
-
-- Permission states.
-- File failure states.
-- E2E teacher upload/student view.
-
-## 5. Phase 3 — Question bank (Tuần 8–11)
-
-- Question list/filter.
-- Create/edit new version.
-- Six MVP question types.
-- TipTap/KaTeX editor.
-- Preview.
-- Version history/status.
+- Class list/detail ✅
+- Student list teacher/admin ✅
+- Academic terms/subjects/courses/classes admin CRUD ✅
+- Resource folder/list ✅ (MVP: org-scoped; class-scope deferred)
+- Direct upload + progress/cancel — partial (upload via `FormData`; no progress bar yet)
+- Signed download/preview — partial (bearer-auth download via `fetch`; no inline preview)
+- URL filters ✅
 
 Exit:
 
-- API/form mapper tests.
-- Rich text sanitized preview.
-- Keyboard accessible choice editor.
+- Permission states ✅
+- File failure states ✅ (create/upload error surfaces with friendly message + `request_id`)
+- E2E teacher upload/student view — partial (smoke API covered; Playwright coverage deferred)
 
-## 6. Phase 4 — Assessment builder (Tuần 12–14)
+## 5. Phase 3 — Question bank (Tuần 8–11) 🟡 Minimal
+
+- Question list/filter ✅ (basic picker for assessment builder).
+- Create/edit new version — not started.
+- Six MVP question types — MCQ only; rest deferred.
+- TipTap/KaTeX editor — not started.
+- Preview ✅ (within builder/assessment preview).
+- Version history/status — not started.
+
+Exit:
+
+- API/form mapper tests — not started.
+- Rich text sanitized preview — not started.
+- Keyboard accessible choice editor — partial.
+
+## 6. Phase 4 — Assessment builder (Tuần 12–14) ✅ Implemented
 
 - Create/edit draft.
 - Sections/items/reorder.
+- Duplicate section/item.
 - Settings/schedule.
 - Validation summary.
 - Preview.
@@ -99,64 +102,65 @@ Exit:
 
 Exit:
 
-- Dirty navigation guard.
+- Dirty navigation guard — basic.
 - Version conflict handled.
 - Publish không optimistic.
 
-## 7. Phase 5 — Exam runtime (Tuần 15–19)
+## 7. Phase 5 — Exam runtime (Tuần 15–19) 🟡 Core implemented
 
-- Attempt start.
-- Exam layout/question renderers.
-- IndexedDB schema/repository.
-- Durable autosave queue.
-- Server clock/timer.
-- Offline/reload/resume.
-- Submit intent/idempotency.
-- Terminal result/status.
-
-Exit:
-
-- Full test matrix critical scenarios.
-- No answer loss in forced reload/offline tests.
-- Active exam not force-reloaded on app update.
-
-## 8. Phase 6 — Grading, assignments, gradebook (Tuần 20–23)
-
-- Assignment create/list/detail.
-- Student submission/upload.
-- Teacher review/feedback.
-- Manual assessment review.
-- Gradebook grid.
-- Grade edit/override/publish.
-- CSV/export job status.
+- Attempt start ✅
+- Exam layout/question renderers ✅
+- IndexedDB schema/repository ✅ (MVP: per attempt/item drafts)
+- Durable autosave queue ✅ (MVP: local draft before API, retry on online/load)
+- Server clock/timer ✅
+- Offline/reload/resume ✅ (MVP: overlay local pending drafts, survive reload)
+- Submit intent/idempotency ✅
+- Terminal result/status ✅
 
 Exit:
 
-- Decimal strings preserved.
-- Grade conflicts/audit reason UX.
-- Student only sees published grade.
+- Full test matrix critical scenarios — Playwright critical flow covers basic path + reload persistence.
+- No answer loss in forced reload/offline tests — MVP covered; advanced conflict resolution deferred.
+- Active exam not force-reloaded on app update — not started (service worker deferred).
 
-## 9. Phase 7 — Dashboard & notifications (Tuần 24–25)
+## 8. Phase 6 — Grading, assignments, gradebook (Tuần 20–23) 🟡 Gradebook implemented
 
-- Student actionable dashboard.
-- Teacher actionable dashboard.
-- Admin summary.
-- Notification inbox/unread.
-- Basic line/bar progress charts only if API ready.
+- Assignment create/list/detail — not started.
+- Student submission/upload — not started.
+- Teacher review/feedback — not started (MCQ auto-graded).
+- Manual assessment review — not started.
+- Gradebook grid ✅
+- Grade edit/override/publish — not started.
+- CSV/export ✅
 
 Exit:
 
-- Dashboard useful without hero/AI/gamification.
-- Charts lazy-loaded and accessible alternative.
+- Decimal strings preserved ✅
+- Grade conflicts/audit reason UX — not started.
+- Student only sees published grade — not started.
 
-## 10. Phase 8 — Hardening & pilot (Tuần 26–28)
+## 9. Phase 7 — Dashboard & notifications (Tuần 24–25) ✅ Dashboards implemented
 
-- Cross-browser E2E.
-- A11y audit.
-- Bundle/performance audit.
-- Error telemetry.
-- PWA manifest; service worker only if update policy tested.
-- Pilot bug fixes.
+- Student actionable dashboard ✅
+- Teacher actionable dashboard ✅
+- Admin summary ✅
+- Notification inbox/unread — not started.
+- Basic line/bar progress charts only if API ready — not started.
+
+Exit:
+
+- Dashboard useful without hero/AI/gamification ✅
+- Charts lazy-loaded and accessible alternative — not started.
+
+## 10. Phase 8 — Hardening & pilot (Tuần 26–28) 🟡 Partial
+
+- Cross-browser E2E — Chromium only; Firefox/WebKit deferred.
+- A11y audit — pending.
+- Bundle/performance audit — pending.
+- Error telemetry — pending.
+- Error pages with `request_id` — pending.
+- PWA manifest; service worker only if update policy tested — pending.
+- Pilot bug fixes — pending.
 
 ## 11. Backlog after pilot
 
@@ -169,6 +173,13 @@ Exit:
 - Advanced analytics.
 - Dark mode.
 - Full installable PWA/push.
+
+## 12. Current next backlog (pre-pilot)
+
+- Generated OpenAPI client/types from skeleton.
+- Resources/files UI MVP shipped at `/app/resources` (org-scoped create/list/publish/archive/upload/download). Class scoping, signed URLs, progress bar, and inline preview still pending.
+- Accessibility audit (focus management, ARIA, reduced motion, responsive smoke).
+- Huma/River remain backend-deferred; frontend stays on hand-maintained skeleton + `openapi-fetch`.
 
 ## 12. Milestone risk gates
 

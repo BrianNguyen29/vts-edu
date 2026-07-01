@@ -1,27 +1,12 @@
 import { getOpenAPIClient } from './openapi-client';
 import { apiClient } from './api-client';
-import { unwrapData, type ApiError } from './attempts';
+import { unwrapData, createApiError } from './attempts';
 import type { components } from './openapi-schema';
 
 export type AssessmentAttempt = components['schemas']['AssessmentAttempt'];
 export type AssessmentResult =
   components['schemas']['AssessmentResult']['data'];
 export type ClassGradebookEntry = components['schemas']['ClassGradebookEntry'];
-
-function createApiError(raw: unknown): Error {
-  if (
-    typeof raw === 'object' &&
-    raw !== null &&
-    'error' in raw &&
-    typeof (raw as ApiError).error === 'object' &&
-    (raw as ApiError).error !== null &&
-    typeof (raw as ApiError).error.code === 'string' &&
-    typeof (raw as ApiError).error.message === 'string'
-  ) {
-    return new Error((raw as ApiError).error.message);
-  }
-  return new Error('Yêu cầu thất bại.');
-}
 
 export async function listAssessmentAttempts(
   assessmentId: string
@@ -65,7 +50,7 @@ async function downloadCsv(path: string, filename: string): Promise<void> {
     } catch {
       raw = null;
     }
-    throw createApiError(raw);
+    throw createApiError(response.status, raw, response);
   }
 
   const blob = await response.blob();

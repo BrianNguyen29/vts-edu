@@ -4,9 +4,12 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"strconv"
+	"strings"
 
 	"github.com/BrianNguyen29/vts-edu/apps/api/internal/features/auth"
 	"github.com/BrianNguyen29/vts-edu/apps/api/internal/platform/csrf"
+	"github.com/BrianNguyen29/vts-edu/apps/api/internal/platform/pagination"
 	"github.com/go-chi/chi/v5"
 )
 
@@ -118,13 +121,22 @@ func (h *Handler) ListAttemptHistory(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	attempts, err := h.svc.ListAttemptHistory(r.Context(), actor)
+	opts, ok := parseListOptions(w, r)
+	if !ok {
+		return
+	}
+
+	attempts, page, err := h.svc.ListAttemptHistory(r.Context(), actor, opts)
 	if err != nil {
+		if errors.Is(err, pagination.ErrInvalidCursor) {
+			writeError(w, r, http.StatusBadRequest, "bad_request", "invalid cursor")
+			return
+		}
 		mapServiceError(w, r, err)
 		return
 	}
 
-	writeData(w, http.StatusOK, attempts)
+	writePagedData(w, http.StatusOK, attempts, page)
 }
 
 // GetAttemptResult handles GET /api/v1/attempts/{attempt_id}/result.
@@ -166,6 +178,25 @@ func (h *Handler) StartAttempt(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeData(w, http.StatusCreated, snapshot)
+}
+
+func parseListOptions(w http.ResponseWriter, r *http.Request) (ListOptions, bool) {
+	opts := ListOptions{}
+
+	if l := r.URL.Query().Get("limit"); l != "" {
+		val, err := strconv.Atoi(l)
+		if err != nil || val < 1 || val > 50 {
+			writeError(w, r, http.StatusBadRequest, "bad_request", "invalid limit")
+			return ListOptions{}, false
+		}
+		opts.Limit = val
+	}
+
+	if cursor := strings.TrimSpace(r.URL.Query().Get("cursor")); cursor != "" {
+		opts.Cursor = cursor
+	}
+
+	return opts, true
 }
 
 func mapServiceError(w http.ResponseWriter, r *http.Request, err error) {

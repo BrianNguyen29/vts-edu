@@ -5,8 +5,138 @@
 package attemptssqlc
 
 import (
+	"database/sql/driver"
+	"fmt"
+
 	"github.com/jackc/pgx/v5/pgtype"
 )
+
+type ResourceContextType string
+
+const (
+	ResourceContextTypeOrganization ResourceContextType = "organization"
+	ResourceContextTypeClass        ResourceContextType = "class"
+)
+
+func (e *ResourceContextType) Scan(src interface{}) error {
+	switch s := src.(type) {
+	case []byte:
+		*e = ResourceContextType(s)
+	case string:
+		*e = ResourceContextType(s)
+	default:
+		return fmt.Errorf("unsupported scan type for ResourceContextType: %T", src)
+	}
+	return nil
+}
+
+type NullResourceContextType struct {
+	ResourceContextType ResourceContextType `json:"resource_context_type"`
+	Valid               bool                `json:"valid"` // Valid is true if ResourceContextType is not NULL
+}
+
+// Scan implements the Scanner interface.
+func (ns *NullResourceContextType) Scan(value interface{}) error {
+	if value == nil {
+		ns.ResourceContextType, ns.Valid = "", false
+		return nil
+	}
+	ns.Valid = true
+	return ns.ResourceContextType.Scan(value)
+}
+
+// Value implements the driver Valuer interface.
+func (ns NullResourceContextType) Value() (driver.Value, error) {
+	if !ns.Valid {
+		return nil, nil
+	}
+	return string(ns.ResourceContextType), nil
+}
+
+type ResourceFileStatus string
+
+const (
+	ResourceFileStatusACTIVE   ResourceFileStatus = "ACTIVE"
+	ResourceFileStatusARCHIVED ResourceFileStatus = "ARCHIVED"
+)
+
+func (e *ResourceFileStatus) Scan(src interface{}) error {
+	switch s := src.(type) {
+	case []byte:
+		*e = ResourceFileStatus(s)
+	case string:
+		*e = ResourceFileStatus(s)
+	default:
+		return fmt.Errorf("unsupported scan type for ResourceFileStatus: %T", src)
+	}
+	return nil
+}
+
+type NullResourceFileStatus struct {
+	ResourceFileStatus ResourceFileStatus `json:"resource_file_status"`
+	Valid              bool               `json:"valid"` // Valid is true if ResourceFileStatus is not NULL
+}
+
+// Scan implements the Scanner interface.
+func (ns *NullResourceFileStatus) Scan(value interface{}) error {
+	if value == nil {
+		ns.ResourceFileStatus, ns.Valid = "", false
+		return nil
+	}
+	ns.Valid = true
+	return ns.ResourceFileStatus.Scan(value)
+}
+
+// Value implements the driver Valuer interface.
+func (ns NullResourceFileStatus) Value() (driver.Value, error) {
+	if !ns.Valid {
+		return nil, nil
+	}
+	return string(ns.ResourceFileStatus), nil
+}
+
+type ResourceStatus string
+
+const (
+	ResourceStatusDRAFT     ResourceStatus = "DRAFT"
+	ResourceStatusPUBLISHED ResourceStatus = "PUBLISHED"
+	ResourceStatusARCHIVED  ResourceStatus = "ARCHIVED"
+)
+
+func (e *ResourceStatus) Scan(src interface{}) error {
+	switch s := src.(type) {
+	case []byte:
+		*e = ResourceStatus(s)
+	case string:
+		*e = ResourceStatus(s)
+	default:
+		return fmt.Errorf("unsupported scan type for ResourceStatus: %T", src)
+	}
+	return nil
+}
+
+type NullResourceStatus struct {
+	ResourceStatus ResourceStatus `json:"resource_status"`
+	Valid          bool           `json:"valid"` // Valid is true if ResourceStatus is not NULL
+}
+
+// Scan implements the Scanner interface.
+func (ns *NullResourceStatus) Scan(value interface{}) error {
+	if value == nil {
+		ns.ResourceStatus, ns.Valid = "", false
+		return nil
+	}
+	ns.Valid = true
+	return ns.ResourceStatus.Scan(value)
+}
+
+// Value implements the driver Valuer interface.
+func (ns NullResourceStatus) Value() (driver.Value, error) {
+	if !ns.Valid {
+		return nil, nil
+	}
+	return string(ns.ResourceStatus), nil
+}
 
 type AcademicTerm struct {
 	ID             pgtype.UUID        `json:"id"`
@@ -288,6 +418,33 @@ type RefreshSession struct {
 	RevokedAt           pgtype.Timestamptz `json:"revoked_at"`
 	CreatedAt           pgtype.Timestamptz `json:"created_at"`
 	ReplacedByTokenHash pgtype.Text        `json:"replaced_by_token_hash"`
+}
+
+type Resource struct {
+	ID             pgtype.UUID         `json:"id"`
+	OrganizationID pgtype.UUID         `json:"organization_id"`
+	Title          string              `json:"title"`
+	Description    pgtype.Text         `json:"description"`
+	ContextType    ResourceContextType `json:"context_type"`
+	ContextID      pgtype.UUID         `json:"context_id"`
+	Status         ResourceStatus      `json:"status"`
+	CreatedBy      pgtype.UUID         `json:"created_by"`
+	CreatedAt      pgtype.Timestamptz  `json:"created_at"`
+	UpdatedAt      pgtype.Timestamptz  `json:"updated_at"`
+	PublishedAt    pgtype.Timestamptz  `json:"published_at"`
+}
+
+type ResourceFile struct {
+	ID             pgtype.UUID        `json:"id"`
+	ResourceID     pgtype.UUID        `json:"resource_id"`
+	OrganizationID pgtype.UUID        `json:"organization_id"`
+	OriginalName   string             `json:"original_name"`
+	StorageKey     string             `json:"storage_key"`
+	ContentType    string             `json:"content_type"`
+	SizeBytes      int64              `json:"size_bytes"`
+	Status         ResourceFileStatus `json:"status"`
+	CreatedBy      pgtype.UUID        `json:"created_by"`
+	CreatedAt      pgtype.Timestamptz `json:"created_at"`
 }
 
 type Subject struct {

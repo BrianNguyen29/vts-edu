@@ -1,10 +1,13 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { apiClient, getCsrfToken } from '@/shared/api/api-client';
+import { useDocumentTitle } from '@/shared/lib/use-document-title';
 
 export function DiagnosticsPage() {
   const [health, setHealth] = useState<string>('checking…');
   const [csrfStatus, setCsrfStatus] = useState<string>('not fetched');
+
+  useDocumentTitle('Chẩn đoán hệ thống');
 
   useEffect(() => {
     apiClient('/healthz')
@@ -40,16 +43,22 @@ export function DiagnosticsPage() {
       <p>
         <Link to="/app">← Quay lại trang làm việc</Link>
       </p>
-      <section className="diagnostics-section">
-        <h2>API health</h2>
+      <section className="diagnostics-section" aria-labelledby="diagnostics-health">
+        <h2 id="diagnostics-health">API health</h2>
         <p>
-          <strong>Health:</strong> {health}
+          <strong>Health:</strong>{' '}
+          <span role="status" aria-live="polite">
+            {health}
+          </span>
         </p>
       </section>
-      <section className="diagnostics-section">
-        <h2>CSRF / unsafe request</h2>
+      <section className="diagnostics-section" aria-labelledby="diagnostics-csrf">
+        <h2 id="diagnostics-csrf">CSRF / unsafe request</h2>
         <p>
-          <strong>CSRF:</strong> {csrfStatus}
+          <strong>CSRF:</strong>{' '}
+          <span role="status" aria-live="polite">
+            {csrfStatus}
+          </span>
         </p>
         <div className="button-row">
           <button type="button" onClick={handleFetchCsrf}>

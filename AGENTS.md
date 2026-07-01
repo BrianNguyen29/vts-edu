@@ -26,6 +26,7 @@ Frontend:
 pnpm web:dev
 pnpm web:typecheck
 pnpm web:build
+pnpm web:test
 ```
 
 Backend:
@@ -90,8 +91,8 @@ docker build -t vts-edu-api -f apps/api/Dockerfile apps/api
 
 - No Makefile.
 - No root lint script; use `pnpm check` for bounded validation.
-- No `api:migrate`, `api:generate`, or other `api:*` scripts beyond `api:dev` and `api:test`.
-- sqlc, Huma, River are not installed/wired yet.
+- No `api:migrate`, `api:generate`, or other `api:*` scripts beyond `api:dev`, `api:test`, and `api:sqlc`/`api:types`.
+- Huma and River are not installed/wired yet (deferred; see ADR-0010 and ADR-0012).
 - Supabase Auth is disabled; auth is backend-owned JWT + rotating opaque refresh cookie.
 
 ## Recently implemented
@@ -101,10 +102,15 @@ docker build -t vts-edu-api -f apps/api/Dockerfile apps/api
 - Question bank slice (`internal/features/...` schema via migrations): minimal `question_banks`, `questions`, `question_versions`, prompt/choices/answer key snapshots copied into `attempt_items`.
 - Teacher assessment list slice (`internal/features/assessments`): `GET /assessments` role-gated to teacher/admin and tenant scoped.
 - Admin slice (`internal/features/admin`): `GET/POST /users`, `PUT /users/{user_id}/roles`, `POST /users/{user_id}/reset-password`, `GET/PATCH /organizations/current`, all admin-only and tenant scoped.
-- E2E smoke coverage for student attempt grading, teacher role + assessment list, forced password change, and admin user/org management.
+- E2E smoke coverage for student attempt grading, teacher role + assessment list, forced password change, admin user/org/audit/bulk/academic management.
 - Playwright browser E2E setup (`pnpm e2e:browser`) covering login redirects, teacher builder publish, student attempt/submit, teacher gradebook export, and admin bulk import.
 - In-process scheduler groundwork (`internal/platform/scheduler`) with assessment open/close transition job; River deferred.
-- Frontend demo wiring: dashboard demo link, exam runner page, and fixed demo attempt UUID `00000000-0000-4000-8000-000000000001`.
+- Frontend role dashboards: student dashboard (assigned assessments, attempt history, result review), teacher dashboard (classes, assessments, gradebook/export), admin dashboard (org, users, audit logs, CSV import, academic CRUD, bulk ops).
+- Frontend pages: login, change-password, assessment builder (duplicate/preview/publish), exam runner.
+- TanStack Query server-state layer: query provider, query keys/hooks for attempts/gradebook/assessments/academics, migrated student/teacher/gradebook/review pages.
+- Attempt history cursor pagination: backend keyset pagination for `GET /me/attempts`, frontend infinite-query/load-more UI.
+- Exam offline resilience MVP: IndexedDB per-attempt/item draft storage, local-save-before-API, pending draft sync on load/online, cleanup after submit, offline banner/status.
+- Resources MVP: org-scoped file materials with `LocalProvider` storage seam (server-generated hex keys, path-traversal safe), tenant + role checks, multipart upload (max 10 MiB), publish/archive, bearer-auth download with sanitized `Content-Disposition`. OpenAPI skeleton and `openapi-schema.d.ts` regenerated. Minimal teacher/admin upload UI and student list/download UI at `/app/resources`.
 
 > **Note on Koyeb artifacts:** files such as `apps/api/koyeb.yaml` are legacy. Render is the current backend deployment target.
 

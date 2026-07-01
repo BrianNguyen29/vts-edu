@@ -21,7 +21,7 @@ type Service interface {
 	SaveAnswer(ctx context.Context, actor auth.Actor, attemptID, itemID string, payload json.RawMessage) (*AnswerSaved, error)
 	SubmitAttempt(ctx context.Context, actor auth.Actor, attemptID string) (*AttemptSubmitted, error)
 	ListAssignedAssessments(ctx context.Context, actor auth.Actor) ([]AssignedAssessment, error)
-	ListAttemptHistory(ctx context.Context, actor auth.Actor) ([]StudentAttempt, error)
+	ListAttemptHistory(ctx context.Context, actor auth.Actor, opts ListOptions) ([]StudentAttempt, *PageInfo, error)
 	GetAttemptResult(ctx context.Context, actor auth.Actor, attemptID string) (*AttemptResult, error)
 	StartAttempt(ctx context.Context, actor auth.Actor, assessmentID string) (*AttemptSnapshot, error)
 }
@@ -185,11 +185,11 @@ func (s *service) SubmitAttempt(ctx context.Context, actor auth.Actor, attemptID
 }
 
 // ListAttemptHistory returns the current student's submitted/in-progress attempts.
-func (s *service) ListAttemptHistory(ctx context.Context, actor auth.Actor) ([]StudentAttempt, error) {
+func (s *service) ListAttemptHistory(ctx context.Context, actor auth.Actor, opts ListOptions) ([]StudentAttempt, *PageInfo, error) {
 	if !hasRole(actor.Roles, "student") {
-		return nil, auth.ErrUnauthorized
+		return nil, nil, auth.ErrUnauthorized
 	}
-	return s.repo.ListStudentAttempts(ctx, actor.OrgID, actor.UserID)
+	return s.repo.ListStudentAttempts(ctx, actor.OrgID, actor.UserID, opts)
 }
 
 // GetAttemptResult returns the graded review view for a submitted or expired attempt.

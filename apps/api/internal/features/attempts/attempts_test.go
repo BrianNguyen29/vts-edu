@@ -26,7 +26,7 @@ type fakeRepo struct {
 	markExpired   func(ctx context.Context, tx pgx.Tx, id, orgID, userID string) error
 	submit        func(ctx context.Context, tx pgx.Tx, id, orgID, userID, score, maxScore, gradingStatus string) (*attempts.GradingResult, error)
 	listAssigned  func(ctx context.Context, orgID, userID string) ([]attempts.AssignedAssessment, error)
-	listHistory   func(ctx context.Context, orgID, userID string) ([]attempts.StudentAttempt, error)
+	listHistory   func(ctx context.Context, orgID, userID string, opts attempts.ListOptions) ([]attempts.StudentAttempt, *attempts.PageInfo, error)
 	getLatestPub  func(ctx context.Context, orgID, assessmentID string) (*attempts.PublicationSnapshot, string, string, error)
 	getInProgress func(ctx context.Context, orgID, userID, assessmentID string) (*attempts.Attempt, error)
 	countAttempts func(ctx context.Context, orgID, userID, assessmentID string) (int64, error)
@@ -69,11 +69,11 @@ func (f *fakeRepo) ListAssignedAssessments(ctx context.Context, orgID, userID st
 	return nil, nil
 }
 
-func (f *fakeRepo) ListStudentAttempts(ctx context.Context, orgID, userID string) ([]attempts.StudentAttempt, error) {
+func (f *fakeRepo) ListStudentAttempts(ctx context.Context, orgID, userID string, opts attempts.ListOptions) ([]attempts.StudentAttempt, *attempts.PageInfo, error) {
 	if f.listHistory != nil {
-		return f.listHistory(ctx, orgID, userID)
+		return f.listHistory(ctx, orgID, userID, opts)
 	}
-	return nil, nil
+	return nil, nil, nil
 }
 
 func (f *fakeRepo) GetLatestPublication(ctx context.Context, orgID, assessmentID string) (*attempts.PublicationSnapshot, string, string, error) {
@@ -735,14 +735,14 @@ func TestService_ListAssignedAssessments_Availability(t *testing.T) {
 func TestService_ListAttemptHistory_OK(t *testing.T) {
 	started := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
 	repo := &fakeRepo{
-		listHistory: func(ctx context.Context, orgID, userID string) ([]attempts.StudentAttempt, error) {
+		listHistory: func(ctx context.Context, orgID, userID string, opts attempts.ListOptions) ([]attempts.StudentAttempt, *attempts.PageInfo, error) {
 			return []attempts.StudentAttempt{
 				{ID: "attempt-1", AssessmentID: "assessment-id", AssessmentTitle: "Quiz", Status: "SUBMITTED", StartedAt: &started},
-			}, nil
+			}, &attempts.PageInfo{Limit: 10, HasMore: false}, nil
 		},
 	}
 	svc := attempts.NewService(repo, stubTxManager{})
-	result, err := svc.ListAttemptHistory(context.Background(), auth.Actor{UserID: "user-id", OrgID: "org-id", Roles: []string{"student"}})
+	result, page, err := svc.ListAttemptHistory(context.Background(), auth.Actor{UserID: "user-id", OrgID: "org-id", Roles: []string{"student"}}, attempts.ListOptions{})
 	if err != nil {
 		t.Fatalf("ListAttemptHistory failed: %v", err)
 	}
@@ -752,11 +752,14 @@ func TestService_ListAttemptHistory_OK(t *testing.T) {
 	if result[0].AssessmentTitle != "Quiz" {
 		t.Errorf("title = %q, want Quiz", result[0].AssessmentTitle)
 	}
+	if page == nil || page.HasMore {
+		t.Errorf("expected no next page, got %+v", page)
+	}
 }
 
 func TestService_ListAttemptHistory_Forbidden(t *testing.T) {
 	svc := attempts.NewService(&fakeRepo{}, stubTxManager{})
-	_, err := svc.ListAttemptHistory(context.Background(), auth.Actor{UserID: "user-id", OrgID: "org-id", Roles: []string{"teacher"}})
+	_, _, err := svc.ListAttemptHistory(context.Background(), auth.Actor{UserID: "user-id", OrgID: "org-id", Roles: []string{"teacher"}}, attempts.ListOptions{})
 	if !errors.Is(err, auth.ErrUnauthorized) {
 		t.Fatalf("expected ErrUnauthorized, got %v", err)
 	}
@@ -840,8 +843,8 @@ func TestService_GetAttemptResult_NotSubmitted(t *testing.T) {
 func TestHandler_ListAttemptHistory_OK(t *testing.T) {
 	started := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
 	repo := &fakeRepo{
-		listHistory: func(ctx context.Context, orgID, userID string) ([]attempts.StudentAttempt, error) {
-			return []attempts.StudentAttempt{{ID: "attempt-1", AssessmentID: "a", AssessmentTitle: "Quiz", Status: "SUBMITTED", StartedAt: &started}}, nil
+		listHistory: func(ctx context.Context, orgID, userID string, opts attempts.ListOptions) ([]attempts.StudentAttempt, *attempts.PageInfo, error) {
+			return []attempts.StudentAttempt{{ID: "attempt-1", AssessmentID: "a", AssessmentTitle: "Quiz", Status: "SUBMITTED", StartedAt: &started}}, &attempts.PageInfo{Limit: 10, HasMore: false}, nil
 		},
 	}
 	h := attempts.NewHandler(attempts.NewService(repo, stubTxManager{}), newIssuer())

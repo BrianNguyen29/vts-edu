@@ -73,15 +73,15 @@ export function ClassRosterPanel({
             {classSection.teacher_count} giáo viên
           </p>
         </div>
-        <button type="button" onClick={onClose}>
+        <button type="button" onClick={onClose} aria-label={`Đóng danh sách lớp ${classSection.name}`}>
           Đóng
         </button>
       </div>
 
-      {loading && <p className="dashboard-status">Đang tải danh sách…</p>}
+      {loading && <p className="dashboard-status" role="status" aria-live="polite">Đang tải danh sách…</p>}
 
       {error && (
-        <div className="error-banner" role="alert">
+        <div className="error-banner" role="alert" aria-live="assertive">
           {error}
         </div>
       )}
@@ -93,6 +93,9 @@ export function ClassRosterPanel({
       {!loading && !error && enrollments.length > 0 && (
         <div className="roster-table-wrapper">
           <table className="roster-table">
+            <caption className="visually-hidden">
+              Danh sách học sinh của lớp {classSection.name}
+            </caption>
             <thead>
               <tr>
                 <th>Họ tên</th>

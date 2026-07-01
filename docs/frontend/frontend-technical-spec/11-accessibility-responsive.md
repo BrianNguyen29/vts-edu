@@ -166,3 +166,32 @@ Không dùng motion để báo trạng thái duy nhất.
 - Error/status được announced đúng.
 - Text alternative cho chart và non-text content.
 - Route title/lang được cập nhật.
+
+## 16. Recent improvements (slice-8-accessibility-audit, 2026-07-01)
+
+Đợt kiểm tra này tập trung vào các luồng cốt lõi (login, đổi mật khẩu, dashboards, builder, exam, gradebook, resources, error) với những thay đổi sau:
+
+- **Skip link + landmark**: thêm skip link "Bỏ qua đến nội dung chính" trong `AuthLayout`, `AppShellLayout`, `ExamLayout`; cả ba đều có `<main id="main-content" tabIndex={-1}>` để skip link đặt focus đúng vị trí.
+- **Focus ring**: chuyển từ `:focus` (hiển thị cả với mouse) sang `:focus-visible` (chỉ bàn phím). Áp dụng cho `button`, `a`, `select`, `[role="tab"]`, `[role="button"]`, `input`, `textarea`. Mouse click không còn để lại outline xanh.
+- **Trạng thái lưu/loading**: các vùng loading có `role="status" aria-live="polite"`; banner lỗi có `role="alert" aria-live="assertive"`; submit button có `aria-busy`.
+- **Form error association**: form login/change-password dùng `aria-describedby` trỏ tới banner lỗi; hint mật khẩu (`PasswordPolicyHints`) nhận `id` và được liên kết với input.
+- **Skip link / focus restoration cho dialog**: preview dialog của assessment builder chuyển focus vào nút Đóng khi mở và trả focus về phần tử kích hoạt khi đóng.
+- **Tab semantics**: admin tabs và gradebook tabs dùng `role="tablist"` + `role="tab"` + `role="tabpanel"` với `aria-selected`, `aria-controls`, `tabIndex` roving.
+- **Table caption**: tất cả bảng dữ liệu (users, audit logs, gradebook assessment, gradebook class, resources, publication history, roster, terms, subjects, courses, classes, bulk import preview) đều có `<caption>` (thường là visually-hidden vì heading đã đặt tên bảng).
+- **Nhãn cho search input**: các ô `<input type="search">` trên teacher dashboard, admin user list, audit actor filter, user picker trong academic management đều có label (visually-hidden nếu chỉ dùng placeholder).
+- **Trạng thái đọc được**: status badge có `aria-label` mô tả (ví dụ "Trạng thái SUBMITTED"); decorative "·" được `aria-hidden`.
+- **Route title**: hook `useDocumentTitle` đặt tab title cho tất cả trang; restore title cũ khi unmount.
+- **Reduced motion**: thêm `@media (prefers-reduced-motion: reduce)` để tắt transition/animation.
+- **Heading hierarchy**: chỉnh lại một số heading (vd. card title trong dashboard từ h2 xuống h3) để tránh skip level.
+- **A11y smoke e2e**: thêm `apps/web/e2e/a11y.spec.ts` (10 case) kiểm tra skip link, landmark, h1, role của error/alert, tab semantics, table caption, form description, accessible name.
+
+### Limitations / known gaps
+
+- **Chưa tích hợp axe-core**: dùng Playwright locators thay vì `@axe-core/playwright` để giữ dependency footprint tối thiểu. Smoke spec kiểm tra các tiêu chí axe thường gặp cho luồng cốt lõi nhưng không thay thế axe scan đầy đủ.
+- **Chưa có manual screen reader / keyboard review**: chưa chạy NVDA/VoiceOver thực tế, chưa test với 200% zoom trên production build, chưa test high-contrast mode.
+- **Tiêu điểm cho mobile**: chưa test screen reader trên thiết bị di động, chưa test landscape/portrait exam UI.
+- **Dialog focus trap**: preview dialog hiện tại chuyển focus đến close button nhưng chưa có focus trap đầy đủ (Tab có thể thoát ra ngoài panel).
+- **PWA / offline status**: chưa có a11y cho thông báo background sync / push notification.
+- **Charts / non-text content**: chưa có chart/canvas nào, nên chưa áp dụng text alternative.
+- **Dark mode / high contrast theme**: chưa có theme, chưa test contrast ratio tự động.
+

@@ -18,6 +18,7 @@ import { PasswordPolicyHints } from '@/shared/components/password-policy-hints';
 import { validatePassword } from '@/shared/lib/password-policy';
 import { AuditLogsPanel } from './audit-logs-panel';
 import { AcademicManagementPanel } from './academic-management-panel';
+import { useDocumentTitle } from '@/shared/lib/use-document-title';
 
 const AVAILABLE_ROLES = ['student', 'teacher', 'admin'] as const;
 
@@ -46,6 +47,8 @@ function formatFriendlyError(err: unknown): string {
 
 export function AdminDashboardPage() {
   const auth = useAuth();
+
+  useDocumentTitle('Trang quản trị');
 
   const [orgName, setOrgName] = useState('');
   const [orgCode, setOrgCode] = useState('');
@@ -342,44 +345,69 @@ export function AdminDashboardPage() {
         </div>
       )}
 
-      <nav className="admin-tabs" aria-label="Quản lý quản trị">
+      <div
+        className="admin-tabs"
+        role="tablist"
+        aria-label="Quản lý quản trị"
+      >
         <button
           type="button"
+          role="tab"
+          id="admin-tab-org"
+          aria-controls="admin-panel-org"
+          aria-selected={activeTab === 'org'}
+          tabIndex={activeTab === 'org' ? 0 : -1}
           className={activeTab === 'org' ? 'active' : ''}
           onClick={() => setActiveTab('org')}
-          aria-current={activeTab === 'org' ? 'page' : undefined}
         >
           Tổ chức
         </button>
         <button
           type="button"
+          role="tab"
+          id="admin-tab-users"
+          aria-controls="admin-panel-users"
+          aria-selected={activeTab === 'users'}
+          tabIndex={activeTab === 'users' ? 0 : -1}
           className={activeTab === 'users' ? 'active' : ''}
           onClick={() => setActiveTab('users')}
-          aria-current={activeTab === 'users' ? 'page' : undefined}
           data-testid="users-tab"
         >
           Người dùng
         </button>
         <button
           type="button"
+          role="tab"
+          id="admin-tab-audit"
+          aria-controls="admin-panel-audit"
+          aria-selected={activeTab === 'audit'}
+          tabIndex={activeTab === 'audit' ? 0 : -1}
           className={activeTab === 'audit' ? 'active' : ''}
           onClick={() => setActiveTab('audit')}
-          aria-current={activeTab === 'audit' ? 'page' : undefined}
         >
           Nhật ký hoạt động
         </button>
         <button
           type="button"
+          role="tab"
+          id="admin-tab-academic"
+          aria-controls="admin-panel-academic"
+          aria-selected={activeTab === 'academic'}
+          tabIndex={activeTab === 'academic' ? 0 : -1}
           className={activeTab === 'academic' ? 'active' : ''}
           onClick={() => setActiveTab('academic')}
-          aria-current={activeTab === 'academic' ? 'page' : undefined}
         >
           Học vụ
         </button>
-      </nav>
+      </div>
 
       {activeTab === 'org' && (
-        <section className="admin-section">
+        <section
+          className="admin-section"
+          role="tabpanel"
+          id="admin-panel-org"
+          aria-labelledby="admin-tab-org"
+        >
           <h2>Tổ chức</h2>
         <div className="org-card">
           <div className="org-info">
@@ -387,7 +415,11 @@ export function AdminDashboardPage() {
               <strong>Tên:</strong>{' '}
               {orgEditing ? (
                 <form onSubmit={handleUpdateOrgName} className="inline-form">
+                  <label htmlFor="org-name-input" className="visually-hidden">
+                    Tên tổ chức
+                  </label>
                   <input
+                    id="org-name-input"
                     type="text"
                     value={orgDraft}
                     onChange={(e) => setOrgDraft(e.target.value)}
@@ -431,9 +463,14 @@ export function AdminDashboardPage() {
       )}
 
       {activeTab === 'users' && (
-      <section className="admin-section">
+      <section
+        className="admin-section"
+        role="tabpanel"
+        id="admin-panel-users"
+        aria-labelledby="admin-tab-users"
+      >
         <div className="section-header">
-          <h2>Người dùng</h2>
+          <h2 id="admin-users-heading">Người dùng</h2>
           {mode === 'list' && (
             <div className="section-actions">
               <button
@@ -464,7 +501,11 @@ export function AdminDashboardPage() {
 
         {mode === 'list' && (
           <div className="search-bar">
+            <label htmlFor="admin-user-search" className="visually-hidden">
+              Tìm theo tên đăng nhập hoặc email
+            </label>
             <input
+              id="admin-user-search"
               type="search"
               placeholder="Tìm theo tên đăng nhập hoặc email…"
               value={searchInput}
@@ -710,6 +751,9 @@ export function AdminDashboardPage() {
               <>
               <div className="users-table-wrapper">
                 <table className="users-table">
+                  <caption className="visually-hidden">
+                    Danh sách người dùng trong tổ chức
+                  </caption>
                   <thead>
                     <tr>
                       <th>Tên đăng nhập</th>
@@ -777,8 +821,24 @@ export function AdminDashboardPage() {
       </section>
       )}
 
-      {activeTab === 'audit' && <AuditLogsPanel />}
-      {activeTab === 'academic' && <AcademicManagementPanel />}
+      {activeTab === 'audit' && (
+        <section
+          role="tabpanel"
+          id="admin-panel-audit"
+          aria-labelledby="admin-tab-audit"
+        >
+          <AuditLogsPanel />
+        </section>
+      )}
+      {activeTab === 'academic' && (
+        <section
+          role="tabpanel"
+          id="admin-panel-academic"
+          aria-labelledby="admin-tab-academic"
+        >
+          <AcademicManagementPanel />
+        </section>
+      )}
     </div>
   );
 }

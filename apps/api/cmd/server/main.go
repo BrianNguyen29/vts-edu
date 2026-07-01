@@ -14,11 +14,13 @@ import (
 	"github.com/BrianNguyen29/vts-edu/apps/api/internal/features/attempts"
 	"github.com/BrianNguyen29/vts-edu/apps/api/internal/features/auth"
 	"github.com/BrianNguyen29/vts-edu/apps/api/internal/features/gradebook"
+	"github.com/BrianNguyen29/vts-edu/apps/api/internal/features/resources"
 	"github.com/BrianNguyen29/vts-edu/apps/api/internal/platform/csrf"
 	"github.com/BrianNguyen29/vts-edu/apps/api/internal/platform/db"
 	vtsmiddleware "github.com/BrianNguyen29/vts-edu/apps/api/internal/platform/middleware"
 	"github.com/BrianNguyen29/vts-edu/apps/api/internal/platform/ratelimit"
 	"github.com/BrianNguyen29/vts-edu/apps/api/internal/platform/scheduler"
+	"github.com/BrianNguyen29/vts-edu/apps/api/internal/platform/storage"
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 )
@@ -68,6 +70,7 @@ func main() {
 	var adminHandler *admin.Handler
 	var academicsHandler *academics.Handler
 	var gradebookHandler *gradebook.Handler
+	var resourcesHandler *resources.Handler
 	var sched *scheduler.Scheduler
 	if !cfg.DatabaseSkip {
 		authIssuer := auth.NewTokenIssuer(cfg.JWTSigningKey, "vts-edu-api", "vts-edu-web", cfg.AccessTokenTTL)
@@ -100,6 +103,15 @@ func main() {
 		gradebookRepo := gradebook.NewRepository(pool.Pool)
 		gradebookSvc := gradebook.NewService(gradebookRepo, &gradebook.AcademicAccessAdapter{Repo: academicsRepo})
 		gradebookHandler = gradebook.NewHandler(gradebookSvc, authIssuer)
+
+		storageProvider, err := buildResourceStorageProvider(cfg)
+		if err != nil {
+			slog.Error("failed to initialize resource storage", "error", err)
+			os.Exit(1)
+		}
+		resourcesRepo := resources.NewRepository(pool.Pool)
+		resourcesSvc := resources.NewService(resourcesRepo, storageProvider, cfg.MaxUploadSize)
+		resourcesHandler = resources.NewHandler(resourcesSvc, authIssuer)
 	}
 
 	if sched != nil {
@@ -276,6 +288,21 @@ func main() {
 			r.Post("/classes/{class_id}/enrollments", srv.academicsPlaceholderHandler)
 			r.Delete("/classes/{class_id}/enrollments/{user_id}", srv.academicsPlaceholderHandler)
 		}
+
+		// Resources endpoints (org/class file materials).
+		if resourcesHandler != nil {
+			r.Get("/resources", resourcesHandler.ListResources)
+			r.Post("/resources", resourcesHandler.CreateResource)
+			r.Post("/resources/{id}/publish", resourcesHandler.PublishResource)
+			r.Delete("/resources/{id}", resourcesHandler.ArchiveResource)
+			r.Post("/resources/{id}/files", resourcesHandler.UploadFile)
+			r.Get("/resources/{id}/download", resourcesHandler.DownloadFile)
+		} else {
+			r.Get("/resources", srv.academicsPlaceholderHandler)
+			r.Post("/resources", srv.academicsPlaceholderHandler)
+			r.Post("/resources/{id}/publish", srv.academicsPlaceholderHandler)
+			r.Delete("/resources/{id}", srv.academicsPlaceholderHandler)
+		}
 	})
 
 	addr := ":" + cfg.Port
@@ -303,6 +330,7 @@ func corsMiddleware(origins []string) func(http.Handler) http.Handler {
 				w.Header().Set("Access-Control-Allow-Credentials", "true")
 				w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS")
 				w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization, X-CSRF-Token, X-Request-ID")
+				w.Header().Set("Access-Control-Expose-Headers", "X-Request-ID")
 			}
 
 			if r.Method == http.MethodOptions {
@@ -449,6 +477,15 @@ func (s *server) submitPlaceholderHandler(w http.ResponseWriter, r *http.Request
 		"grading_status": "FINALIZED",
 		"message":        "submit placeholder; MCQ/simple grading is synchronous for demo",
 	})
+}
+
+func buildResourceStorageProvider(cfg *app.Config) (storage.Provider, error) {
+	switch cfg.ResourceStorageType {
+	case "local", "":
+		return storage.NewLocalProvider(cfg.ResourceLocalPath)
+	default:
+		return storage.NewLocalProvider(cfg.ResourceLocalPath)
+	}
 }
 
 func writeJSON(w http.ResponseWriter, status int, payload any) {

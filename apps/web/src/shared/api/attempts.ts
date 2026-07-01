@@ -13,12 +13,33 @@ export type StudentAttempt = components['schemas']['StudentAttempt'];
 export type AttemptResult = components['schemas']['AttemptResult']['data'];
 export type AttemptResultItem = components['schemas']['AttemptResultItem'];
 
-export interface ApiError {
-  error: {
-    code: string;
-    message: string;
-  };
-}
+import {
+  ApiResponseError,
+  createApiError,
+  formatFriendlyError,
+  getApiErrorDetails,
+  isApiError,
+  unwrapData,
+  unwrapPaged,
+  unwrapVoid,
+  type ApiError,
+  type ApiErrorDetails,
+  type PagedList,
+} from './api-error';
+
+export {
+  ApiResponseError,
+  createApiError,
+  formatFriendlyError,
+  getApiErrorDetails,
+  isApiError,
+  unwrapData,
+  unwrapPaged,
+  unwrapVoid,
+  type ApiError,
+  type ApiErrorDetails,
+  type PagedList,
+};
 
 export interface ListOptions {
   q?: string;
@@ -29,72 +50,6 @@ export interface ListOptions {
 }
 
 export type PageInfo = components['schemas']['PageInfo'];
-
-export interface PagedList<T> {
-  data: T[];
-  page?: PageInfo;
-}
-
-export class ApiResponseError extends Error {
-  constructor(
-    public readonly status: number,
-    public readonly body: ApiError
-  ) {
-    super(body.error.message);
-  }
-}
-
-function isApiError(value: unknown): value is ApiError {
-  return (
-    typeof value === 'object' &&
-    value !== null &&
-    'error' in value &&
-    typeof (value as ApiError).error === 'object' &&
-    (value as ApiError).error !== null &&
-    typeof (value as ApiError).error.code === 'string' &&
-    typeof (value as ApiError).error.message === 'string'
-  );
-}
-
-export function createApiError(status: number, raw: unknown): ApiResponseError {
-  if (isApiError(raw)) {
-    return new ApiResponseError(status, raw);
-  }
-  return new ApiResponseError(status, {
-    error: { code: 'unknown', message: 'Yêu cầu thất bại.' },
-  });
-}
-
-export function unwrapData<T>(res: {
-  data?: unknown;
-  error?: unknown;
-  response: Response;
-}): T {
-  if (res.error) {
-    throw createApiError(res.response.status, res.error);
-  }
-  return (res.data as { data: T }).data;
-}
-
-export function unwrapPaged<T>(res: {
-  data?: unknown;
-  error?: unknown;
-  response: Response;
-}): PagedList<T> {
-  if (res.error) {
-    throw createApiError(res.response.status, res.error);
-  }
-  return res.data as PagedList<T>;
-}
-
-export function unwrapVoid(res: {
-  error?: unknown;
-  response: Response;
-}): void {
-  if (res.error) {
-    throw createApiError(res.response.status, res.error);
-  }
-}
 
 export async function listAssignedAssessments(): Promise<AssignedAssessment[]> {
   const client = await getOpenAPIClient();
@@ -112,10 +67,20 @@ export async function startAttempt(assessmentId: string): Promise<AttemptSnapsho
   );
 }
 
-export async function listAttemptHistory(): Promise<StudentAttempt[]> {
+export interface AttemptHistoryOptions {
+  limit?: number;
+  cursor?: string;
+}
+
+export async function listAttemptHistory(
+  opts: AttemptHistoryOptions = {}
+): Promise<PagedList<StudentAttempt>> {
   const client = await getOpenAPIClient();
-  return unwrapData<StudentAttempt[]>(
-    await client.GET('/me/attempts')
+  const query: { limit?: number; cursor?: string } = {};
+  if (opts.limit) query.limit = opts.limit;
+  if (opts.cursor) query.cursor = opts.cursor;
+  return unwrapPaged<StudentAttempt>(
+    await client.GET('/me/attempts', { params: { query } })
   );
 }
 

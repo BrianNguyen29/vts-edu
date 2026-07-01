@@ -1,25 +1,19 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
-import { listAssessments } from '@/shared/api/assessments';
-import { listClasses } from '@/shared/api/academics';
+import { useAssessments } from '@/shared/api/assessments-queries';
+import { useClasses } from '@/shared/api/academics-queries';
 import {
-  listAssessmentAttempts,
-  getAssessmentResults,
-  getClassGradebook,
-  exportAssessmentAttemptsCSV,
-  exportClassGradebookCSV,
-  type AssessmentAttempt,
-  type AssessmentResult,
-  type ClassGradebookEntry,
-} from '@/shared/api/gradebook';
+  useAssessmentAttempts,
+  useAssessmentResults,
+  useClassGradebook,
+  useExportAssessmentAttemptsCSV,
+  useExportClassGradebookCSV,
+} from '@/shared/api/gradebook-queries';
+import type { ClassGradebookEntry } from '@/shared/api/gradebook';
 import type { AssessmentListItem } from '@/shared/api/assessments';
 import type { ClassSectionList } from '@/shared/api/academics';
-
-function formatFriendlyError(err: unknown): string {
-  if (err instanceof Error) return err.message;
-  if (typeof err === 'string') return err;
-  return 'Đã xảy ra lỗi.';
-}
+import { ErrorState } from '@/shared/components/error-state';
+import { useDocumentTitle } from '@/shared/lib/use-document-title';
 
 function formatDateTime(iso: string | undefined | null): string {
   if (!iso) return '—';
@@ -49,103 +43,53 @@ export function GradebookPage() {
     initialTab === 'class' ? 'class' : 'assessment'
   );
 
-  const [assessments, setAssessments] = useState<AssessmentListItem[]>([]);
-  const [classes, setClasses] = useState<ClassSectionList['data']>([]);
-  const [metaLoading, setMetaLoading] = useState(true);
-  const [metaError, setMetaError] = useState<string | null>(null);
+  useDocumentTitle('Sổ điểm');
 
-  const [attempts, setAttempts] = useState<AssessmentAttempt[]>([]);
-  const [results, setResults] = useState<AssessmentResult | null>(null);
-  const [classEntries, setClassEntries] = useState<ClassGradebookEntry[]>([]);
+  const {
+    data: assessmentsData,
+    isPending: assessmentsLoading,
+    error: assessmentsError,
+  } = useAssessments({ limit: 100 });
+  const {
+    data: classesData,
+    isPending: classesLoading,
+    error: classesError,
+  } = useClasses();
 
-  const [detailLoading, setDetailLoading] = useState(false);
-  const [detailError, setDetailError] = useState<string | null>(null);
+  const assessments = (assessmentsData?.data ?? []) as AssessmentListItem[];
+  const classes = (classesData?.data ?? []) as ClassSectionList['data'];
 
-  const [exporting, setExporting] = useState(false);
-  const [exportError, setExportError] = useState<string | null>(null);
+  const metaLoading = assessmentsLoading || classesLoading;
+  const metaError = assessmentsError || classesError;
 
-  useEffect(() => {
-    let cancelled = false;
-    async function load() {
-      setMetaLoading(true);
-      setMetaError(null);
-      try {
-        const [assessmentList, classList] = await Promise.all([
-          listAssessments({ limit: 100 }),
-          listClasses(),
-        ]);
-        if (cancelled) return;
-        setAssessments((assessmentList.data ?? []) as AssessmentListItem[]);
-        setClasses(classList.data ?? []);
-      } catch (err) {
-        if (cancelled) return;
-        setMetaError(formatFriendlyError(err));
-      } finally {
-        if (!cancelled) setMetaLoading(false);
-      }
-    }
-    void load();
-    return () => {
-      cancelled = true;
-    };
-  }, []);
+  const {
+    data: attempts = [],
+    isPending: attemptsLoading,
+    error: attemptsError,
+  } = useAssessmentAttempts(tab === 'assessment' ? assessmentId : undefined);
+  const {
+    data: results = null,
+    isPending: resultsLoading,
+    error: resultsError,
+  } = useAssessmentResults(tab === 'assessment' ? assessmentId : undefined);
 
-  useEffect(() => {
-    if (tab !== 'assessment' || !assessmentId) {
-      setAttempts([]);
-      setResults(null);
-      return;
-    }
-    let cancelled = false;
-    async function load() {
-      setDetailLoading(true);
-      setDetailError(null);
-      try {
-        const [attemptList, result] = await Promise.all([
-          listAssessmentAttempts(assessmentId),
-          getAssessmentResults(assessmentId),
-        ]);
-        if (cancelled) return;
-        setAttempts(attemptList);
-        setResults(result);
-      } catch (err) {
-        if (cancelled) return;
-        setDetailError(formatFriendlyError(err));
-      } finally {
-        if (!cancelled) setDetailLoading(false);
-      }
-    }
-    void load();
-    return () => {
-      cancelled = true;
-    };
-  }, [tab, assessmentId]);
+  const {
+    data: classEntries = [],
+    isPending: classGradebookLoading,
+    error: classGradebookError,
+  } = useClassGradebook(tab === 'class' ? classId : undefined);
 
-  useEffect(() => {
-    if (tab !== 'class' || !classId) {
-      setClassEntries([]);
-      return;
-    }
-    let cancelled = false;
-    async function load() {
-      setDetailLoading(true);
-      setDetailError(null);
-      try {
-        const entries = await getClassGradebook(classId);
-        if (cancelled) return;
-        setClassEntries(entries);
-      } catch (err) {
-        if (cancelled) return;
-        setDetailError(formatFriendlyError(err));
-      } finally {
-        if (!cancelled) setDetailLoading(false);
-      }
-    }
-    void load();
-    return () => {
-      cancelled = true;
-    };
-  }, [tab, classId]);
+  const detailLoading =
+    tab === 'assessment'
+      ? attemptsLoading || resultsLoading
+      : classGradebookLoading;
+  const detailError =
+    tab === 'assessment' ? attemptsError || resultsError : classGradebookError;
+
+  const exportAssessment = useExportAssessmentAttemptsCSV();
+  const exportClass = useExportClassGradebookCSV();
+  const exporting = exportAssessment.isPending || exportClass.isPending;
+  const exportError = exportAssessment.error || exportClass.error;
 
   function selectAssessment(id: string) {
     setSearchParams({ tab: 'assessment', assessment: id }, { replace: true });
@@ -174,27 +118,19 @@ export function GradebookPage() {
 
   async function handleExportAssessment() {
     if (!assessmentId) return;
-    setExporting(true);
-    setExportError(null);
     try {
-      await exportAssessmentAttemptsCSV(assessmentId);
-    } catch (err) {
-      setExportError(formatFriendlyError(err));
-    } finally {
-      setExporting(false);
+      await exportAssessment.mutateAsync(assessmentId);
+    } catch {
+      // Error surfaced via exportError below.
     }
   }
 
   async function handleExportClass() {
     if (!classId) return;
-    setExporting(true);
-    setExportError(null);
     try {
-      await exportClassGradebookCSV(classId);
-    } catch (err) {
-      setExportError(formatFriendlyError(err));
-    } finally {
-      setExporting(false);
+      await exportClass.mutateAsync(classId);
+    } catch {
+      // Error surfaced via exportError below.
     }
   }
 
@@ -238,11 +174,14 @@ export function GradebookPage() {
       </Link>
       <h1>Sổ điểm</h1>
 
-      <div className="gradebook-tabs" role="tablist">
+      <div className="gradebook-tabs" role="tablist" aria-label="Chế độ xem sổ điểm">
         <button
           type="button"
           role="tab"
+          id="gradebook-tab-assessment"
+          aria-controls="gradebook-panel-assessment"
           aria-selected={tab === 'assessment'}
+          tabIndex={tab === 'assessment' ? 0 : -1}
           className={tab === 'assessment' ? 'active' : ''}
           onClick={() => switchTab('assessment')}
         >
@@ -251,7 +190,10 @@ export function GradebookPage() {
         <button
           type="button"
           role="tab"
+          id="gradebook-tab-class"
+          aria-controls="gradebook-panel-class"
           aria-selected={tab === 'class'}
+          tabIndex={tab === 'class' ? 0 : -1}
           className={tab === 'class' ? 'active' : ''}
           onClick={() => switchTab('class')}
         >
@@ -259,15 +201,20 @@ export function GradebookPage() {
         </button>
       </div>
 
-      {metaLoading && <p className="dashboard-status">Đang tải danh sách…</p>}
-      {metaError && (
-        <div className="error-banner" role="alert">
-          {metaError}
-        </div>
+      {metaLoading && (
+        <p className="dashboard-status" role="status" aria-live="polite">
+          Đang tải danh sách…
+        </p>
       )}
+      {!!metaError && <ErrorState error={metaError} />}
 
       {!metaLoading && !metaError && tab === 'assessment' && (
-        <section className="dashboard-section">
+        <section
+          className="dashboard-section"
+          role="tabpanel"
+          id="gradebook-panel-assessment"
+          aria-labelledby="gradebook-tab-assessment"
+        >
           <div className="gradebook-selector">
             <label htmlFor="gradebook-assessment">Chọn đề thi</label>
             <select
@@ -289,7 +236,7 @@ export function GradebookPage() {
             <div className="gradebook-summary">
               <h2>{selectedAssessment.title}</h2>
               {results && (
-                <div className="summary-cards">
+                <div className="summary-cards" aria-label="Tóm tắt kết quả đề thi">
                   <div className="summary-card">
                     <span className="summary-value">{results.total_attempts}</span>
                     <span className="summary-label">Tổng lần làm</span>
@@ -325,37 +272,35 @@ export function GradebookPage() {
                   className="primary"
                   onClick={handleExportAssessment}
                   disabled={exporting || attempts.length === 0}
+                  aria-busy={exporting}
                   data-testid="export-assessment-csv"
                 >
                   {exporting ? 'Đang xuất…' : 'Xuất CSV'}
                 </button>
               </div>
 
-              {exportError && (
-                <div className="error-banner" role="alert">
-                  {exportError}
-                </div>
-              )}
+              {!!exportError && <ErrorState error={exportError} />}
 
               {detailLoading && (
-                <p className="dashboard-status">Đang tải kết quả…</p>
+                <p className="dashboard-status" role="status" aria-live="polite">
+                  Đang tải kết quả…
+                </p>
               )}
-              {detailError && (
-                <div className="error-banner" role="alert">
-                  {detailError}
-                </div>
-              )}
+              {!!detailError && <ErrorState error={detailError} />}
 
               {!detailLoading && !detailError && (
                 <div className="table-wrap">
                   <table className="gradebook-table" data-testid="gradebook-table">
+                    <caption className="visually-hidden">
+                      Bảng điểm theo học sinh cho đề thi {selectedAssessment.title}
+                    </caption>
                     <thead>
                       <tr>
-                        <th>Học sinh</th>
-                        <th>Trạng thái</th>
-                        <th>Bắt đầu</th>
-                        <th>Nộp</th>
-                        <th>Điểm</th>
+                        <th scope="col">Học sinh</th>
+                        <th scope="col">Trạng thái</th>
+                        <th scope="col">Bắt đầu</th>
+                        <th scope="col">Nộp</th>
+                        <th scope="col">Điểm</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -370,7 +315,10 @@ export function GradebookPage() {
                           <tr key={attempt.id}>
                             <td>{attempt.student_name || attempt.student_user_id}</td>
                             <td>
-                              <span className={`status-badge ${attempt.status.toLowerCase()}`}>
+                              <span
+                                className={`status-badge ${attempt.status.toLowerCase()}`}
+                                aria-label={`Trạng thái ${attempt.status}`}
+                              >
                                 {attempt.status}
                               </span>
                             </td>
@@ -397,7 +345,12 @@ export function GradebookPage() {
       )}
 
       {!metaLoading && !metaError && tab === 'class' && (
-        <section className="dashboard-section">
+        <section
+          className="dashboard-section"
+          role="tabpanel"
+          id="gradebook-panel-class"
+          aria-labelledby="gradebook-tab-class"
+        >
           <div className="gradebook-selector">
             <label htmlFor="gradebook-class">Chọn lớp</label>
             <select
@@ -424,34 +377,34 @@ export function GradebookPage() {
                   className="primary"
                   onClick={handleExportClass}
                   disabled={exporting || classEntries.length === 0}
+                  aria-busy={exporting}
                 >
                   {exporting ? 'Đang xuất…' : 'Xuất CSV'}
                 </button>
               </div>
 
-              {exportError && (
-                <div className="error-banner" role="alert">
-                  {exportError}
-                </div>
-              )}
+              {!!exportError && <ErrorState error={exportError} />}
 
               {detailLoading && (
-                <p className="dashboard-status">Đang tải sổ điểm…</p>
+                <p className="dashboard-status" role="status" aria-live="polite">
+                  Đang tải sổ điểm…
+                </p>
               )}
-              {detailError && (
-                <div className="error-banner" role="alert">
-                  {detailError}
-                </div>
-              )}
+              {!!detailError && <ErrorState error={detailError} />}
 
               {!detailLoading && !detailError && (
                 <div className="table-wrap">
                   <table className="gradebook-table">
+                    <caption className="visually-hidden">
+                      Bảng điểm tổng hợp theo học sinh cho lớp {selectedClass.name}
+                    </caption>
                     <thead>
                       <tr>
-                        <th>Học sinh</th>
+                        <th scope="col">Học sinh</th>
                         {Array.from(classAssessments.entries()).map(([id, title]) => (
-                          <th key={id}>{title}</th>
+                          <th scope="col" key={id}>
+                            {title}
+                          </th>
                         ))}
                       </tr>
                     </thead>
@@ -482,12 +435,13 @@ export function GradebookPage() {
                                           className={`status-badge small ${
                                             entry.status?.toLowerCase() ?? 'empty'
                                           }`}
+                                          aria-label={`Trạng thái ${entry.status ?? 'chưa có'}`}
                                         >
                                           {entry.status ?? '—'}
                                         </span>
                                       </>
                                     ) : (
-                                      '—'
+                                      <span aria-label="Chưa có điểm">—</span>
                                     )}
                                   </td>
                                 );

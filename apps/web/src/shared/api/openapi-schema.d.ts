@@ -1002,6 +1002,104 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/resources": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * @description List resources for the current organization.
+         *     - Students receive only PUBLISHED resources.
+         *     - Teachers and admins receive DRAFT and PUBLISHED resources.
+         */
+        get: operations["resources.list"];
+        put?: never;
+        /** @description Teacher or admin only. Create a new resource in DRAFT status. */
+        post: operations["resources.create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/resources/{id}/publish": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Teacher or admin only. Transition a resource to PUBLISHED. */
+        post: operations["resources.publish"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/resources/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** @description Teacher or admin only. Archive a resource. */
+        delete: operations["resources.archive"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/resources/{id}/files": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * @description Teacher or admin only. Upload a file (multipart/form-data, field `file`)
+         *     that becomes the active file for the resource. Replaces any existing
+         *     ACTIVE file for the same resource. Capped by server `MAX_UPLOAD_SIZE`.
+         */
+        post: operations["resources.uploadFile"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/resources/{id}/download": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * @description Download the active file for a resource. Students may only download
+         *     resources that are PUBLISHED. Teachers and admins may download any
+         *     non-archived resource.
+         */
+        get: operations["resources.downloadFile"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -1165,6 +1263,7 @@ export interface components {
         };
         StudentAttemptList: {
             data: components["schemas"]["StudentAttempt"][];
+            page?: components["schemas"]["PageInfo"];
         };
         StudentAttempt: {
             /** Format: uuid */
@@ -1819,6 +1918,62 @@ export interface components {
             /** Format: date-time */
             submitted_at?: string | null;
         };
+        Resource: {
+            data: {
+                /** Format: uuid */
+                id: string;
+                /** Format: uuid */
+                organization_id: string;
+                title: string;
+                description?: string | null;
+                /** @enum {string} */
+                context_type: "organization" | "class";
+                /** Format: uuid */
+                context_id: string;
+                /** @enum {string} */
+                status: "DRAFT" | "PUBLISHED" | "ARCHIVED";
+                /** Format: uuid */
+                created_by: string;
+                /** Format: date-time */
+                created_at: string;
+                /** Format: date-time */
+                updated_at: string;
+                /** Format: date-time */
+                published_at?: string | null;
+            };
+        };
+        ResourceList: {
+            data: components["schemas"]["Resource"][];
+        };
+        ResourceFile: {
+            data: {
+                /** Format: uuid */
+                id: string;
+                /** Format: uuid */
+                resource_id: string;
+                /** Format: uuid */
+                organization_id: string;
+                original_name: string;
+                storage_key: string;
+                content_type: string;
+                /** Format: int64 */
+                size_bytes: number;
+                /** @enum {string} */
+                status: "ACTIVE" | "ARCHIVED";
+                /** Format: uuid */
+                created_by: string;
+                /** Format: date-time */
+                created_at: string;
+            };
+        };
+        CreateResourceRequest: {
+            title: string;
+            description?: string;
+            /** @enum {string} */
+            context_type: "organization" | "class";
+            /** Format: uuid */
+            context_id: string;
+        };
         Problem: {
             /** Format: uri-reference */
             type?: string;
@@ -2094,7 +2249,12 @@ export interface operations {
     };
     "attempts.listAttemptHistory": {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description Maximum number of attempts to return. */
+                limit?: number;
+                /** @description Opaque cursor for keyset pagination. */
+                cursor?: string;
+            };
             header?: never;
             path?: never;
             cookie?: never;
@@ -3867,6 +4027,169 @@ export interface operations {
                 };
                 content: {
                     "text/csv": string;
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    "resources.list": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Resources visible to the caller */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ResourceList"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+        };
+    };
+    "resources.create": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateResourceRequest"];
+            };
+        };
+        responses: {
+            /** @description Resource created */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Resource"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+        };
+    };
+    "resources.publish": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Resource published */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Resource"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    "resources.archive": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Resource archived */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    "resources.uploadFile": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "multipart/form-data": {
+                    /** Format: binary */
+                    file: string;
+                };
+            };
+        };
+        responses: {
+            /** @description File stored */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ResourceFile"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            /** @description File exceeds MAX_UPLOAD_SIZE */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    "resources.downloadFile": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description File payload (octet-stream, attachment) */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/octet-stream": string;
                 };
             };
             401: components["responses"]["Unauthorized"];

@@ -17,6 +17,7 @@ cleanup() {
   if [[ -n "${API_BIN:-}" && -f "${API_BIN}" ]]; then
     rm -f "${API_BIN}"
   fi
+  rm -rf apps/web/test-results apps/web/playwright-report 2>/dev/null || true
   pnpm e2e:db:stop >/dev/null 2>&1 || true
 }
 trap cleanup EXIT

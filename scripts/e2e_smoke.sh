@@ -16,6 +16,9 @@ cleanup() {
   if [[ -n "${API_BIN:-}" && -f "${API_BIN}" ]]; then
     rm -f "${API_BIN}"
   fi
+  if [[ -n "${RESOURCE_LOCAL_DIR:-}" && -d "${RESOURCE_LOCAL_DIR}" ]]; then
+    rm -rf "${RESOURCE_LOCAL_DIR}"
+  fi
   ./scripts/e2e_db_stop.sh || true
 }
 trap cleanup EXIT
@@ -34,6 +37,9 @@ export PORT="8080"
 export DB_SKIP="false"
 
 API_BIN="$(mktemp)"
+RESOURCE_LOCAL_DIR="$(mktemp -d)"
+export RESOURCE_STORAGE_TYPE="local"
+export RESOURCE_LOCAL_PATH="${RESOURCE_LOCAL_DIR}"
 cd apps/api
 go build -o "${API_BIN}" ./cmd/server
 cd "${ROOT_DIR}"

@@ -3,6 +3,7 @@ import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '@/app/providers/auth-provider';
 import { PasswordPolicyHints } from '@/shared/components/password-policy-hints';
 import { validatePassword } from '@/shared/lib/password-policy';
+import { useDocumentTitle } from '@/shared/lib/use-document-title';
 
 function getRoleHomePath(roles: string[]): string {
   if (roles.includes('admin')) return '/app/admin';
@@ -13,6 +14,8 @@ function getRoleHomePath(roles: string[]): string {
 export function ChangePasswordPage() {
   const auth = useAuth();
   const navigate = useNavigate();
+
+  useDocumentTitle('Đổi mật khẩu');
 
   const [currentPassword, setCurrentPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
@@ -75,14 +78,19 @@ export function ChangePasswordPage() {
         <p>Bạn có thể đổi mật khẩu tại đây.</p>
       )}
 
-      {error && (
-        <div className="error-banner" role="alert">
-          {error}
-        </div>
-      )}
+      <div
+        className="error-banner"
+        role="alert"
+        aria-live="assertive"
+        data-testid="change-password-error"
+        data-error-visible={error ? 'true' : 'false'}
+        style={error ? undefined : { display: 'none' }}
+      >
+        {error}
+      </div>
 
       {success && (
-        <div className="success-banner" role="status">
+        <div className="success-banner" role="status" aria-live="polite">
           Đổi mật khẩu thành công. Vui lòng đăng nhập lại.
         </div>
       )}
@@ -93,7 +101,13 @@ export function ChangePasswordPage() {
         </p>
       )}
 
-      <form onSubmit={handleSubmit} className="change-password-form" noValidate data-testid="change-password-form">
+      <form
+        onSubmit={handleSubmit}
+        className="change-password-form"
+        noValidate
+        aria-describedby={error ? 'change-password-error' : undefined}
+        data-testid="change-password-form"
+      >
         <div className="field">
           <label htmlFor="currentPassword">Mật khẩu hiện tại</label>
           <input
@@ -119,9 +133,10 @@ export function ChangePasswordPage() {
             minLength={8}
             value={newPassword}
             onChange={(e) => setNewPassword(e.target.value)}
+            aria-describedby="password-policy"
             data-testid="new-password-input"
           />
-          <PasswordPolicyHints password={newPassword} />
+          <PasswordPolicyHints password={newPassword} id="password-policy" />
         </div>
 
         <div className="field">
@@ -142,6 +157,7 @@ export function ChangePasswordPage() {
           type="submit"
           className="primary"
           disabled={isSubmitting || success}
+          aria-busy={isSubmitting}
           data-testid="change-password-submit"
         >
           {isSubmitting ? 'Đang cập nhật…' : 'Đổi mật khẩu'}

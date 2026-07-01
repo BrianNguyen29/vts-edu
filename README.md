@@ -12,7 +12,8 @@ Product-ready core for a cost-efficient LMS with online assessments.
 | Backend | Render Free — Go API |
 | Database | Supabase Free — PostgreSQL 15+ |
 | Storage | Supabase Storage |
-| Queue | River in-process (planned, not wired yet) |
+| Queue | In-process scheduler (implemented); River deferred |
+| E2E | Playwright browser tests (`pnpm e2e:browser`) |
 
 See `docs/backend/backend-technical-spec/adr/0005-deployment-topology.md` for the full deployment ADR.
 
@@ -43,12 +44,14 @@ See `docs/backend/backend-technical-spec/adr/0005-deployment-topology.md` for th
 
 ## Status
 
-Core product features implemented incrementally:
+Current functional MVP state:
 
-- Backend auth (`/auth/login`, `/auth/refresh`, `/auth/logout`, `/auth/change-password`, `/me`) with JWT + rotating refresh cookie + CSRF, persisted multi-role memberships, and forced password change.
-- Attempt runtime endpoints (`GET /attempts/{id}`, `PUT /attempts/{id}/answers/{item_id}`, `POST /attempts/{id}/submit`) with tenant ownership, request-time expiration, real question prompt/choices snapshots, and synchronous MCQ grading.
-- Teacher assessment list (`GET /assessments`) role-gated to teacher/admin.
-- Admin organization/user management (`GET/POST /users`, `PUT /users/{id}/roles`, `POST /users/{id}/reset-password`, `GET/PATCH /organizations/current`).
-- E2E smoke covering auth roles, change password, attempt grading, teacher assessment list, and admin user/org flow.
+- Auth: login/refresh/logout/change-password, JWT access tokens, rotating HttpOnly refresh cookie, CSRF double-submit, persisted multi-role memberships, password history/lockout, forced password change, role-based redirects.
+- Attempt runtime: start/get/save/submit with tenant ownership, request-time expiration, question snapshot, synchronous MCQ grading, result review, attempt history.
+- Assessment builder: create draft, sections/items/reorder, duplicate section/item, settings/schedule, validation, preview, publish snapshots, teacher assessment list.
+- Teacher workspace: assigned classes, assessment list, attempt results, gradebook grid, CSV export.
+- Admin workspace: org settings, user CRUD/roles/reset-password, audit log list/export, CSV user import, academic terms/subjects/courses/classes CRUD, bulk teacher assignment/enrollment.
+- Student dashboard: assigned assessments, attempt history, result review, exam runner.
+- DevOps/quality: `pnpm check`, `pnpm e2e:smoke`, `pnpm e2e:browser` (Playwright), in-process scheduler for assessment open/close transitions.
 
-Remaining work (academics, full assessment builder, resources, gradebook, advanced grading, OpenAPI client generation, sqlc/Huma migration) is documented in the roadmap and will be built in later phases.
+Next backlog (not started): generated OpenAPI client, attempt history pagination, exam IndexedDB offline resilience, resources/files, accessibility audit, Huma/River (deferred with triggers).

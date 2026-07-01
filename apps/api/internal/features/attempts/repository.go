@@ -8,6 +8,7 @@ import (
 	"time"
 
 	attemptssqlc "github.com/BrianNguyen29/vts-edu/apps/api/internal/features/attempts/sqlc"
+	"github.com/BrianNguyen29/vts-edu/apps/api/internal/platform/pagination"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -55,7 +56,7 @@ type Repository interface {
 	SubmitAttempt(ctx context.Context, tx pgx.Tx, attemptID, orgID, userID, score, maxScore, gradingStatus string) (*GradingResult, error)
 
 	ListAssignedAssessments(ctx context.Context, orgID, userID string) ([]AssignedAssessment, error)
-	ListStudentAttempts(ctx context.Context, orgID, userID string) ([]StudentAttempt, error)
+	ListStudentAttempts(ctx context.Context, orgID, userID string, opts ListOptions) ([]StudentAttempt, *PageInfo, error)
 	GetLatestPublication(ctx context.Context, orgID, assessmentID string) (*PublicationSnapshot, string, string, error)
 	GetInProgressAttempt(ctx context.Context, orgID, userID, assessmentID string) (*Attempt, error)
 	CountStudentAttempts(ctx context.Context, orgID, userID, assessmentID string) (int64, error)
@@ -449,22 +450,55 @@ func tsStringPtr(t pgtype.Timestamptz) *string {
 	return nil
 }
 
-func (r *sqlcRepository) ListStudentAttempts(ctx context.Context, orgID, userID string) ([]StudentAttempt, error) {
+func (r *sqlcRepository) ListStudentAttempts(ctx context.Context, orgID, userID string, opts ListOptions) ([]StudentAttempt, *PageInfo, error) {
 	org, err := toUUID(orgID)
 	if err != nil {
-		return nil, fmt.Errorf("invalid organization id: %w", err)
+		return nil, nil, fmt.Errorf("invalid organization id: %w", err)
 	}
 	usr, err := toUUID(userID)
 	if err != nil {
-		return nil, fmt.Errorf("invalid user id: %w", err)
+		return nil, nil, fmt.Errorf("invalid user id: %w", err)
 	}
 
+	limit := opts.Limit
+	if limit <= 0 {
+		limit = 10
+	}
+	if limit > 50 {
+		limit = 50
+	}
+
+	cursorKey := ""
+	cursorUUID := pgtype.UUID{}
+	if opts.Cursor != "" {
+		c, err := pagination.Decode(opts.Cursor)
+		if err != nil {
+			return nil, nil, fmt.Errorf("invalid cursor: %w", err)
+		}
+		cursorKey = c.Key
+		if c.ID != "" {
+			cursorUUID, err = toUUID(c.ID)
+			if err != nil {
+				return nil, nil, fmt.Errorf("invalid cursor: %w", err)
+			}
+		}
+	}
+
+	// Fetch one extra row to determine whether a next page exists.
 	rows, err := r.queries.ListStudentAttempts(ctx, attemptssqlc.ListStudentAttemptsParams{
 		OrganizationID: org,
 		StudentUserID:  usr,
+		PageLimit:      int32(limit + 1),
+		CursorKey:      cursorKey,
+		CursorID:       cursorUUID,
 	})
 	if err != nil {
-		return nil, fmt.Errorf("list student attempts: %w", err)
+		return nil, nil, fmt.Errorf("list student attempts: %w", err)
+	}
+
+	hasMore := len(rows) > int(limit)
+	if hasMore {
+		rows = rows[:limit]
 	}
 
 	result := make([]StudentAttempt, len(rows))
@@ -482,7 +516,20 @@ func (r *sqlcRepository) ListStudentAttempts(ctx context.Context, orgID, userID 
 			GradingStatus:   textPtr(row.GradingStatus),
 		}
 	}
-	return result, nil
+
+	page := &PageInfo{Limit: limit, HasMore: hasMore}
+	if hasMore && len(rows) > 0 {
+		last := rows[len(rows)-1]
+		if last.CreatedAt.Valid && last.ID.Valid {
+			cursor := pagination.Encode(pagination.Cursor{
+				Key: last.CreatedAt.Time.Format(time.RFC3339Nano),
+				ID:  last.ID.String(),
+			})
+			page.NextCursor = &cursor
+		}
+	}
+
+	return result, page, nil
 }
 
 func nullableString(t pgtype.Text) *string {

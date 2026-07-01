@@ -764,15 +764,23 @@ function TermManager({
 }) {
   return (
     <div className="academic-manager">
-      <form onSubmit={onCreate} className="inline-form academic-create-form">
+      <form onSubmit={onCreate} className="inline-form academic-create-form" aria-label="Tạo học kỳ mới">
+        <label htmlFor={`term-name-${editingId ?? 'new'}`} className="visually-hidden">
+          Tên học kỳ
+        </label>
         <input
+          id={`term-name-${editingId ?? 'new'}`}
           type="text"
           placeholder="Tên học kỳ"
           value={form.name}
           onChange={(e) => onFormChange({ ...form, name: e.target.value })}
           required
         />
+        <label htmlFor={`term-start-${editingId ?? 'new'}`} className="visually-hidden">
+          Ngày bắt đầu
+        </label>
         <input
+          id={`term-start-${editingId ?? 'new'}`}
           type="date"
           value={form.start_date}
           onChange={(e) =>
@@ -780,7 +788,11 @@ function TermManager({
           }
           required
         />
+        <label htmlFor={`term-end-${editingId ?? 'new'}`} className="visually-hidden">
+          Ngày kết thúc
+        </label>
         <input
+          id={`term-end-${editingId ?? 'new'}`}
           type="date"
           value={form.end_date}
           onChange={(e) => onFormChange({ ...form, end_date: e.target.value })}
@@ -795,12 +807,13 @@ function TermManager({
         <p className="dashboard-status">Chưa có học kỳ nào.</p>
       ) : (
         <table className="academic-table">
+          <caption className="visually-hidden">Danh sách học kỳ</caption>
           <thead>
             <tr>
-              <th>Tên</th>
-              <th>Bắt đầu</th>
-              <th>Kết thúc</th>
-              <th>Thao tác</th>
+              <th scope="col">Tên</th>
+              <th scope="col">Bắt đầu</th>
+              <th scope="col">Kết thúc</th>
+              <th scope="col">Thao tác</th>
             </tr>
           </thead>
           <tbody>
@@ -808,7 +821,11 @@ function TermManager({
               editingId === term.id ? (
                 <tr key={term.id}>
                   <td>
+                    <label htmlFor={`term-name-edit-${term.id}`} className="visually-hidden">
+                      Tên học kỳ
+                    </label>
                     <input
+                      id={`term-name-edit-${term.id}`}
                       type="text"
                       value={editingDraft.name}
                       onChange={(e) =>
@@ -817,7 +834,11 @@ function TermManager({
                     />
                   </td>
                   <td>
+                    <label htmlFor={`term-start-edit-${term.id}`} className="visually-hidden">
+                      Ngày bắt đầu
+                    </label>
                     <input
+                      id={`term-start-edit-${term.id}`}
                       type="date"
                       value={editingDraft.start_date}
                       onChange={(e) =>
@@ -829,7 +850,11 @@ function TermManager({
                     />
                   </td>
                   <td>
+                    <label htmlFor={`term-end-edit-${term.id}`} className="visually-hidden">
+                      Ngày kết thúc
+                    </label>
                     <input
+                      id={`term-end-edit-${term.id}`}
                       type="date"
                       value={editingDraft.end_date}
                       onChange={(e) =>
@@ -899,22 +924,34 @@ function SubjectManager({
 }) {
   return (
     <div className="academic-manager">
-      <form onSubmit={onCreate} className="inline-form academic-create-form">
+      <form onSubmit={onCreate} className="inline-form academic-create-form" aria-label="Tạo môn học mới">
+        <label htmlFor={`subject-code-${editingId ?? 'new'}`} className="visually-hidden">
+          Mã môn học
+        </label>
         <input
+          id={`subject-code-${editingId ?? 'new'}`}
           type="text"
           placeholder="Mã môn học"
           value={form.code}
           onChange={(e) => onFormChange({ ...form, code: e.target.value })}
           required
         />
+        <label htmlFor={`subject-name-${editingId ?? 'new'}`} className="visually-hidden">
+          Tên môn học
+        </label>
         <input
+          id={`subject-name-${editingId ?? 'new'}`}
           type="text"
           placeholder="Tên môn học"
           value={form.name}
           onChange={(e) => onFormChange({ ...form, name: e.target.value })}
           required
         />
+        <label htmlFor={`subject-description-${editingId ?? 'new'}`} className="visually-hidden">
+          Mô tả
+        </label>
         <input
+          id={`subject-description-${editingId ?? 'new'}`}
           type="text"
           placeholder="Mô tả"
           value={form.description ?? ''}
@@ -931,12 +968,13 @@ function SubjectManager({
         <p className="dashboard-status">Chưa có môn học nào.</p>
       ) : (
         <table className="academic-table">
+          <caption className="visually-hidden">Danh sách môn học</caption>
           <thead>
             <tr>
-              <th>Mã</th>
-              <th>Tên</th>
-              <th>Mô tả</th>
-              <th>Thao tác</th>
+              <th scope="col">Mã</th>
+              <th scope="col">Tên</th>
+              <th scope="col">Mô tả</th>
+              <th scope="col">Thao tác</th>
             </tr>
           </thead>
           <tbody>
@@ -944,7 +982,11 @@ function SubjectManager({
               editingId === subject.id ? (
                 <tr key={subject.id}>
                   <td>
+                    <label htmlFor={`subject-code-edit-${subject.id}`} className="visually-hidden">
+                      Mã môn học
+                    </label>
                     <input
+                      id={`subject-code-edit-${subject.id}`}
                       type="text"
                       value={editingDraft.code}
                       onChange={(e) =>
@@ -956,7 +998,11 @@ function SubjectManager({
                     />
                   </td>
                   <td>
+                    <label htmlFor={`subject-name-edit-${subject.id}`} className="visually-hidden">
+                      Tên môn học
+                    </label>
                     <input
+                      id={`subject-name-edit-${subject.id}`}
                       type="text"
                       value={editingDraft.name}
                       onChange={(e) =>
@@ -968,7 +1014,11 @@ function SubjectManager({
                     />
                   </td>
                   <td>
+                    <label htmlFor={`subject-description-edit-${subject.id}`} className="visually-hidden">
+                      Mô tả
+                    </label>
                     <input
+                      id={`subject-description-edit-${subject.id}`}
                       type="text"
                       value={editingDraft.description ?? ''}
                       onChange={(e) =>
@@ -1045,8 +1095,12 @@ function CourseManager({
 }) {
   return (
     <div className="academic-manager">
-      <form onSubmit={onCreate} className="inline-form academic-create-form">
+      <form onSubmit={onCreate} className="inline-form academic-create-form" aria-label="Tạo khóa học mới">
+        <label htmlFor={`course-subject-${editingId ?? 'new'}`} className="visually-hidden">
+          Môn học
+        </label>
         <select
+          id={`course-subject-${editingId ?? 'new'}`}
           value={form.subject_id}
           onChange={(e) =>
             onFormChange({ ...form, subject_id: e.target.value })
@@ -1060,7 +1114,11 @@ function CourseManager({
             </option>
           ))}
         </select>
+        <label htmlFor={`course-term-${editingId ?? 'new'}`} className="visually-hidden">
+          Học kỳ
+        </label>
         <select
+          id={`course-term-${editingId ?? 'new'}`}
           value={form.academic_term_id}
           onChange={(e) =>
             onFormChange({ ...form, academic_term_id: e.target.value })
@@ -1074,14 +1132,22 @@ function CourseManager({
             </option>
           ))}
         </select>
+        <label htmlFor={`course-code-${editingId ?? 'new'}`} className="visually-hidden">
+          Mã khóa học
+        </label>
         <input
+          id={`course-code-${editingId ?? 'new'}`}
           type="text"
           placeholder="Mã khóa học"
           value={form.code}
           onChange={(e) => onFormChange({ ...form, code: e.target.value })}
           required
         />
+        <label htmlFor={`course-name-${editingId ?? 'new'}`} className="visually-hidden">
+          Tên khóa học
+        </label>
         <input
+          id={`course-name-${editingId ?? 'new'}`}
           type="text"
           placeholder="Tên khóa học"
           value={form.name}
@@ -1097,13 +1163,14 @@ function CourseManager({
         <p className="dashboard-status">Chưa có khóa học nào.</p>
       ) : (
         <table className="academic-table">
+          <caption className="visually-hidden">Danh sách khóa học</caption>
           <thead>
             <tr>
-              <th>Mã</th>
-              <th>Tên</th>
-              <th>Môn học</th>
-              <th>Học kỳ</th>
-              <th>Thao tác</th>
+              <th scope="col">Mã</th>
+              <th scope="col">Tên</th>
+              <th scope="col">Môn học</th>
+              <th scope="col">Học kỳ</th>
+              <th scope="col">Thao tác</th>
             </tr>
           </thead>
           <tbody>
@@ -1113,7 +1180,11 @@ function CourseManager({
               return editingId === course.id ? (
                 <tr key={course.id}>
                   <td>
+                    <label htmlFor={`course-code-edit-${course.id}`} className="visually-hidden">
+                      Mã khóa học
+                    </label>
                     <input
+                      id={`course-code-edit-${course.id}`}
                       type="text"
                       value={editingDraft.code}
                       onChange={(e) =>
@@ -1125,7 +1196,11 @@ function CourseManager({
                     />
                   </td>
                   <td>
+                    <label htmlFor={`course-name-edit-${course.id}`} className="visually-hidden">
+                      Tên khóa học
+                    </label>
                     <input
+                      id={`course-name-edit-${course.id}`}
                       type="text"
                       value={editingDraft.name}
                       onChange={(e) =>
@@ -1137,7 +1212,11 @@ function CourseManager({
                     />
                   </td>
                   <td>
+                    <label htmlFor={`course-subject-edit-${course.id}`} className="visually-hidden">
+                      Môn học
+                    </label>
                     <select
+                      id={`course-subject-edit-${course.id}`}
                       value={editingDraft.subject_id}
                       onChange={(e) =>
                         onEditChange({
@@ -1154,7 +1233,11 @@ function CourseManager({
                     </select>
                   </td>
                   <td>
+                    <label htmlFor={`course-term-edit-${course.id}`} className="visually-hidden">
+                      Học kỳ
+                    </label>
                     <select
+                      id={`course-term-edit-${course.id}`}
                       value={editingDraft.academic_term_id}
                       onChange={(e) =>
                         onEditChange({
@@ -1280,8 +1363,12 @@ function ClassManager({
 
   return (
     <div className="academic-manager">
-      <form onSubmit={onCreate} className="inline-form academic-create-form">
+      <form onSubmit={onCreate} className="inline-form academic-create-form" aria-label="Tạo lớp học mới">
+        <label htmlFor={`class-course-${editingId ?? 'new'}`} className="visually-hidden">
+          Khóa học
+        </label>
         <select
+          id={`class-course-${editingId ?? 'new'}`}
           value={form.course_id}
           onChange={(e) =>
             onFormChange({ ...form, course_id: e.target.value })
@@ -1295,7 +1382,11 @@ function ClassManager({
             </option>
           ))}
         </select>
+        <label htmlFor={`class-name-${editingId ?? 'new'}`} className="visually-hidden">
+          Tên lớp
+        </label>
         <input
+          id={`class-name-${editingId ?? 'new'}`}
           type="text"
           placeholder="Tên lớp"
           value={form.name}
@@ -1311,13 +1402,14 @@ function ClassManager({
         <p className="dashboard-status">Chưa có lớp học nào.</p>
       ) : (
         <table className="academic-table">
+          <caption className="visually-hidden">Danh sách lớp học</caption>
           <thead>
             <tr>
-              <th>Tên lớp</th>
-              <th>Khóa học</th>
-              <th>Giáo viên</th>
-              <th>Học sinh</th>
-              <th>Thao tác</th>
+              <th scope="col">Tên lớp</th>
+              <th scope="col">Khóa học</th>
+              <th scope="col">Giáo viên</th>
+              <th scope="col">Học sinh</th>
+              <th scope="col">Thao tác</th>
             </tr>
           </thead>
           <tbody>
@@ -1326,7 +1418,11 @@ function ClassManager({
               return editingId === cl.id ? (
                 <tr key={cl.id}>
                   <td>
+                    <label htmlFor={`class-name-edit-${cl.id}`} className="visually-hidden">
+                      Tên lớp
+                    </label>
                     <input
+                      id={`class-name-edit-${cl.id}`}
                       type="text"
                       value={editingDraft.name}
                       onChange={(e) =>
@@ -1338,7 +1434,11 @@ function ClassManager({
                     />
                   </td>
                   <td colSpan={3}>
+                    <label htmlFor={`class-course-edit-${cl.id}`} className="visually-hidden">
+                      Khóa học
+                    </label>
                     <select
+                      id={`class-course-edit-${cl.id}`}
                       value={editingDraft.course_id}
                       onChange={(e) =>
                         onEditChange({
@@ -1624,11 +1724,14 @@ function ClassManager({
                 </p>
                 <div className="table-wrap">
                   <table className="gradebook-table">
+                    <caption className="visually-hidden">
+                      Kết quả kiểm tra thao tác hàng loạt
+                    </caption>
                     <thead>
                       <tr>
-                        <th>User ID</th>
-                        <th>Trạng thái</th>
-                        <th>Lỗi</th>
+                        <th scope="col">User ID</th>
+                        <th scope="col">Trạng thái</th>
+                        <th scope="col">Lỗi</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -1718,15 +1821,26 @@ function UserPicker({
         </div>
       ) : (
         <>
+          <label htmlFor={`user-picker-search-${role}`} className="visually-hidden">
+            {`Tìm ${role === 'teacher' ? 'giáo viên' : 'học sinh'}`}
+          </label>
           <input
+            id={`user-picker-search-${role}`}
             type="search"
             placeholder={`Tìm ${role === 'teacher' ? 'giáo viên' : 'học sinh'}…`}
             value={query}
             onChange={(e) => setQuery(e.target.value)}
           />
-          {loading && <p className="dashboard-status">Đang tìm…</p>}
+          {loading && (
+            <p className="dashboard-status" role="status" aria-live="polite">
+              Đang tìm…
+            </p>
+          )}
           {users.length > 0 && (
-            <ul className="academic-user-results">
+            <ul
+              className="academic-user-results"
+              aria-label={`Kết quả tìm ${role === 'teacher' ? 'giáo viên' : 'học sinh'}`}
+            >
               {users.map((u) => (
                 <li key={u.id}>
                   <button type="button" onClick={() => handleSelect(u)}>

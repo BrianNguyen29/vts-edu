@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState, type Dispatch, type SetStateAction } from 'react';
 import { useParams } from 'react-router-dom';
 import {
   ApiResponseError,
@@ -9,10 +9,19 @@ import {
   type AttemptSnapshot,
   type AttemptSubmitted,
 } from '@/shared/api/attempts';
+import {
+  createExamDraftStorage,
+  shouldPreferDraft,
+  type ExamDraft,
+  type ExamDraftStorage,
+} from '@/shared/lib/exam-draft-store';
+import { useDocumentTitle } from '@/shared/lib/use-document-title';
 
 type SaveStatus =
   | { type: 'idle' }
   | { type: 'saving' }
+  | { type: 'local' }
+  | { type: 'syncing' }
   | { type: 'saved'; revision: number }
   | { type: 'error'; message: string };
 
@@ -103,8 +112,54 @@ function formatFriendlyError(err: unknown): string {
   return 'Đã xảy ra lỗi không mong muốn.';
 }
 
+async function syncPendingDrafts(
+  attemptId: string,
+  items: AttemptItem[],
+  storage: ExamDraftStorage,
+  setSaveStatuses: Dispatch<SetStateAction<Record<string, SaveStatus>>>,
+  isCancelled: () => boolean
+) {
+  const pending = await storage.getPendingByAttempt(attemptId);
+  for (const draft of pending) {
+    if (isCancelled()) return;
+
+    const item = items.find((i) => i.id === draft.item_id);
+    if (!item) continue;
+
+    setSaveStatuses((prev) => ({
+      ...prev,
+      [draft.item_id]: { type: 'syncing' },
+    }));
+
+    try {
+      const saved = await saveAnswer(attemptId, draft.item_id, draft.payload);
+      if (isCancelled()) return;
+
+      await storage.setDraft({
+        ...draft,
+        pending: false,
+        revision: saved.revision,
+        updated_at: Date.now(),
+      });
+
+      setSaveStatuses((prev) => ({
+        ...prev,
+        [draft.item_id]: { type: 'saved', revision: saved.revision },
+      }));
+    } catch (err) {
+      if (isCancelled()) return;
+      setSaveStatuses((prev) => ({
+        ...prev,
+        [draft.item_id]: { type: 'error', message: formatFriendlyError(err) },
+      }));
+    }
+  }
+}
+
 export function ExamPage() {
   const { attemptId } = useParams<{ attemptId: string }>();
+
+  useDocumentTitle('Bài thi');
 
   const [snapshot, setSnapshot] = useState<AttemptSnapshot | null>(null);
   const [loading, setLoading] = useState(true);
@@ -114,6 +169,45 @@ export function ExamPage() {
   const [submitting, setSubmitting] = useState(false);
   const [submitResult, setSubmitResult] = useState<AttemptSubmitted | null>(null);
   const [timeLeft, setTimeLeft] = useState<number | null>(null);
+  const [isOnline, setIsOnline] = useState<boolean>(() => {
+    if (typeof navigator === 'undefined') return true;
+    return navigator.onLine;
+  });
+
+  const storageRef = useRef<ExamDraftStorage | null>(null);
+  const attemptIdRef = useRef(attemptId);
+  const snapshotRef = useRef(snapshot);
+
+  useEffect(() => {
+    attemptIdRef.current = attemptId;
+  }, [attemptId]);
+
+  useEffect(() => {
+    snapshotRef.current = snapshot;
+  }, [snapshot]);
+
+  useEffect(() => {
+    function handleOnline() {
+      setIsOnline(true);
+      const id = attemptIdRef.current;
+      const snap = snapshotRef.current;
+      const storage = storageRef.current;
+      if (id && snap?.status === 'IN_PROGRESS' && storage) {
+        void syncPendingDrafts(id, snap.items, storage, setSaveStatuses, () => false);
+      }
+    }
+
+    function handleOffline() {
+      setIsOnline(false);
+    }
+
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+    return () => {
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
+    };
+  }, []);
 
   useEffect(() => {
     if (!attemptId) {
@@ -127,12 +221,21 @@ export function ExamPage() {
 
     async function load() {
       try {
-        const data = await getAttempt(id);
+        const storage = await createExamDraftStorage();
+        if (cancelled) return;
+        storageRef.current = storage;
+
+        const [data, drafts] = await Promise.all([
+          getAttempt(id),
+          storage.getPendingByAttempt(id),
+        ]);
         if (cancelled) return;
 
         setSnapshot(data);
 
         const initialAnswers: Record<string, string> = {};
+        const initialStatuses: Record<string, SaveStatus> = {};
+
         data.items.forEach((item) => {
           const choice = item.answer
             ? getChoiceFromPayload(item.answer.answer_payload)
@@ -141,13 +244,42 @@ export function ExamPage() {
             initialAnswers[item.id] = choice;
           }
           if (item.answer) {
-            setSaveStatuses((prev) => ({
-              ...prev,
-              [item.id]: { type: 'saved', revision: item.answer!.revision },
-            }));
+            initialStatuses[item.id] = {
+              type: 'saved',
+              revision: item.answer.revision,
+            };
           }
         });
+
+        drafts.forEach((draft) => {
+          const item = data.items.find((i) => i.id === draft.item_id);
+          if (!item) return;
+
+          const serverRevision = item.answer?.revision;
+          if (!shouldPreferDraft(draft, serverRevision)) return;
+
+          const choice = getChoiceFromPayload(draft.payload);
+          if (choice) {
+            initialAnswers[item.id] = choice;
+          }
+          if (draft.pending) {
+            initialStatuses[item.id] = { type: 'local' };
+          } else if (typeof draft.revision === 'number') {
+            initialStatuses[item.id] = {
+              type: 'saved',
+              revision: draft.revision,
+            };
+          }
+        });
+
         setAnswers(initialAnswers);
+        setSaveStatuses(initialStatuses);
+
+        if (data.status !== 'IN_PROGRESS') {
+          storage.deleteAllForAttempt(id).catch(() => {});
+        } else {
+          await syncPendingDrafts(id, data.items, storage, setSaveStatuses, () => cancelled);
+        }
       } catch (err) {
         if (cancelled) return;
         setError(formatFriendlyError(err));
@@ -181,12 +313,20 @@ export function ExamPage() {
     return () => clearInterval(interval);
   }, [snapshot?.expires_at]);
 
+  useEffect(() => {
+    if (!attemptId || !storageRef.current || !snapshot) return;
+    if (snapshot.status !== 'IN_PROGRESS') {
+      storageRef.current.deleteAllForAttempt(attemptId).catch(() => {});
+    }
+  }, [attemptId, snapshot?.status]);
+
   const isExpired = timeLeft === 0;
 
   async function handleSelect(item: AttemptItem, choice: string) {
     if (!attemptId || snapshot?.status !== 'IN_PROGRESS' || isExpired) return;
 
     const currentAttemptId = attemptId;
+    const storage = storageRef.current;
 
     setAnswers((prev) => ({ ...prev, [item.id]: choice }));
     setSaveStatuses((prev) => ({
@@ -194,18 +334,37 @@ export function ExamPage() {
       [item.id]: { type: 'saving' },
     }));
 
+    const draft: ExamDraft = {
+      attempt_id: currentAttemptId,
+      item_id: item.id,
+      payload: { selected_option: choice },
+      pending: true,
+      updated_at: Date.now(),
+    };
+
     try {
+      await storage?.setDraft(draft);
       const saved = await saveAnswer(currentAttemptId, item.id, {
         selected_option: choice,
+      });
+      await storage?.setDraft({
+        ...draft,
+        pending: false,
+        revision: saved.revision,
+        updated_at: Date.now(),
       });
       setSaveStatuses((prev) => ({
         ...prev,
         [item.id]: { type: 'saved', revision: saved.revision },
       }));
     } catch (err) {
+      // The local draft remains pending and will be retried when the
+      // browser comes back online or the page reloads.
       setSaveStatuses((prev) => ({
         ...prev,
-        [item.id]: { type: 'error', message: formatFriendlyError(err) },
+        [item.id]: isOnline
+          ? { type: 'error', message: formatFriendlyError(err) }
+          : { type: 'local' },
       }));
     }
   }
@@ -223,6 +382,7 @@ export function ExamPage() {
     setSubmitting(true);
     try {
       const result = await submitAttempt(currentAttemptId);
+      await storageRef.current?.deleteAllForAttempt(currentAttemptId);
       setSubmitResult(result);
       setSnapshot((prev) =>
         prev
@@ -325,9 +485,15 @@ export function ExamPage() {
         </div>
       )}
 
+      {!isOnline && (
+        <div className="exam-offline-banner" role="status" aria-live="polite">
+          Mất kết nối. Câu trả lời vẫn được lưu cục bộ và sẽ đồng bộ khi có mạng.
+        </div>
+      )}
+
       <div className="exam-meta-bar">
-        <span className="exam-status-badge">
-          {isExpired ? 'Đã hết thời gian' : 'Đang làm bài'}
+        <span className={`exam-status-badge ${!isOnline ? 'offline' : ''}`}>
+          {isExpired ? 'Đã hết thời gian' : isOnline ? 'Đang làm bài' : 'Ngoại tuyến'}
         </span>
         {timeLeft !== null && (
           <span
@@ -394,6 +560,7 @@ export function ExamPage() {
             className="primary"
             onClick={handleSubmit}
             disabled={isExpired || submitting || snapshot.items.length === 0}
+            aria-busy={submitting}
             data-testid="submit-exam-button"
           >
             {submitting ? 'Đang nộp bài…' : isExpired ? 'Đã hết thời gian' : 'Nộp bài'}
@@ -409,6 +576,14 @@ function SaveStatusMessage({ status }: { status: SaveStatus | undefined }) {
 
   if (status.type === 'saving') {
     return <p className="exam-save-status saving">Đang lưu…</p>;
+  }
+
+  if (status.type === 'local') {
+    return <p className="exam-save-status local">Đã lưu cục bộ (chưa đồng bộ)</p>;
+  }
+
+  if (status.type === 'syncing') {
+    return <p className="exam-save-status syncing">Đang đồng bộ…</p>;
   }
 
   if (status.type === 'saved') {

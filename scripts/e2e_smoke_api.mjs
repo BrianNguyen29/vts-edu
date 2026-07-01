@@ -993,6 +993,117 @@ async function startAttempt(token, assessmentID) {
   return json.data;
 }
 
+async function listResourcesRaw(token) {
+  const r = await fetch(`${API_PREFIX}/resources`, { headers: headers(token) });
+  if (!r.ok) {
+    const body = await r.text();
+    throw new Error(`list resources failed: ${r.status} body=${body}`);
+  }
+  return await r.json();
+}
+
+async function listResources(token) {
+  return (await listResourcesRaw(token)).data ?? [];
+}
+
+async function createResource(token, title, description, contextID) {
+  const r = await fetch(`${API_PREFIX}/resources`, {
+    method: 'POST',
+    headers: headers(token, true),
+    body: JSON.stringify({
+      title,
+      description,
+      context_type: 'organization',
+      context_id: contextID,
+    }),
+  });
+  if (!r.ok) throw new Error(`create resource failed: ${r.status}`);
+  return (await r.json()).data;
+}
+
+async function publishResource(token, resourceID) {
+  const r = await fetch(`${API_PREFIX}/resources/${resourceID}/publish`, {
+    method: 'POST',
+    headers: headers(token, true),
+  });
+  if (!r.ok) throw new Error(`publish resource failed: ${r.status}`);
+  return (await r.json()).data;
+}
+
+async function uploadResourceFile(token, resourceID, filename, contentType, payload) {
+  const form = new FormData();
+  form.append('file', new Blob([payload], { type: contentType }), filename);
+  const h = headers(token, true);
+  delete h['Content-Type'];
+  const r = await fetch(`${API_PREFIX}/resources/${resourceID}/files`, {
+    method: 'POST',
+    headers: h,
+    body: form,
+  });
+  if (!r.ok) {
+    const body = await r.text();
+    throw new Error(`upload resource file failed: ${r.status} body=${body}`);
+  }
+  return (await r.json()).data;
+}
+
+async function downloadResourceFile(token, resourceID) {
+  const r = await fetch(`${API_PREFIX}/resources/${resourceID}/download`, {
+    headers: headers(token),
+  });
+  if (!r.ok) throw new Error(`download resource file failed: ${r.status}`);
+  return r.text();
+}
+
+async function assertStudentCannotDownloadDraft(token, resourceID) {
+  const r = await fetch(`${API_PREFIX}/resources/${resourceID}/download`, {
+    headers: headers(token),
+  });
+  if (r.status !== 403) {
+    throw new Error(`expected 403 for draft download by student, got ${r.status}`);
+  }
+}
+
+async function assertResourcesFlow(teacherToken, studentToken, orgID) {
+  console.log('Checking resources/files MVP...');
+  const title = `Tài liệu smoke ${Date.now()}`;
+  const resource = await createResource(teacherToken, title, 'smoke description', orgID);
+  if (resource.status !== 'DRAFT') {
+    throw new Error(`expected new resource in DRAFT, got ${resource.status}`);
+  }
+
+  const payload = `hello resources ${Date.now()}`;
+  await uploadResourceFile(teacherToken, resource.id, 'hello.txt', 'text/plain', payload);
+
+  await assertStudentCannotDownloadDraft(studentToken, resource.id);
+
+  const published = await publishResource(teacherToken, resource.id);
+  if (published.status !== 'PUBLISHED') {
+    throw new Error(`expected PUBLISHED, got ${published.status}`);
+  }
+
+  const teacherListRaw = await listResourcesRaw(teacherToken);
+  const teacherList = teacherListRaw.data ?? [];
+  if (!teacherList.find((r) => r && r.data && r.data.id === resource.id)) {
+    throw new Error(`teacher should see the new resource; got ${JSON.stringify(teacherList)}`);
+  }
+
+  const studentList = await listResources(studentToken);
+  const studentResource = studentList.find((r) => r && r.data && r.data.id === resource.id);
+  if (!studentResource) {
+    throw new Error('student should see published resource');
+  }
+  if (studentResource.data.status !== 'PUBLISHED') {
+    throw new Error(`student should only see PUBLISHED, got ${studentResource.data.status}`);
+  }
+
+  const downloaded = await downloadResourceFile(studentToken, resource.id);
+  if (downloaded !== payload) {
+    throw new Error(`downloaded payload mismatch: got ${JSON.stringify(downloaded)}`);
+  }
+  console.log('  resources: create, upload, publish, student list, download — ok');
+}
+
 async function main() {
   console.log('Waiting for API...');
   await ready();
@@ -1524,6 +1635,12 @@ async function main() {
   }
 
   await assertStudentCannotAccessGradebook(token, draftAssessment.id, newClass.id);
+
+  await assertResourcesFlow(
+    teacherAfter.data.access_token,
+    token,
+    studentActor.organization_id,
+  );
 
   console.log('Checking login lockout...');
   await assertLoginLockout('hs001');
