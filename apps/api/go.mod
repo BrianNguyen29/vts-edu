@@ -3,7 +3,8 @@ module github.com/BrianNguyen29/vts-edu/apps/api
 go 1.25.0
 
 require (
-	github.com/go-chi/chi/v5 v5.1.0
+	github.com/danielgtaylor/huma/v2 v2.38.0
+	github.com/go-chi/chi/v5 v5.2.5
 	github.com/golang-jwt/jwt/v5 v5.3.1
 	github.com/jackc/pgx/v5 v5.10.0
 	golang.org/x/crypto v0.53.0

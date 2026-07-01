@@ -94,6 +94,21 @@ Sau khi thêm resources MVP (5 paths mới) và hoàn tất query state + access
 - *Go* nếu: (a) spike không phát sinh regression với test coverage hiện tại, (b) thời gian thêm endpoint mới giảm ≥ 30% so với skeleton thủ công, (c) runtime validation bắt được ≥ 1 lỗi spec/code thật trong spike, (d) handler test coverage đạt ≥ 80%.
 - *No-go* nếu: (a) regression xuất hiện ở auth/CSRF/middleware ordering, (b) DX tệ hơn hoặc chỉ tương đương, (c) team chưa thể cam kết test coverage ≥ 80%.
 
+**Kết quả spike (2026-07-01)**: bounded Huma spike trên `academics` đã chạy thành công. Báo cáo chi tiết: [`../spikes/huma-academics-spike.md`](../spikes/huma-academics-spike.md). Tóm tắt:
+
+- Spike pass 4/4 unit test, không regression ở các slice khác, `go vet` + `gofmt` sạch.
+- `{data,error}` envelope được bảo tồn qua Huma v2.38 với cấu hình không mặc định (`CreateHooks = nil`, `Transformers = nil`).
+- Auth/CSRF/role checks tích hợp sạch qua các helper hiện có, không cần rewrite.
+- Huma body validation (`minLength`, `required`) hoạt động trên request DTOs.
+
+**Quyết định sau spike**: **GO có điều kiện**. Di chuyển runtime vẫn tạm hoãn cho đến khi giải quyết 3 open issues:
+
+1. `application/problem+json` content type cho error responses (Huma mặc định khác production).
+2. `X-Request-Id` response header chưa được echo bởi chi middleware (spike chỉ pass trong context).
+3. OpenAPI spec divergence: skeleton tay vs. Huma-generated.
+
+Mỗi open issue cần một spike nhỏ trước khi runtime migration toàn cục được phê duyệt.
+
 Trong cả hai trường hợp, **OpenAPI skeleton thủ công tiếp tục là source of truth cho `openapi-typescript`** cho đến khi có quyết định cuối cùng, và Huma runtime (nếu go) sẽ sinh ra cùng spec từ Go operations.
 
 ## Consequences

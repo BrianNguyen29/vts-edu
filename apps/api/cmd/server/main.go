@@ -71,9 +71,11 @@ func main() {
 	var academicsHandler *academics.Handler
 	var gradebookHandler *gradebook.Handler
 	var resourcesHandler *resources.Handler
+	var academicsSvc academics.Service
+	var authIssuer *auth.TokenIssuer
 	var sched *scheduler.Scheduler
 	if !cfg.DatabaseSkip {
-		authIssuer := auth.NewTokenIssuer(cfg.JWTSigningKey, "vts-edu-api", "vts-edu-web", cfg.AccessTokenTTL)
+		authIssuer = auth.NewTokenIssuer(cfg.JWTSigningKey, "vts-edu-api", "vts-edu-web", cfg.AccessTokenTTL)
 		authRepo := auth.NewRepository(pool.Pool)
 		authSvc := auth.NewService(authRepo, srv.txManager, authIssuer, cfg.RefreshTokenTTL)
 		authHandler = auth.NewHandler(authSvc)
@@ -97,7 +99,7 @@ func main() {
 		adminHandler = admin.NewHandler(adminSvc, authIssuer)
 
 		academicsRepo := academics.NewRepository(pool.Pool)
-		academicsSvc := academics.NewService(academicsRepo, srv.txManager)
+		academicsSvc = academics.NewService(academicsRepo, srv.txManager)
 		academicsHandler = academics.NewHandler(academicsSvc, authIssuer)
 
 		gradebookRepo := gradebook.NewRepository(pool.Pool)
@@ -124,6 +126,13 @@ func main() {
 	r.Use(vtsmiddleware.RequestLogger)
 	r.Use(ratelimit.Middleware(limiter))
 	r.Use(corsMiddleware(cfg.FrontendOrigins))
+
+	// Huma feasibility spike: bounded, academics-only, mounted under a
+	// sub-prefix to keep existing routes untouched. The spike will be a
+	// no-op if academicsSvc is nil (DB_SKIP mode).
+	if academicsSvc != nil && authIssuer != nil {
+		_ = academics.MountHumaSpike(r, academics.HumaSpikeDeps{Svc: academicsSvc, Issuer: authIssuer})
+	}
 
 	r.Get("/healthz", srv.healthHandler)
 	r.Get("/readyz", srv.readyHandler)
