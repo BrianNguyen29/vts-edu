@@ -93,6 +93,18 @@ func (f *fakeService) PublishAssessment(ctx context.Context, actor auth.Actor, a
 	return assessments.PublishResult{}, nil
 }
 
+func (f *fakeService) DuplicateSection(ctx context.Context, actor auth.Actor, assessmentID, sectionID string) (assessments.SectionDetail, error) {
+	return assessments.SectionDetail{}, nil
+}
+
+func (f *fakeService) DuplicateItem(ctx context.Context, actor auth.Actor, sectionID, itemID string) (assessments.ItemDetail, error) {
+	return assessments.ItemDetail{}, nil
+}
+
+func (f *fakeService) PreviewAssessment(ctx context.Context, actor auth.Actor, assessmentID string) (assessments.AssessmentPreview, error) {
+	return assessments.AssessmentPreview{}, nil
+}
+
 func tokenWithRoles(roles []string) string {
 	issuer := auth.NewTokenIssuer("test-signing-key-minimum-32-bytes-long", "test-issuer", "test-audience", 15*time.Minute)
 	token, _, err := issuer.IssueAccessToken("user-id", "org-id", "session-id", roles, 1, false)

@@ -45,6 +45,8 @@ type Repository interface {
 	GetMembershipByUserID(ctx context.Context, orgID, userID string) (MembershipInfo, error)
 	IsClassTeacher(ctx context.Context, orgID, classID, membershipID string) (bool, error)
 	ClassExists(ctx context.Context, orgID, classID string) (bool, error)
+
+	InsertAuditLog(ctx context.Context, tx pgx.Tx, p AuditLogParams) error
 }
 
 type sqlcRepository struct {
@@ -799,4 +801,35 @@ func (r *sqlcRepository) ClassExists(ctx context.Context, orgID, classID string)
 		return false, fmt.Errorf("check class exists: %w", err)
 	}
 	return exists, nil
+}
+
+func (r *sqlcRepository) InsertAuditLog(ctx context.Context, tx pgx.Tx, p AuditLogParams) error {
+	orgUUID, err := toUUID(p.OrganizationID)
+	if err != nil {
+		return fmt.Errorf("invalid organization id: %w", err)
+	}
+	actorUUID := pgtype.UUID{}
+	if p.ActorUserID != "" {
+		actorUUID, err = toUUID(p.ActorUserID)
+		if err != nil {
+			return fmt.Errorf("invalid actor user id: %w", err)
+		}
+	}
+	resourceUUID, err := toUUID(p.ResourceID)
+	if err != nil {
+		return fmt.Errorf("invalid resource id: %w", err)
+	}
+	if err := r.queries.WithTx(tx).InsertAuditLog(ctx, academicssqlc.InsertAuditLogParams{
+		OrganizationID: orgUUID,
+		ActorUserID:    actorUUID,
+		Action:         p.Action,
+		ResourceType:   pgtype.Text{String: p.ResourceType, Valid: p.ResourceType != ""},
+		ResourceID:     resourceUUID,
+		BeforeJson:     p.BeforeJSON,
+		AfterJson:      p.AfterJSON,
+		MetadataJson:   p.MetadataJSON,
+	}); err != nil {
+		return fmt.Errorf("insert audit log: %w", err)
+	}
+	return nil
 }

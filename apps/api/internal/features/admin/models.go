@@ -98,6 +98,44 @@ type AuditLogListOptions struct {
 	Count       bool
 }
 
+// AuditLogExport is a single row in the audit log CSV export.
+type AuditLogExport struct {
+	ID           string
+	CreatedAt    string
+	ActorName    string
+	ActorUserID  string
+	Action       string
+	ResourceType string
+	ResourceID   string
+	Before       string
+	After        string
+	Metadata     string
+}
+
+// ImportUsersRequest is the payload for POST /api/v1/users/imports.
+type ImportUsersRequest struct {
+	CSV    string `json:"csv"`
+	DryRun bool   `json:"dry_run"`
+}
+
+// ImportUserRow is the per-row outcome of a user import.
+type ImportUserRow struct {
+	RowNumber int    `json:"row_number"`
+	UserID    string `json:"user_id,omitempty"`
+	LoginName string `json:"login_name"`
+	Status    string `json:"status"`
+	Error     string `json:"error,omitempty"`
+}
+
+// ImportUsersResult is the response for a user import operation.
+type ImportUsersResult struct {
+	Total   int             `json:"total"`
+	Created int             `json:"created"`
+	Failed  int             `json:"failed"`
+	DryRun  bool            `json:"dry_run"`
+	Rows    []ImportUserRow `json:"rows"`
+}
+
 // DataEnvelope wraps successful API responses.
 type DataEnvelope struct {
 	Data any       `json:"data"`
@@ -107,7 +145,8 @@ type DataEnvelope struct {
 // ErrorEnvelope wraps API error responses.
 type ErrorEnvelope struct {
 	Error struct {
-		Code    string `json:"code"`
-		Message string `json:"message"`
+		Code      string `json:"code"`
+		Message   string `json:"message"`
+		RequestID string `json:"request_id,omitempty"`
 	} `json:"error"`
 }

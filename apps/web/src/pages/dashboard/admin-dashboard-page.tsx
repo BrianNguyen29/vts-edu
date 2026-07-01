@@ -3,11 +3,13 @@ import { useAuth } from '@/app/providers/auth-provider';
 import {
   createUser,
   getOrganization,
+  importUsers,
   listUsers,
   resetUserPassword,
   updateOrganization,
   updateUserRoles,
   type CreateUserRequest,
+  type ImportUsersResult,
   type UpdateRolesRequest,
   type User,
 } from '@/shared/api/admin';
@@ -19,7 +21,7 @@ import { AcademicManagementPanel } from './academic-management-panel';
 
 const AVAILABLE_ROLES = ['student', 'teacher', 'admin'] as const;
 
-type ViewMode = 'list' | 'create' | 'edit-roles' | 'reset-password';
+type ViewMode = 'list' | 'create' | 'edit-roles' | 'reset-password' | 'import-csv';
 
 function formatFriendlyError(err: unknown): string {
   if (err instanceof ApiResponseError) {
@@ -80,6 +82,13 @@ export function AdminDashboardPage() {
 
   // reset password
   const [resetPassword, setResetPassword] = useState('');
+
+  // import users
+  const [importCsv, setImportCsv] = useState('');
+  const [importPreview, setImportPreview] = useState<ImportUsersResult | null>(
+    null
+  );
+  const [importLoading, setImportLoading] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -246,6 +255,40 @@ export function AdminDashboardPage() {
     }
   }
 
+  async function handleImportUsers(dryRun: boolean) {
+    clearMessages();
+    setImportLoading(true);
+    try {
+      const result = await importUsers({ csv: importCsv, dry_run: dryRun });
+      setImportPreview(result);
+      if (!dryRun) {
+        setSuccess(
+          `Đã nhập ${result.created}/${result.total} người dùng.`
+        );
+        void loadUsers();
+      }
+    } catch (err) {
+      setError(formatFriendlyError(err));
+      setImportPreview(null);
+    } finally {
+      setImportLoading(false);
+    }
+  }
+
+  async function loadUsers() {
+    setUsersLoading(true);
+    try {
+      const usersData = await listUsers({ q: searchQuery || undefined, limit: 10 });
+      setUsers(usersData.data);
+      setUserCursor(usersData.page?.next_cursor ?? undefined);
+      setUserHasMore(usersData.page?.has_more ?? false);
+    } catch (err) {
+      setError(formatFriendlyError(err));
+    } finally {
+      setUsersLoading(false);
+    }
+  }
+
   function toggleRole(roles: string[], role: string): string[] {
     return roles.includes(role)
       ? roles.filter((r) => r !== role)
@@ -389,18 +432,31 @@ export function AdminDashboardPage() {
       {activeTab === 'users' && (
       <section className="admin-section">
         <div className="section-header">
-          <h2>Người dùng</h2>
+          <h2>Ngườii dùng</h2>
           {mode === 'list' && (
-            <button
-              type="button"
-              className="primary"
-              onClick={() => {
-                clearMessages();
-                setMode('create');
-              }}
-            >
-              Thêm ngườii dùng
-            </button>
+            <div className="section-actions">
+              <button
+                type="button"
+                onClick={() => {
+                  clearMessages();
+                  setMode('import-csv');
+                  setImportCsv('');
+                  setImportPreview(null);
+                }}
+              >
+                Nhập CSV
+              </button>
+              <button
+                type="button"
+                className="primary"
+                onClick={() => {
+                  clearMessages();
+                  setMode('create');
+                }}
+              >
+                Thêm người dùng
+              </button>
+            </div>
           )}
         </div>
 
@@ -535,13 +591,115 @@ export function AdminDashboardPage() {
           </form>
         )}
 
+        {mode === 'import-csv' && (
+          <div className="admin-form bulk-import-form">
+            <h3>Nhập người dùng từ CSV</h3>
+            <p className="hint">
+              Dòng đầu tiên phải là:{' '}
+              <code>login_name,display_name,email,temporary_password,roles</code>
+              . Cột roles dùng dấu phẩy cho nhiều vai trò, ví dụ:{' '}
+              <code>student,teacher</code>.
+            </p>
+            <div className="field">
+              <label htmlFor="importCsv">Nội dung CSV</label>
+              <textarea
+                id="importCsv"
+                rows={10}
+                value={importCsv}
+                onChange={(e) => {
+                  setImportCsv(e.target.value);
+                  setImportPreview(null);
+                }}
+                placeholder="login_name,display_name,email,temporary_password,roles"
+              />
+            </div>
+            <div className="form-actions">
+              <button
+                type="button"
+                className="primary"
+                onClick={() => handleImportUsers(true)}
+                disabled={importLoading || !importCsv.trim()}
+              >
+                {importLoading && importPreview === null
+                  ? 'Đang kiểm tra…'
+                  : 'Kiểm tra'}
+              </button>
+              <button
+                type="button"
+                className="primary"
+                onClick={() => handleImportUsers(false)}
+                disabled={
+                  importLoading ||
+                  !importCsv.trim() ||
+                  (importPreview?.failed ?? 0) === importPreview?.total
+                }
+              >
+                {importLoading && importPreview !== null
+                  ? 'Đang nhập…'
+                  : 'Xác nhận nhập'}
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setMode('list');
+                  setImportCsv('');
+                  setImportPreview(null);
+                }}
+              >
+                Hủy
+              </button>
+            </div>
+
+            {importPreview && (
+              <div className="bulk-preview">
+                <p>
+                  Tổng: <strong>{importPreview.total}</strong> · Đã tạo/ hợp lệ:{' '}
+                  <strong>{importPreview.created}</strong> · Lỗi:{' '}
+                  <strong>{importPreview.failed}</strong>
+                  {importPreview.dry_run && (
+                    <span className="dry-run-badge">Chế độ kiểm tra</span>
+                  )}
+                </p>
+                <div className="table-wrap">
+                  <table className="gradebook-table">
+                    <thead>
+                      <tr>
+                        <th>Dòng</th>
+                        <th>Tên đăng nhập</th>
+                        <th>Trạng thái</th>
+                        <th>Lỗi</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {importPreview.rows.map((row) => (
+                        <tr key={row.row_number}>
+                          <td>{row.row_number}</td>
+                          <td>{row.login_name}</td>
+                          <td>
+                            <span
+                              className={`status-badge ${row.status}`}
+                            >
+                              {row.status}
+                            </span>
+                          </td>
+                          <td>{row.error || '—'}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
         {mode === 'list' && (
           <>
             {users.length === 0 ? (
               <p className="dashboard-status">
                 {searchQuery
-                  ? 'Không tìm thấy ngườii dùng phù hợp.'
-                  : 'Chưa có ngườii dùng nào.'}
+                  ? 'Không tìm thấy người dùng phù hợp.'
+                  : 'Chưa có người dùng nào.'}
               </p>
             ) : (
               <>

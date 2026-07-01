@@ -25,13 +25,13 @@ func NewHandler(svc Service) *Handler {
 // Login handles POST /api/v1/auth/login.
 func (h *Handler) Login(w http.ResponseWriter, r *http.Request) {
 	if !csrf.Validate(r) {
-		writeError(w, http.StatusForbidden, "invalid_csrf", "invalid csrf token")
+		writeError(w, r, http.StatusForbidden, "invalid_csrf", "invalid csrf token")
 		return
 	}
 
 	var req LoginRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "bad_request", "invalid request body")
+		writeError(w, r, http.StatusBadRequest, "bad_request", "invalid request body")
 		return
 	}
 
@@ -39,11 +39,11 @@ func (h *Handler) Login(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		switch {
 		case errors.Is(err, ErrInvalidCredentials):
-			writeError(w, http.StatusUnauthorized, "invalid_credentials", "invalid organization code, username, or password")
+			writeError(w, r, http.StatusUnauthorized, "invalid_credentials", "invalid organization code, username, or password")
 		case errors.Is(err, ErrAccountLocked):
-			writeError(w, http.StatusTooManyRequests, "account_locked", "account temporarily locked due to failed login attempts")
+			writeError(w, r, http.StatusTooManyRequests, "account_locked", "account temporarily locked due to failed login attempts")
 		default:
-			writeError(w, http.StatusInternalServerError, "internal_error", "login failed")
+			writeError(w, r, http.StatusInternalServerError, "internal_error", "login failed")
 		}
 		return
 	}
@@ -63,7 +63,7 @@ func (h *Handler) Login(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) Me(w http.ResponseWriter, r *http.Request) {
 	header := r.Header.Get("Authorization")
 	if header == "" || !strings.HasPrefix(header, "Bearer ") {
-		writeError(w, http.StatusUnauthorized, "unauthorized", "missing or invalid authorization header")
+		writeError(w, r, http.StatusUnauthorized, "unauthorized", "missing or invalid authorization header")
 		return
 	}
 
@@ -71,10 +71,10 @@ func (h *Handler) Me(w http.ResponseWriter, r *http.Request) {
 	result, err := h.svc.Me(r.Context(), token)
 	if err != nil {
 		if errors.Is(err, ErrUnauthorized) {
-			writeError(w, http.StatusUnauthorized, "unauthorized", "invalid or expired token")
+			writeError(w, r, http.StatusUnauthorized, "unauthorized", "invalid or expired token")
 			return
 		}
-		writeError(w, http.StatusInternalServerError, "internal_error", "failed to load actor")
+		writeError(w, r, http.StatusInternalServerError, "internal_error", "failed to load actor")
 		return
 	}
 
@@ -91,23 +91,23 @@ func (h *Handler) Me(w http.ResponseWriter, r *http.Request) {
 // Refresh handles POST /api/v1/auth/refresh.
 func (h *Handler) Refresh(w http.ResponseWriter, r *http.Request) {
 	if !csrf.Validate(r) {
-		writeError(w, http.StatusForbidden, "invalid_csrf", "invalid csrf token")
+		writeError(w, r, http.StatusForbidden, "invalid_csrf", "invalid csrf token")
 		return
 	}
 
 	cookie, err := r.Cookie(RefreshCookieName)
 	if err != nil || cookie.Value == "" {
-		writeError(w, http.StatusUnauthorized, "unauthorized", "missing refresh cookie")
+		writeError(w, r, http.StatusUnauthorized, "unauthorized", "missing refresh cookie")
 		return
 	}
 
 	result, err := h.svc.Refresh(r.Context(), cookie.Value)
 	if err != nil {
 		if errors.Is(err, ErrUnauthorized) {
-			writeError(w, http.StatusUnauthorized, "unauthorized", "invalid or expired refresh session")
+			writeError(w, r, http.StatusUnauthorized, "unauthorized", "invalid or expired refresh session")
 			return
 		}
-		writeError(w, http.StatusInternalServerError, "internal_error", "refresh failed")
+		writeError(w, r, http.StatusInternalServerError, "internal_error", "refresh failed")
 		return
 	}
 
@@ -125,7 +125,7 @@ func (h *Handler) Refresh(w http.ResponseWriter, r *http.Request) {
 // Logout handles POST /api/v1/auth/logout.
 func (h *Handler) Logout(w http.ResponseWriter, r *http.Request) {
 	if !csrf.Validate(r) {
-		writeError(w, http.StatusForbidden, "invalid_csrf", "invalid csrf token")
+		writeError(w, r, http.StatusForbidden, "invalid_csrf", "invalid csrf token")
 		return
 	}
 
@@ -135,7 +135,7 @@ func (h *Handler) Logout(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if _, err := h.svc.Logout(r.Context(), raw); err != nil {
-		writeError(w, http.StatusInternalServerError, "internal_error", "logout failed")
+		writeError(w, r, http.StatusInternalServerError, "internal_error", "logout failed")
 		return
 	}
 
@@ -146,33 +146,33 @@ func (h *Handler) Logout(w http.ResponseWriter, r *http.Request) {
 // ChangePassword handles POST /api/v1/auth/change-password.
 func (h *Handler) ChangePassword(w http.ResponseWriter, r *http.Request) {
 	if !csrf.Validate(r) {
-		writeError(w, http.StatusForbidden, "invalid_csrf", "invalid csrf token")
+		writeError(w, r, http.StatusForbidden, "invalid_csrf", "invalid csrf token")
 		return
 	}
 
 	header := r.Header.Get("Authorization")
 	if header == "" || !strings.HasPrefix(header, "Bearer ") {
-		writeError(w, http.StatusUnauthorized, "unauthorized", "missing or invalid authorization header")
+		writeError(w, r, http.StatusUnauthorized, "unauthorized", "missing or invalid authorization header")
 		return
 	}
 	token := strings.TrimPrefix(header, "Bearer ")
 
 	var req ChangePasswordRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "bad_request", "invalid request body")
+		writeError(w, r, http.StatusBadRequest, "bad_request", "invalid request body")
 		return
 	}
 
 	if err := h.svc.ChangePassword(r.Context(), token, req); err != nil {
 		switch {
 		case errors.Is(err, ErrInvalidCredentials):
-			writeError(w, http.StatusUnauthorized, "invalid_credentials", "current password is incorrect")
+			writeError(w, r, http.StatusUnauthorized, "invalid_credentials", "current password is incorrect")
 		case errors.Is(err, ErrUnauthorized):
-			writeError(w, http.StatusUnauthorized, "unauthorized", "invalid or expired token")
+			writeError(w, r, http.StatusUnauthorized, "unauthorized", "invalid or expired token")
 		case errors.Is(err, ErrWeakPassword), errors.Is(err, ErrPasswordUnchanged), errors.Is(err, ErrPasswordReused):
-			writeError(w, http.StatusBadRequest, "bad_request", err.Error())
+			writeError(w, r, http.StatusBadRequest, "bad_request", err.Error())
 		default:
-			writeError(w, http.StatusInternalServerError, "internal_error", "change password failed")
+			writeError(w, r, http.StatusInternalServerError, "internal_error", "change password failed")
 		}
 		return
 	}

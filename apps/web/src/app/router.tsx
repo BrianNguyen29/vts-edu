@@ -8,8 +8,10 @@ import { DashboardPage } from '@/pages/dashboard/dashboard-page';
 import { TeacherDashboardPage } from '@/pages/dashboard/teacher-dashboard-page';
 import { AdminDashboardPage } from '@/pages/dashboard/admin-dashboard-page';
 import { AssessmentBuilderPage } from '@/pages/assessment-builder/assessment-builder-page';
+import { GradebookPage } from '@/pages/gradebook/gradebook-page';
 import { ChangePasswordPage } from '@/pages/change-password/change-password-page';
 import { ExamPage } from '@/pages/exam/exam-page';
+import { AttemptReviewPage } from '@/pages/attempt-review/attempt-review-page';
 import { NotFoundPage } from '@/pages/not-found/not-found-page';
 import { useAuth } from '@/app/providers/auth-provider';
 import type { ReactNode } from 'react';
@@ -141,6 +143,10 @@ export const router = createBrowserRouter([
         element: <AssessmentBuilderPage />,
       },
       {
+        path: 'teacher/gradebook',
+        element: <GradebookPage />,
+      },
+      {
         path: 'admin',
         element: <AdminDashboardPage />,
       },
@@ -161,6 +167,20 @@ export const router = createBrowserRouter([
       {
         index: true,
         element: <ExamPage />,
+      },
+    ],
+  },
+  {
+    path: '/attempts/:attemptId/result',
+    element: (
+      <ProtectedRoute>
+        <ExamLayout />
+      </ProtectedRoute>
+    ),
+    children: [
+      {
+        index: true,
+        element: <AttemptReviewPage />,
       },
     ],
   },

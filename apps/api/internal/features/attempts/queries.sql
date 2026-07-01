@@ -106,7 +106,7 @@ WHERE id = $1
 RETURNING submitted_at, score::text, max_score::text, grading_status;
 
 -- name: ListAssignedAssessments :many
-SELECT a.id, a.title, a.status, a.duration_minutes, a.max_attempts, a.revision, ap.id AS publication_id, ap.published_at
+SELECT a.id, a.title, a.status, a.duration_minutes, a.max_attempts, a.revision, a.opens_at, a.closes_at, ap.id AS publication_id, ap.published_at, COALESCE(used.cnt, 0) AS attempts_used
 FROM assessments a
 JOIN assessment_targets t ON t.assessment_id = a.id AND t.status = 'ACTIVE'
 JOIN class_sections cs ON cs.id = t.class_section_id AND cs.status = 'ACTIVE'
@@ -119,11 +119,25 @@ LEFT JOIN LATERAL (
     ORDER BY version DESC
     LIMIT 1
 ) ap ON true
+LEFT JOIN LATERAL (
+    SELECT COUNT(*)::int AS cnt
+    FROM attempts att
+    WHERE att.organization_id = $2
+      AND att.student_user_id = $1
+      AND att.assessment_id = a.id
+) used ON true
 WHERE a.organization_id = $2
   AND a.status IN ('OPEN', 'PUBLISHED')
-  AND (a.opens_at IS NULL OR a.opens_at <= now())
-  AND (a.closes_at IS NULL OR a.closes_at > now())
+  AND ap.id IS NOT NULL
 ORDER BY a.created_at DESC;
+
+-- name: ListStudentAttempts :many
+SELECT a.id, a.assessment_id, a.publication_id, a.status, a.started_at, a.expires_at, a.submitted_at, CASE WHEN a.score IS NULL THEN ''::text ELSE a.score::text END AS score, CASE WHEN a.max_score IS NULL THEN ''::text ELSE a.max_score::text END AS max_score, a.grading_status, asmt.title AS assessment_title
+FROM attempts a
+JOIN assessments asmt ON asmt.id = a.assessment_id AND asmt.organization_id = a.organization_id
+WHERE a.organization_id = $1
+  AND a.student_user_id = $2
+ORDER BY a.created_at DESC, a.started_at DESC;
 
 -- name: GetLatestPublication :one
 SELECT id, snapshot_json, published_at

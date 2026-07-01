@@ -20,6 +20,7 @@ type Repository interface {
 	CountUsers(ctx context.Context, orgID string, opts ListOptions) (int64, error)
 	ListAuditLogs(ctx context.Context, orgID string, opts AuditLogListOptions) ([]AuditLog, error)
 	CountAuditLogs(ctx context.Context, orgID string, opts AuditLogListOptions) (int64, error)
+	ExportAuditLogs(ctx context.Context, orgID string, opts AuditLogListOptions) ([]AuditLogExport, error)
 	LoginExists(ctx context.Context, orgID, loginName string) (bool, error)
 	CreateUser(ctx context.Context, tx pgx.Tx, orgID, displayName, email, loginName, passwordHash string, roles []string) (User, error)
 	GetMembershipID(ctx context.Context, orgID, userID string) (string, error)
@@ -219,6 +220,41 @@ func (r *sqlcRepository) CountAuditLogs(ctx context.Context, orgID string, opts 
 		return 0, fmt.Errorf("count audit logs: %w", err)
 	}
 	return count, nil
+}
+
+func (r *sqlcRepository) ExportAuditLogs(ctx context.Context, orgID string, opts AuditLogListOptions) ([]AuditLogExport, error) {
+	orgUUID, err := toUUID(orgID)
+	if err != nil {
+		return nil, fmt.Errorf("invalid organization id: %w", err)
+	}
+
+	rows, err := r.queries.ExportAuditLogs(ctx, adminsqlc.ExportAuditLogsParams{
+		OrganizationID: orgUUID,
+		ActionName:     opts.Action,
+		ActorUserID:    opts.ActorUserID,
+		FromTime:       opts.From,
+		ToTime:         opts.To,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("export audit logs: %w", err)
+	}
+
+	logs := make([]AuditLogExport, len(rows))
+	for i, row := range rows {
+		logs[i] = AuditLogExport{
+			ID:           row.ID.String(),
+			CreatedAt:    row.CreatedAt.Time.Format(time.RFC3339),
+			ActorName:    row.ActorName.String,
+			ActorUserID:  row.ActorUserID.String(),
+			Action:       row.Action,
+			ResourceType: row.ResourceType.String,
+			ResourceID:   row.ResourceID.String(),
+			Before:       string(row.BeforeJson),
+			After:        string(row.AfterJson),
+			Metadata:     string(row.MetadataJson),
+		}
+	}
+	return logs, nil
 }
 
 func (r *sqlcRepository) LoginExists(ctx context.Context, orgID, loginName string) (bool, error) {

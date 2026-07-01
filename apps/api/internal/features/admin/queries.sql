@@ -59,6 +59,27 @@ WHERE organization_id = sqlc.arg(organization_id)
   AND (sqlc.arg(from_time)::text = '' OR created_at >= sqlc.arg(from_time)::timestamptz)
   AND (sqlc.arg(to_time)::text = '' OR created_at <= sqlc.arg(to_time)::timestamptz);
 
+-- name: ExportAuditLogs :many
+SELECT
+    al.id,
+    al.created_at,
+    u.display_name AS actor_name,
+    al.actor_user_id,
+    al.action,
+    al.resource_type,
+    al.resource_id,
+    al.before_json,
+    al.after_json,
+    al.metadata_json
+FROM audit_logs al
+LEFT JOIN users u ON u.id = al.actor_user_id
+WHERE al.organization_id = sqlc.arg(organization_id)
+  AND (sqlc.arg(action_name)::text = '' OR al.action = sqlc.arg(action_name))
+  AND (sqlc.arg(actor_user_id)::text = '' OR al.actor_user_id::text = sqlc.arg(actor_user_id))
+  AND (sqlc.arg(from_time)::text = '' OR al.created_at >= sqlc.arg(from_time)::timestamptz)
+  AND (sqlc.arg(to_time)::text = '' OR al.created_at <= sqlc.arg(to_time)::timestamptz)
+ORDER BY al.created_at DESC, al.id DESC;
+
 -- name: LoginExists :one
 SELECT EXISTS (
     SELECT 1

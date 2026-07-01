@@ -1,4 +1,4 @@
-const API_BASE = 'http://localhost:8080';
+const API_BASE = process.env.API_BASE || 'http://localhost:8080';
 const API_PREFIX = `${API_BASE}/api/v1`;
 const ATTEMPT_ID = '00000000-0000-4000-8000-000000000001';
 const DEMO_CSRF = 'demo-csrf-token';
@@ -235,6 +235,38 @@ async function createItem(token, sectionID, questionVersionID, position, points 
   return json.data;
 }
 
+async function duplicateSection(token, assessmentID, sectionID) {
+  const r = await fetch(`${API_PREFIX}/assessments/${assessmentID}/sections/${sectionID}/duplicate`, {
+    method: 'POST',
+    headers: headers(token, true),
+  });
+  if (!r.ok) throw new Error(`duplicate section failed: ${r.status}`);
+  const json = await r.json();
+  console.log('  duplicated section:', json.data.title, json.data.id);
+  return json.data;
+}
+
+async function duplicateItem(token, sectionID, itemID) {
+  const r = await fetch(`${API_PREFIX}/assessment-sections/${sectionID}/items/${itemID}/duplicate`, {
+    method: 'POST',
+    headers: headers(token, true),
+  });
+  if (!r.ok) throw new Error(`duplicate item failed: ${r.status}`);
+  const json = await r.json();
+  console.log('  duplicated item:', json.data.question_version_id, json.data.id);
+  return json.data;
+}
+
+async function previewAssessment(token, assessmentID) {
+  const r = await fetch(`${API_PREFIX}/assessments/${assessmentID}/preview`, {
+    headers: headers(token),
+  });
+  if (!r.ok) throw new Error(`preview assessment failed: ${r.status}`);
+  const json = await r.json();
+  console.log('  preview sections:', json.data.sections.length);
+  return json.data;
+}
+
 async function createTarget(token, assessmentID, classSectionID) {
   const r = await fetch(`${API_PREFIX}/assessments/${assessmentID}/targets`, {
     method: 'POST',
@@ -308,7 +340,10 @@ async function reorderItems(token, sectionID, itemIDs) {
     headers: headers(token, true),
     body: JSON.stringify({ item_ids: itemIDs }),
   });
-  if (!r.ok) throw new Error(`reorder items failed: ${r.status}`);
+  if (!r.ok) {
+    const text = await r.text();
+    throw new Error(`reorder items failed: ${r.status} ${text}`);
+  }
 }
 
 async function deleteItem(token, itemID) {
@@ -432,6 +467,21 @@ async function assertCreateUserRejected(token, loginName, displayName, roles, te
     throw new Error(`expected weak password create user to return 400, got ${r.status}`);
   }
   console.log('  create-user weak rejected:', r.status);
+}
+
+async function importUsers(token, csv, dryRun = false) {
+  const r = await fetch(`${API_PREFIX}/users/imports`, {
+    method: 'POST',
+    headers: headers(token),
+    body: JSON.stringify({ csv, dry_run: dryRun }),
+  });
+  const expectedStatus = dryRun ? 200 : 201;
+  if (r.status !== expectedStatus) {
+    throw new Error(`import users failed: ${r.status}`);
+  }
+  const json = await r.json();
+  console.log('  import users:', json.data.created, 'created,', json.data.failed, 'failed, dry_run:', json.data.dry_run);
+  return json.data;
 }
 
 async function updateUserRoles(token, userID, roles) {
@@ -681,6 +731,36 @@ async function enrollStudent(token, classID, userID) {
   return json.data;
 }
 
+async function bulkEnrollStudents(token, classID, userIDs, dryRun = false) {
+  const r = await fetch(`${API_PREFIX}/classes/${classID}/enrollments/bulk`, {
+    method: 'POST',
+    headers: headers(token, true),
+    body: JSON.stringify({ user_ids: userIDs, dry_run: dryRun }),
+  });
+  const expectedStatus = dryRun ? 200 : 201;
+  if (r.status !== expectedStatus) {
+    throw new Error(`bulk enroll students failed: ${r.status}`);
+  }
+  const json = await r.json();
+  console.log('  bulk enroll:', json.data.enrolled, 'enrolled,', json.data.failed, 'failed, dry_run:', json.data.dry_run);
+  return json.data;
+}
+
+async function bulkAssignTeachers(token, classID, items, dryRun = false) {
+  const r = await fetch(`${API_PREFIX}/classes/${classID}/teachers/bulk`, {
+    method: 'POST',
+    headers: headers(token, true),
+    body: JSON.stringify({ items, dry_run: dryRun }),
+  });
+  const expectedStatus = dryRun ? 200 : 201;
+  if (r.status !== expectedStatus) {
+    throw new Error(`bulk assign teachers failed: ${r.status}`);
+  }
+  const json = await r.json();
+  console.log('  bulk assign teachers:', json.data.assigned, 'assigned,', json.data.failed, 'failed, dry_run:', json.data.dry_run);
+  return json.data;
+}
+
 async function assertStudentCannotAccessAcademics(token) {
   const r = await fetch(`${API_PREFIX}/classes`, { headers: headers(token) });
   if (r.status !== 403) {
@@ -743,6 +823,14 @@ async function assertAuditLogsCount(token) {
   }
 }
 
+async function exportAuditLogsCSV(token) {
+  const r = await fetch(`${API_PREFIX}/audit-logs/export`, { headers: headers(token) });
+  if (!r.ok) throw new Error(`export audit logs failed: ${r.status}`);
+  const text = await r.text();
+  console.log('  audit logs csv rows:', text.split('\n').length);
+  return text;
+}
+
 async function assertAuditLogs(token, expectedActions) {
   const rows = await listAuditLogs(token);
   const actions = rows.map((row) => row.action);
@@ -801,6 +889,96 @@ async function listAssignedAssessments(token) {
   if (!r.ok) throw new Error(`list assigned assessments failed: ${r.status}`);
   const json = await r.json();
   console.log('  assigned assessments:', json.data.length);
+  return json.data;
+}
+
+async function listMyAttempts(token) {
+  const r = await fetch(`${API_PREFIX}/me/attempts`, { headers: headers(token) });
+  if (!r.ok) throw new Error(`list my attempts failed: ${r.status}`);
+  const json = await r.json();
+  console.log('  my attempts:', json.data.length);
+  return json.data;
+}
+
+async function listAssessmentAttempts(token, assessmentID) {
+  const r = await fetch(`${API_PREFIX}/assessments/${assessmentID}/attempts`, { headers: headers(token) });
+  if (!r.ok) throw new Error(`list assessment attempts failed: ${r.status}`);
+  const json = await r.json();
+  console.log('  assessment attempts:', json.data.length);
+  return json.data;
+}
+
+async function getAssessmentResults(token, assessmentID) {
+  const r = await fetch(`${API_PREFIX}/assessments/${assessmentID}/results`, { headers: headers(token) });
+  if (!r.ok) throw new Error(`get assessment results failed: ${r.status}`);
+  const json = await r.json();
+  console.log('  assessment results:', json.data);
+  return json.data;
+}
+
+async function exportAssessmentAttemptsCSV(token, assessmentID) {
+  const r = await fetch(`${API_PREFIX}/assessments/${assessmentID}/attempts/export`, { headers: headers(token) });
+  if (!r.ok) throw new Error(`export assessment attempts failed: ${r.status}`);
+  const text = await r.text();
+  console.log('  assessment attempts csv rows:', text.split('\n').length);
+  return text;
+}
+
+async function getClassGradebook(token, classID) {
+  const r = await fetch(`${API_PREFIX}/classes/${classID}/gradebook`, { headers: headers(token) });
+  if (!r.ok) throw new Error(`get class gradebook failed: ${r.status}`);
+  const json = await r.json();
+  console.log('  class gradebook entries:', json.data.length);
+  return json.data;
+}
+
+async function exportClassGradebookCSV(token, classID) {
+  const r = await fetch(`${API_PREFIX}/classes/${classID}/gradebook/export`, { headers: headers(token) });
+  if (!r.ok) throw new Error(`export class gradebook failed: ${r.status}`);
+  const text = await r.text();
+  console.log('  class gradebook csv rows:', text.split('\n').length);
+  return text;
+}
+
+async function assertStudentCannotAccessGradebook(token, assessmentID, classID) {
+  const r1 = await fetch(`${API_PREFIX}/assessments/${assessmentID}/attempts`, { headers: headers(token) });
+  if (r1.status !== 403) throw new Error(`expected student /assessments/{id}/attempts 403, got ${r1.status}`);
+  const r2 = await fetch(`${API_PREFIX}/assessments/${assessmentID}/results`, { headers: headers(token) });
+  if (r2.status !== 403) throw new Error(`expected student /assessments/{id}/results 403, got ${r2.status}`);
+  const r3 = await fetch(`${API_PREFIX}/classes/${classID}/gradebook`, { headers: headers(token) });
+  if (r3.status !== 403) throw new Error(`expected student /classes/{id}/gradebook 403, got ${r3.status}`);
+  console.log('  student gradebook endpoints correctly rejected:', r1.status);
+}
+
+async function saveAnswerForAttempt(token, attemptId, itemId, selectedOption) {
+  const r = await fetch(`${API_PREFIX}/attempts/${attemptId}/answers/${itemId}`, {
+    method: 'PUT',
+    headers: headers(token, true),
+    body: JSON.stringify({ answer_payload: { selected_option: selectedOption } }),
+  });
+  if (!r.ok) throw new Error(`save answer failed: ${r.status}`);
+  const json = await r.json();
+  console.log('  answer revision:', json.data.revision);
+}
+
+async function submitAttemptById(token, attemptId) {
+  const r = await fetch(`${API_PREFIX}/attempts/${attemptId}/submit`, {
+    method: 'POST',
+    headers: headers(token, true),
+  });
+  if (!r.ok) throw new Error(`submit failed: ${r.status}`);
+  const json = await r.json();
+  console.log('  submit status:', json.data.status);
+  console.log('  score:', json.data.score, '/', json.data.max_score, '| grading:', json.data.grading_status);
+  if (json.data.grading_status !== 'GRADED') throw new Error(`unexpected grading_status: ${json.data.grading_status}`);
+  return json.data;
+}
+
+async function getAttemptResult(token, attemptId) {
+  const r = await fetch(`${API_PREFIX}/attempts/${attemptId}/result`, { headers: headers(token) });
+  if (!r.ok) throw new Error(`get attempt result failed: ${r.status}`);
+  const json = await r.json();
+  console.log('  result status:', json.data.status, '| items:', json.data.items.length);
   return json.data;
 }
 
@@ -934,6 +1112,9 @@ async function main() {
   await assertAuditLogsCursorPagination(adminAfter.data.access_token, 1);
   await assertAuditLogsCount(adminAfter.data.access_token);
 
+  console.log('Checking audit logs CSV export...');
+  await exportAuditLogsCSV(adminAfter.data.access_token);
+
   await assertNonAdminCannotAccessAdmin(token, 'student');
   await assertNonAdminCannotAccessAdmin(teacherAfter.data.access_token, 'teacher');
 
@@ -1024,6 +1205,86 @@ async function main() {
     throw new Error('student should be enrolled in newly created class 9A1');
   }
 
+  console.log('Checking bulk operations...');
+  const importDryRun = await importUsers(
+    adminAfter.data.access_token,
+    'login_name,display_name,email,temporary_password,roles\n' +
+      'bulk-student,Bulk Student,bulk-student@example.com,TempPass123!,student\n' +
+      'bulk-teacher,Bulk Teacher,bulk-teacher@example.com,TempPass123!,teacher\n' +
+      'bulk-invalid,,invalid@example.com,TempPass123!,student\n',
+    true,
+  );
+  if (importDryRun.total !== 3 || importDryRun.failed !== 1) {
+    throw new Error(`expected dry-run 3 total / 1 failed, got ${importDryRun.total} / ${importDryRun.failed}`);
+  }
+
+  const importConfirm = await importUsers(
+    adminAfter.data.access_token,
+    'login_name,display_name,email,temporary_password,roles\n' +
+      'bulk-student,Bulk Student,bulk-student@example.com,TempPass123!,student\n' +
+      'bulk-teacher,Bulk Teacher,bulk-teacher@example.com,TempPass123!,teacher\n',
+    false,
+  );
+  if (importConfirm.created !== 2) {
+    throw new Error(`expected 2 imported users, got ${importConfirm.created}`);
+  }
+  const importedStudent = importConfirm.rows.find((row) => row.login_name === 'bulk-student');
+  const importedTeacher = importConfirm.rows.find((row) => row.login_name === 'bulk-teacher');
+  if (!importedStudent?.user_id || !importedTeacher?.user_id) {
+    throw new Error('missing imported user ids');
+  }
+
+  const bulkClass = await createClass(adminAfter.data.access_token, newCourse.id, '9A2');
+
+  const assignDryRun = await bulkAssignTeachers(
+    adminAfter.data.access_token,
+    bulkClass.id,
+    [{ user_id: importedTeacher.user_id, role: 'teacher' }],
+    true,
+  );
+  if (assignDryRun.rows[0]?.status !== 'valid') {
+    throw new Error(`expected teacher dry-run valid, got ${assignDryRun.rows[0]?.status}`);
+  }
+
+  const assignConfirm = await bulkAssignTeachers(
+    adminAfter.data.access_token,
+    bulkClass.id,
+    [{ user_id: importedTeacher.user_id, role: 'teacher' }],
+    false,
+  );
+  if (assignConfirm.assigned !== 1) {
+    throw new Error(`expected 1 teacher assigned, got ${assignConfirm.assigned}`);
+  }
+
+  const enrollDryRun = await bulkEnrollStudents(
+    adminAfter.data.access_token,
+    bulkClass.id,
+    [importedStudent.user_id],
+    true,
+  );
+  if (enrollDryRun.rows[0]?.status !== 'valid') {
+    throw new Error(`expected student dry-run valid, got ${enrollDryRun.rows[0]?.status}`);
+  }
+
+  const enrollConfirm = await bulkEnrollStudents(
+    adminAfter.data.access_token,
+    bulkClass.id,
+    [importedStudent.user_id],
+    false,
+  );
+  if (enrollConfirm.enrolled !== 1) {
+    throw new Error(`expected 1 student enrolled, got ${enrollConfirm.enrolled}`);
+  }
+
+  const bulkTeachers = await listClassTeachers(adminAfter.data.access_token, bulkClass.id);
+  if (!bulkTeachers.some((t) => t.user_id === importedTeacher.user_id)) {
+    throw new Error('bulk teacher not assigned');
+  }
+  const bulkEnrollments = await listEnrollments(adminAfter.data.access_token, bulkClass.id);
+  if (!bulkEnrollments.some((e) => e.user_id === importedStudent.user_id)) {
+    throw new Error('bulk student not enrolled');
+  }
+
   console.log('Checking assessment builder...');
   const FIXED_QUESTION_VERSION_ID = '00000000-0000-4000-8000-000000000002';
   const draftAssessment = await createAssessmentForClass(teacherAfter.data.access_token, seeded8A1.id, 'Bài kiểm tra 8A1', 30);
@@ -1064,6 +1325,41 @@ async function main() {
   }
   await createTarget(teacherAfter.data.access_token, draftAssessment.id, newClass.id);
 
+  // Builder polish: duplicate section/item and preview.
+  const duplicatedSection = await duplicateSection(teacherAfter.data.access_token, draftAssessment.id, builderSection.id);
+  if (!duplicatedSection.title.includes('(copy)')) {
+    throw new Error(`expected duplicated section title to contain (copy), got ${duplicatedSection.title}`);
+  }
+  if (duplicatedSection.items.length !== 1) {
+    throw new Error(`expected 1 item in duplicated section, got ${duplicatedSection.items.length}`);
+  }
+
+  const duplicatedItem = await duplicateItem(teacherAfter.data.access_token, builderSection.id, readdedItem.id);
+  if (duplicatedItem.question_version_id !== readdedItem.question_version_id) {
+    throw new Error('duplicated item question_version_id mismatch');
+  }
+
+  await reorderSections(teacherAfter.data.access_token, draftAssessment.id, [builderSection.id, duplicatedSection.id]);
+
+  const preview = await previewAssessment(teacherAfter.data.access_token, draftAssessment.id);
+  if (preview.sections.length < 2) {
+    throw new Error(`expected at least 2 sections in preview, got ${preview.sections.length}`);
+  }
+  const previewItems = preview.sections.flatMap((s) => s.items || []);
+  if (previewItems.length < 3) {
+    throw new Error(`expected at least 3 items in preview, got ${previewItems.length}`);
+  }
+  const previewItem = previewItems[0];
+  if (!previewItem.prompt || Object.keys(previewItem.prompt).length === 0) {
+    throw new Error('expected preview item to include prompt');
+  }
+  if (!previewItem.choices || previewItem.choices.length === 0) {
+    throw new Error('expected preview item to include choices');
+  }
+  if ('answer_key' in previewItem) {
+    throw new Error('preview item should not expose answer_key');
+  }
+
   const questions = await listQuestions(teacherAfter.data.access_token, 'Giá trị');
   if (questions.length === 0) {
     throw new Error('expected at least one question in picker');
@@ -1093,8 +1389,8 @@ async function main() {
   }
 
   const assessmentDetail = await getAssessment(teacherAfter.data.access_token, draftAssessment.id);
-  if (assessmentDetail.sections.length !== 1) {
-    throw new Error(`expected 1 section in assessment detail, got ${assessmentDetail.sections.length}`);
+  if (assessmentDetail.sections.length !== 2) {
+    throw new Error(`expected 2 sections in assessment detail, got ${assessmentDetail.sections.length}`);
   }
   if (assessmentDetail.targets.length !== 1) {
     throw new Error(`expected 1 target in assessment detail, got ${assessmentDetail.targets.length}`);
@@ -1117,6 +1413,12 @@ async function main() {
   const assignedAssessment = assigned.find((a) => a.id === draftAssessment.id);
   if (!assignedAssessment) {
     throw new Error('student should see assigned published assessment');
+  }
+  if (assignedAssessment.availability !== 'open') {
+    throw new Error(`expected assigned assessment availability open, got ${assignedAssessment.availability}`);
+  }
+  if (typeof assignedAssessment.attempts_used !== 'number') {
+    throw new Error('expected attempts_used to be a number');
   }
   if (assignedAssessment.publication_id !== publications[0].id) {
     throw new Error('assigned assessment publication_id mismatch');
@@ -1148,6 +1450,80 @@ async function main() {
   if (resumedAttempt.id !== generatedAttempt.id) {
     throw new Error('expected resume of existing in-progress attempt');
   }
+
+  console.log('Checking student save/submit/result on generated attempt...');
+  for (const item of generatedAttempt.items) {
+    await saveAnswerForAttempt(token, generatedAttempt.id, item.id, 'B');
+  }
+  const generatedResult = await submitAttemptById(token, generatedAttempt.id);
+  if (generatedResult.score !== generatedResult.max_score) {
+    throw new Error(`expected full score, got ${generatedResult.score}/${generatedResult.max_score}`);
+  }
+  const generatedReview = await getAttemptResult(token, generatedAttempt.id);
+  if (generatedReview.status !== 'SUBMITTED') {
+    throw new Error(`expected SUBMITTED result, got ${generatedReview.status}`);
+  }
+  if (!Array.isArray(generatedReview.items) || generatedReview.items.length === 0) {
+    throw new Error('expected result items');
+  }
+  for (const item of generatedReview.items) {
+    if (!item.is_correct) {
+      throw new Error(`expected result item ${item.id} to be correct`);
+    }
+    if (!item.correct_answer || !item.correct_answer.correct_option) {
+      throw new Error(`expected correct_answer on result item ${item.id}`);
+    }
+  }
+
+  const history = await listMyAttempts(token);
+  if (!history.some((a) => a.id === generatedAttempt.id)) {
+    throw new Error('attempt history should include generated attempt');
+  }
+
+  console.log('Checking teacher gradebook...');
+  const attempts = await listAssessmentAttempts(teacherAfter.data.access_token, draftAssessment.id);
+  if (attempts.length === 0) {
+    throw new Error('expected at least one assessment attempt for teacher gradebook');
+  }
+  const generatedAttemptRow = attempts.find((a) => a.id === generatedAttempt.id);
+  if (!generatedAttemptRow) {
+    throw new Error('gradebook attempts should include generated attempt');
+  }
+  if (generatedAttemptRow.student_user_id !== studentActor.id) {
+    throw new Error('gradebook attempt student mismatch');
+  }
+
+  const results = await getAssessmentResults(teacherAfter.data.access_token, draftAssessment.id);
+  if (results.total_attempts < 1) {
+    throw new Error(`expected total_attempts >= 1, got ${results.total_attempts}`);
+  }
+  if (results.submitted_count < 1) {
+    throw new Error(`expected submitted_count >= 1, got ${results.submitted_count}`);
+  }
+
+  const csvAttempts = await exportAssessmentAttemptsCSV(teacherAfter.data.access_token, draftAssessment.id);
+  if (!csvAttempts.includes('attempt_id')) {
+    throw new Error('expected CSV header for assessment attempts');
+  }
+
+  const classGradebook = await getClassGradebook(teacherAfter.data.access_token, newClass.id);
+  if (classGradebook.length === 0) {
+    throw new Error('expected non-empty class gradebook');
+  }
+  const studentGradebookEntry = classGradebook.find((e) => e.student_user_id === studentActor.id && e.assessment_id === draftAssessment.id);
+  if (!studentGradebookEntry) {
+    throw new Error('class gradebook should include student/assessment entry');
+  }
+  if (!studentGradebookEntry.attempt_id) {
+    throw new Error('class gradebook entry should reference attempt');
+  }
+
+  const csvGradebook = await exportClassGradebookCSV(teacherAfter.data.access_token, newClass.id);
+  if (!csvGradebook.includes('student_user_id')) {
+    throw new Error('expected CSV header for class gradebook');
+  }
+
+  await assertStudentCannotAccessGradebook(token, draftAssessment.id, newClass.id);
 
   console.log('Checking login lockout...');
   await assertLoginLockout('hs001');

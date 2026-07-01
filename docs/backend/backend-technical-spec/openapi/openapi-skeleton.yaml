@@ -141,6 +141,22 @@ paths:
           $ref: '#/components/responses/Unauthorized'
         '403':
           $ref: '#/components/responses/Forbidden'
+  /me/attempts:
+    get:
+      operationId: attempts.listAttemptHistory
+      tags: [Attempts]
+      description: Student only. Returns the current student's attempt history.
+      responses:
+        '200':
+          description: Attempt history
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StudentAttemptList'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
   /assessments/{assessment_id}/attempts:
     post:
       operationId: attempts.start
@@ -238,6 +254,31 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/AttemptSubmitted'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+  /attempts/{attempt_id}/result:
+    get:
+      operationId: attempts.getResult
+      tags: [Attempts]
+      description: Student only. Returns the graded result for a submitted or expired attempt.
+      parameters:
+        - name: attempt_id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: Attempt result with student answers and correct answers
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AttemptResult'
         '401':
           $ref: '#/components/responses/Unauthorized'
         '403':
@@ -381,6 +422,36 @@ paths:
           $ref: '#/components/responses/Forbidden'
         '404':
           $ref: '#/components/responses/NotFound'
+  /users/imports:
+    post:
+      operationId: users.import
+      tags: [Admin]
+      description: Admin only. Import up to 100 users from a CSV string. Set `dry_run` to validate without creating.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ImportUsersRequest'
+      responses:
+        '200':
+          description: Dry-run validation result
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ImportUsersResult'
+        '201':
+          description: Users imported
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ImportUsersResult'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
   /organizations/current:
     get:
       operationId: organizations.getCurrent
@@ -455,6 +526,40 @@ paths:
                 $ref: '#/components/schemas/AuditLogList'
         '400':
           $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+  /audit-logs/export:
+    get:
+      operationId: auditLogs.export
+      tags: [Admin]
+      description: Admin only. Export audit logs for the current organization as CSV.
+      parameters:
+        - name: action
+          in: query
+          description: Filter by action name.
+          schema: { type: string }
+        - name: actor_user_id
+          in: query
+          description: Filter by actor user ID.
+          schema: { type: string, format: uuid }
+        - name: from
+          in: query
+          description: Start timestamp (RFC3339).
+          schema: { type: string, format: date-time }
+        - name: to
+          in: query
+          description: End timestamp (RFC3339).
+          schema: { type: string, format: date-time }
+      responses:
+        '200':
+          description: CSV export of audit logs
+          content:
+            text/csv:
+              schema:
+                type: string
+                format: binary
         '401':
           $ref: '#/components/responses/Unauthorized'
         '403':
@@ -921,6 +1026,29 @@ paths:
           $ref: '#/components/responses/Forbidden'
         '404':
           $ref: '#/components/responses/NotFound'
+  /assessments/{id}/preview:
+    get:
+      operationId: assessments.preview
+      tags: [Assessments]
+      description: Teacher or admin only. Get a student-safe preview of a draft assessment. Excludes answer keys.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: Assessment preview
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AssessmentPreview'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
   /assessments/{id}/sections:
     post:
       operationId: assessments.createSection
@@ -954,6 +1082,35 @@ paths:
           $ref: '#/components/responses/NotFound'
         '409':
           $ref: '#/components/responses/Conflict'
+  /assessments/{id}/sections/{section_id}/duplicate:
+    post:
+      operationId: assessments.duplicateSection
+      tags: [Assessments]
+      description: Teacher or admin only. Duplicate an active section and all its items within a draft assessment. Requires `X-CSRF-Token` header.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+        - name: section_id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '201':
+          description: Section duplicated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Section'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
   /assessment-sections/{section_id}/items:
     post:
       operationId: assessments.createItem
@@ -987,6 +1144,35 @@ paths:
           $ref: '#/components/responses/NotFound'
         '409':
           $ref: '#/components/responses/Conflict'
+  /assessment-sections/{section_id}/items/{item_id}/duplicate:
+    post:
+      operationId: assessments.duplicateItem
+      tags: [Assessments]
+      description: Teacher or admin only. Duplicate an active item within its section. Requires `X-CSRF-Token` header.
+      parameters:
+        - name: section_id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+        - name: item_id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '201':
+          description: Item duplicated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Item'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
   /assessments/{id}/targets:
     post:
       operationId: assessments.createTarget
@@ -1272,6 +1458,76 @@ paths:
           $ref: '#/components/responses/Forbidden'
         '404':
           $ref: '#/components/responses/NotFound'
+  /assessments/{id}/attempts:
+    get:
+      operationId: gradebook.listAssessmentAttempts
+      tags: [Gradebook]
+      description: Teacher or admin only. Lists all attempts for an assessment. Teachers see only assessments targeting classes they teach.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: Assessment attempts
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AssessmentAttemptList'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /assessments/{id}/results:
+    get:
+      operationId: gradebook.getAssessmentResults
+      tags: [Gradebook]
+      description: Teacher or admin only. Summary of attempt results for an assessment.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: Assessment results summary
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AssessmentResult'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /assessments/{id}/attempts/export:
+    get:
+      operationId: gradebook.exportAssessmentAttemptsCSV
+      tags: [Gradebook]
+      description: Teacher or admin only. CSV export of attempts for an assessment.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: CSV export
+          content:
+            text/csv:
+              schema:
+                type: string
+                format: binary
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
   /questions:
     get:
       operationId: assessments.listQuestions
@@ -1364,6 +1620,45 @@ paths:
           $ref: '#/components/responses/NotFound'
         '409':
           $ref: '#/components/responses/Conflict'
+  /classes/{class_id}/teachers/bulk:
+    post:
+      operationId: academics.bulkAssignTeachers
+      tags: [Academics]
+      description: Admin only. Bulk assign up to 100 teachers to a class. Set `dry_run` to validate without assigning.
+      parameters:
+        - name: class_id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BulkAssignTeachersRequest'
+      responses:
+        '200':
+          description: Dry-run validation result
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BulkAssignTeachersResult'
+        '201':
+          description: Teachers assigned
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BulkAssignTeachersResult'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
   /classes/{class_id}/teachers/{user_id}:
     delete:
       operationId: academics.removeClassTeacher
@@ -1442,6 +1737,45 @@ paths:
           $ref: '#/components/responses/NotFound'
         '409':
           $ref: '#/components/responses/Conflict'
+  /classes/{class_id}/enrollments/bulk:
+    post:
+      operationId: academics.bulkEnrollStudents
+      tags: [Academics]
+      description: Admin only. Bulk enroll up to 100 students into a class. Set `dry_run` to validate without enrolling.
+      parameters:
+        - name: class_id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BulkEnrollRequest'
+      responses:
+        '200':
+          description: Dry-run validation result
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BulkEnrollmentResult'
+        '201':
+          description: Students enrolled
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BulkEnrollmentResult'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
   /classes/{class_id}/enrollments/{user_id}:
     delete:
       operationId: academics.unenrollStudent
@@ -1459,6 +1793,53 @@ paths:
       responses:
         '200':
           $ref: '#/components/responses/SuccessResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /classes/{class_id}/gradebook:
+    get:
+      operationId: gradebook.getClassGradebook
+      tags: [Gradebook]
+      description: Teacher or admin only. Gradebook for a class, with the latest attempt per student and assessment.
+      parameters:
+        - name: class_id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: Class gradebook
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ClassGradebookList'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /classes/{class_id}/gradebook/export:
+    get:
+      operationId: gradebook.exportClassGradebookCSV
+      tags: [Gradebook]
+      description: Teacher or admin only. CSV export of the class gradebook.
+      parameters:
+        - name: class_id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: CSV export
+          content:
+            text/csv:
+              schema:
+                type: string
+                format: binary
         '401':
           $ref: '#/components/responses/Unauthorized'
         '403':
@@ -1647,16 +2028,80 @@ components:
             $ref: '#/components/schemas/AssignedAssessment'
     AssignedAssessment:
       type: object
-      required: [id, title, status, duration_minutes, max_attempts, revision, publication_id, published_at]
+      required: [id, title, status, availability, duration_minutes, max_attempts, attempts_used, revision, publication_id, published_at]
       properties:
         id: { type: string, format: uuid }
         title: { type: string }
         status: { type: string, enum: [OPEN, PUBLISHED] }
+        availability: { type: string, enum: [upcoming, open, closed] }
         duration_minutes: { type: integer, minimum: 1 }
         max_attempts: { type: integer, minimum: 1 }
+        attempts_used: { type: integer, minimum: 0 }
         revision: { type: integer, minimum: 1 }
         publication_id: { type: string, format: uuid }
         published_at: { type: string, format: date-time }
+        opens_at: { type: string, format: date-time, nullable: true }
+        closes_at: { type: string, format: date-time, nullable: true }
+    StudentAttemptList:
+      type: object
+      required: [data]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/StudentAttempt'
+    StudentAttempt:
+      type: object
+      required: [id, assessment_id, assessment_title, status, started_at]
+      properties:
+        id: { type: string, format: uuid }
+        assessment_id: { type: string, format: uuid }
+        assessment_title: { type: string }
+        status: { type: string, enum: [CREATED, IN_PROGRESS, SUBMITTED, EXPIRED, TERMINATED] }
+        started_at: { type: string, format: date-time }
+        expires_at: { type: string, format: date-time, nullable: true }
+        submitted_at: { type: string, format: date-time, nullable: true }
+        score: { type: string, nullable: true }
+        max_score: { type: string, nullable: true }
+        grading_status: { type: string, nullable: true }
+    AttemptResult:
+      type: object
+      required: [data]
+      properties:
+        data:
+          type: object
+          required: [id, assessment_id, status, server_time, items]
+          properties:
+            id: { type: string, format: uuid }
+            assessment_id: { type: string, format: uuid }
+            status: { type: string, enum: [SUBMITTED, EXPIRED] }
+            submitted_at: { type: string, format: date-time }
+            score: { type: string }
+            max_score: { type: string }
+            grading_status: { type: string, enum: [GRADED] }
+            server_time: { type: string, format: date-time }
+            items:
+              type: array
+              items:
+                $ref: '#/components/schemas/AttemptResultItem'
+    AttemptResultItem:
+      type: object
+      required: [id, question_version_id, position, points, prompt, choices, correct_answer, is_correct]
+      properties:
+        id: { type: string, format: uuid }
+        question_version_id: { type: string, format: uuid }
+        position: { type: integer, minimum: 1 }
+        points: { type: string }
+        prompt: { type: object, additionalProperties: true, properties: { text: { type: string } } }
+        choices: { type: array, items: { type: object, additionalProperties: true, properties: { id: { type: string }, text: { type: string } } } }
+        correct_answer: { type: object, additionalProperties: true }
+        student_answer:
+          type: object
+          required: [answer_payload, answered_at]
+          properties:
+            answer_payload: { type: object, additionalProperties: true }
+            answered_at: { type: string, format: date-time }
+        is_correct: { type: boolean }
     PageInfo:
       type: object
       required: [limit, offset, has_more]
@@ -1732,6 +2177,38 @@ components:
           type: string
           minLength: 8
           description: Must contain at least one uppercase letter, one lowercase letter, one digit, and not match a common blocklist.
+    ImportUsersRequest:
+      type: object
+      additionalProperties: false
+      required: [csv]
+      properties:
+        csv:
+          type: string
+          description: CSV text with header login_name,display_name,email,temporary_password,roles
+        dry_run:
+          type: boolean
+          default: false
+    ImportUserRow:
+      type: object
+      required: [row_number, login_name, status]
+      properties:
+        row_number: { type: integer }
+        user_id: { type: string, format: uuid, nullable: true }
+        login_name: { type: string }
+        status: { type: string, enum: [valid, created, error] }
+        error: { type: string, nullable: true }
+    ImportUsersResult:
+      type: object
+      required: [total, created, failed, dry_run, rows]
+      properties:
+        total: { type: integer }
+        created: { type: integer }
+        failed: { type: integer }
+        dry_run: { type: boolean }
+        rows:
+          type: array
+          items:
+            $ref: '#/components/schemas/ImportUserRow'
     AuditLogList:
       type: object
       required: [data]
@@ -1980,6 +2457,45 @@ components:
       properties:
         user_id: { type: string, format: uuid }
         role: { type: string, enum: [teacher, assistant] }
+    BulkAssignTeacherItem:
+      type: object
+      additionalProperties: false
+      required: [user_id]
+      properties:
+        user_id: { type: string, format: uuid }
+        role: { type: string, enum: [teacher, assistant] }
+    BulkAssignTeachersRequest:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items:
+          type: array
+          maxItems: 100
+          items:
+            $ref: '#/components/schemas/BulkAssignTeacherItem'
+        dry_run:
+          type: boolean
+          default: false
+    BulkAssignTeacherRow:
+      type: object
+      required: [user_id, status]
+      properties:
+        user_id: { type: string, format: uuid }
+        status: { type: string, enum: [valid, assigned, error] }
+        error: { type: string, nullable: true }
+    BulkAssignTeachersResult:
+      type: object
+      required: [total, assigned, failed, dry_run, rows]
+      properties:
+        total: { type: integer }
+        assigned: { type: integer }
+        failed: { type: integer }
+        dry_run: { type: boolean }
+        rows:
+          type: array
+          items:
+            $ref: '#/components/schemas/BulkAssignTeacherRow'
     Enrollment:
       type: object
       required: [data]
@@ -2006,6 +2522,37 @@ components:
       required: [user_id]
       properties:
         user_id: { type: string, format: uuid }
+    BulkEnrollRequest:
+      type: object
+      additionalProperties: false
+      required: [user_ids]
+      properties:
+        user_ids:
+          type: array
+          maxItems: 100
+          items: { type: string, format: uuid }
+        dry_run:
+          type: boolean
+          default: false
+    BulkEnrollmentRow:
+      type: object
+      required: [user_id, status]
+      properties:
+        user_id: { type: string, format: uuid }
+        status: { type: string, enum: [valid, enrolled, error] }
+        error: { type: string, nullable: true }
+    BulkEnrollmentResult:
+      type: object
+      required: [total, enrolled, failed, dry_run, rows]
+      properties:
+        total: { type: integer }
+        enrolled: { type: integer }
+        failed: { type: integer }
+        dry_run: { type: boolean }
+        rows:
+          type: array
+          items:
+            $ref: '#/components/schemas/BulkEnrollmentRow'
     AssessmentDetail:
       type: object
       required: [data]
@@ -2064,6 +2611,55 @@ components:
             question_version_id: { type: string, format: uuid }
             position: { type: integer, minimum: 0 }
             points: { type: string }
+    AssessmentPreview:
+      type: object
+      required: [data]
+      properties:
+        data:
+          type: object
+          required: [id, title, duration_minutes, max_attempts, sections]
+          properties:
+            id: { type: string, format: uuid }
+            title: { type: string }
+            duration_minutes: { type: integer, minimum: 1 }
+            max_attempts: { type: integer, minimum: 1 }
+            instructions: { type: string, nullable: true }
+            opens_at: { type: string, format: date-time, nullable: true }
+            closes_at: { type: string, format: date-time, nullable: true }
+            settings: { type: object, additionalProperties: true }
+            sections:
+              type: array
+              items:
+                $ref: '#/components/schemas/PreviewSection/properties/data'
+    PreviewSection:
+      type: object
+      required: [data]
+      properties:
+        data:
+          type: object
+          required: [id, title, position, items]
+          properties:
+            id: { type: string, format: uuid }
+            title: { type: string }
+            position: { type: integer, minimum: 0 }
+            items:
+              type: array
+              items:
+                $ref: '#/components/schemas/PreviewItem/properties/data'
+    PreviewItem:
+      type: object
+      required: [data]
+      properties:
+        data:
+          type: object
+          required: [id, question_version_id, position, points, prompt, choices]
+          properties:
+            id: { type: string, format: uuid }
+            question_version_id: { type: string, format: uuid }
+            position: { type: integer, minimum: 0 }
+            points: { type: string }
+            prompt: { type: object, additionalProperties: true }
+            choices: { type: array, items: { type: object, additionalProperties: true } }
     Target:
       type: object
       required: [data]
@@ -2189,6 +2785,65 @@ components:
         version: { type: integer, minimum: 1 }
         status: { type: string, enum: [DRAFT, SCHEDULED, OPEN, CLOSED, GRADING, REVIEWED, PUBLISHED, ARCHIVED] }
         published_at: { type: string, format: date-time }
+    AssessmentAttemptList:
+      type: object
+      required: [data]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/AssessmentAttempt'
+    AssessmentAttempt:
+      type: object
+      required: [id, assessment_id, student_user_id, status]
+      properties:
+        id: { type: string, format: uuid }
+        assessment_id: { type: string, format: uuid }
+        student_user_id: { type: string, format: uuid }
+        student_name: { type: string }
+        status: { type: string, enum: [CREATED, IN_PROGRESS, SUBMITTED, EXPIRED, TERMINATED] }
+        started_at: { type: string, format: date-time, nullable: true }
+        expires_at: { type: string, format: date-time, nullable: true }
+        submitted_at: { type: string, format: date-time, nullable: true }
+        score: { type: string, nullable: true }
+        max_score: { type: string, nullable: true }
+        grading_status: { type: string, nullable: true }
+    AssessmentResult:
+      type: object
+      required: [data]
+      properties:
+        data:
+          type: object
+          required: [assessment_id, total_attempts, submitted_count, in_progress_count, expired_count]
+          properties:
+            assessment_id: { type: string, format: uuid }
+            total_attempts: { type: integer, minimum: 0 }
+            submitted_count: { type: integer, minimum: 0 }
+            in_progress_count: { type: integer, minimum: 0 }
+            expired_count: { type: integer, minimum: 0 }
+            average_score: { type: string, nullable: true }
+            max_score: { type: string, nullable: true }
+    ClassGradebookList:
+      type: object
+      required: [data]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/ClassGradebookEntry'
+    ClassGradebookEntry:
+      type: object
+      required: [student_user_id, student_name, assessment_id, assessment_title]
+      properties:
+        student_user_id: { type: string, format: uuid }
+        student_name: { type: string }
+        assessment_id: { type: string, format: uuid }
+        assessment_title: { type: string }
+        attempt_id: { type: string, format: uuid, nullable: true }
+        status: { type: string, enum: [CREATED, IN_PROGRESS, SUBMITTED, EXPIRED, TERMINATED], nullable: true }
+        score: { type: string, nullable: true }
+        max_score: { type: string, nullable: true }
+        submitted_at: { type: string, format: date-time, nullable: true }
     Problem:
       type: object
       required: [title, status, code]

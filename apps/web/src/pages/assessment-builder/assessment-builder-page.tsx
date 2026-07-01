@@ -8,9 +8,12 @@ import {
   deleteItem,
   deleteSection,
   deleteTarget,
+  duplicateItem,
+  duplicateSection,
   getAssessment,
   listPublications,
   listQuestions,
+  previewAssessment,
   publishAssessment,
   reorderItems,
   reorderSections,
@@ -19,7 +22,9 @@ import {
   updateSection,
   validateAssessment,
   type AssessmentDetail,
+  type AssessmentPreview,
   type Item,
+  type PreviewItem,
   type PublicationSummary,
   type QuestionPickerItem,
   type Section,
@@ -61,7 +66,12 @@ export function AssessmentBuilderPage() {
   const [title, setTitle] = useState('');
   const [duration, setDuration] = useState('45');
   const [instructions, setInstructions] = useState('');
-  const [savingSettings, setSavingSettings] = useState(false);
+  const [autosaveState, setAutosaveState] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
+  const [autosaveMessage, setAutosaveMessage] = useState<string | null>(null);
+
+  const [previewOpen, setPreviewOpen] = useState(false);
+  const [preview, setPreview] = useState<AssessmentPreview | null>(null);
+  const [previewLoading, setPreviewLoading] = useState(false);
 
   const [sectionTitle, setSectionTitle] = useState('');
   const [addingSection, setAddingSection] = useState(false);
@@ -123,6 +133,53 @@ export function AssessmentBuilderPage() {
     };
   }, [assessmentId]);
 
+  useEffect(() => {
+    if (!assessmentId || !assessment) return;
+    if (assessment.status === 'PUBLISHED' || assessment.status === 'OPEN') return;
+
+    const timeout = setTimeout(() => {
+      let cancelled = false;
+
+      async function save() {
+        const durationNum = Number(duration);
+        if (!title.trim() || Number.isNaN(durationNum) || durationNum < 1) {
+          return;
+        }
+        setAutosaveState('saving');
+        setAutosaveMessage(null);
+        try {
+          const updated = await updateAssessment(assessmentId!, {
+            title: title.trim(),
+            duration_minutes: durationNum,
+            instructions: instructions.trim() || null,
+          });
+          if (cancelled) return;
+          setAssessment(updated);
+          setAutosaveState('saved');
+          setAutosaveMessage('Đã tự động lưu');
+          setTimeout(() => {
+            if (!cancelled) {
+              setAutosaveState('idle');
+              setAutosaveMessage(null);
+            }
+          }, 2000);
+        } catch (err) {
+          if (cancelled) return;
+          setAutosaveState('error');
+          setAutosaveMessage(formatFriendlyError(err));
+        }
+      }
+
+      void save();
+
+      return () => {
+        cancelled = true;
+      };
+    }, 800);
+
+    return () => clearTimeout(timeout);
+  }, [title, duration, instructions, assessmentId, assessment?.status]);
+
   function clearMessages() {
     setError(null);
     setSuccess(null);
@@ -135,26 +192,6 @@ export function AssessmentBuilderPage() {
       setAssessment(data);
     } catch (err) {
       setError(formatFriendlyError(err));
-    }
-  }
-
-  async function handleSaveSettings(e: React.FormEvent) {
-    e.preventDefault();
-    if (!assessmentId) return;
-    clearMessages();
-    setSavingSettings(true);
-    try {
-      const updated = await updateAssessment(assessmentId, {
-        title: title.trim(),
-        duration_minutes: Number(duration),
-        instructions: instructions.trim() || null,
-      });
-      setAssessment(updated);
-      setSuccess('Đã cập nhật cài đặt đề thi.');
-    } catch (err) {
-      setError(formatFriendlyError(err));
-    } finally {
-      setSavingSettings(false);
     }
   }
 
@@ -212,6 +249,18 @@ export function AssessmentBuilderPage() {
       await deleteSection(sectionId);
       await refreshAssessment();
       setSuccess('Đã xóa phần.');
+    } catch (err) {
+      setError(formatFriendlyError(err));
+    }
+  }
+
+  async function handleDuplicateSection(sectionId: string) {
+    if (!assessmentId) return;
+    clearMessages();
+    try {
+      await duplicateSection(assessmentId, sectionId);
+      await refreshAssessment();
+      setSuccess('Đã nhân bản phần.');
     } catch (err) {
       setError(formatFriendlyError(err));
     }
@@ -322,6 +371,29 @@ export function AssessmentBuilderPage() {
     }
   }
 
+  async function handleDuplicateItem(itemId: string, sectionId: string) {
+    clearMessages();
+    try {
+      const duplicated = await duplicateItem(sectionId, itemId);
+      setAssessment((prev) => {
+        if (!prev) return prev;
+        return {
+          ...prev,
+          sections: prev.sections.map((s) => {
+            if (s.id !== sectionId) return s;
+            const index = s.items.findIndex((it) => it.id === itemId);
+            const newItems = [...s.items];
+            newItems.splice(index + 1, 0, duplicated);
+            return { ...s, items: newItems };
+          }),
+        };
+      });
+      setSuccess('Đã nhân bản câu hỏi.');
+    } catch (err) {
+      setError(formatFriendlyError(err));
+    }
+  }
+
   async function handleMoveItem(
     itemId: string,
     sectionId: string,
@@ -416,6 +488,63 @@ export function AssessmentBuilderPage() {
     }
   }
 
+  async function handleOpenPreview() {
+    if (!assessmentId) return;
+    setPreviewOpen(true);
+    setPreviewLoading(true);
+    setPreview(null);
+    try {
+      const data = await previewAssessment(assessmentId);
+      setPreview(data);
+    } catch (err) {
+      setError(formatFriendlyError(err));
+    } finally {
+      setPreviewLoading(false);
+    }
+  }
+
+  function handleClosePreview() {
+    setPreviewOpen(false);
+    setPreview(null);
+  }
+
+  function getPreviewPromptText(prompt: unknown): string {
+    if (typeof prompt === 'string' && prompt.trim().length > 0) {
+      return prompt;
+    }
+    if (
+      typeof prompt === 'object' &&
+      prompt !== null &&
+      'text' in prompt &&
+      typeof (prompt as { text: unknown }).text === 'string'
+    ) {
+      const text = (prompt as { text: string }).text;
+      if (text.trim().length > 0) return text;
+    }
+    return '';
+  }
+
+  function getPreviewChoices(choices: unknown): { id: string; label: string }[] {
+    if (!Array.isArray(choices)) return [];
+    return choices
+      .map((choice): { id: string; label: string } | null => {
+        if (typeof choice === 'string') {
+          return { id: choice, label: choice };
+        }
+        if (typeof choice === 'object' && choice !== null) {
+          const id =
+            'id' in choice && typeof choice.id === 'string' ? choice.id : '';
+          const text =
+            'text' in choice && typeof choice.text === 'string'
+              ? choice.text
+              : '';
+          if (id) return { id, label: text || id };
+        }
+        return null;
+      })
+      .filter((c): c is { id: string; label: string } => c !== null);
+  }
+
   const filteredQuestions = questions.filter((q) =>
     q.prompt.toLowerCase().includes(questionSearch.toLowerCase())
   );
@@ -486,8 +615,19 @@ export function AssessmentBuilderPage() {
       )}
 
       <section className="admin-section">
-        <h2>Cài đặt đề thi</h2>
-        <form onSubmit={handleSaveSettings} className="admin-form">
+        <div className="section-header">
+          <h2>Cài đặt đề thi</h2>
+          <span className={`autosave-indicator autosave-${autosaveState}`}>
+            {autosaveState === 'saving'
+              ? 'Đang lưu…'
+              : autosaveState === 'saved'
+                ? 'Đã tự động lưu'
+                : autosaveState === 'error'
+                  ? autosaveMessage || 'Lỗi tự động lưu'
+                  : ''}
+          </span>
+        </div>
+        <form className="admin-form" onSubmit={(e) => e.preventDefault()}>
           <div className="field">
             <label htmlFor="builder-title">Tên đề thi</label>
             <input
@@ -520,15 +660,6 @@ export function AssessmentBuilderPage() {
               onChange={(e) => setInstructions(e.target.value)}
               disabled={isPublished}
             />
-          </div>
-          <div className="form-actions">
-            <button
-              type="submit"
-              className="primary"
-              disabled={savingSettings || isPublished}
-            >
-              {savingSettings ? 'Đang lưu…' : 'Lưu cài đặt'}
-            </button>
           </div>
         </form>
       </section>
@@ -585,6 +716,12 @@ export function AssessmentBuilderPage() {
                   }}
                 >
                   Sửa tên
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleDuplicateSection(section.id)}
+                >
+                  Nhân bản
                 </button>
                 <button
                   type="button"
@@ -685,6 +822,14 @@ export function AssessmentBuilderPage() {
                             }}
                           >
                             Sửa
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() =>
+                              handleDuplicateItem(item.id, section.id)
+                            }
+                          >
+                            Nhân bản
                           </button>
                           <button
                             type="button"
@@ -881,6 +1026,9 @@ export function AssessmentBuilderPage() {
         <h2>Kiểm tra và xuất bản</h2>
 
         <div className="form-actions">
+          <button type="button" onClick={handleOpenPreview}>
+            Xem trước
+          </button>
           <button
             type="button"
             onClick={handleValidate}
@@ -941,6 +1089,88 @@ export function AssessmentBuilderPage() {
           </div>
         </section>
       )}
+
+      {previewOpen && (
+        <div className="preview-overlay" role="dialog" aria-modal="true" aria-label="Xem trước đề thi">
+          <div className="preview-panel">
+            <div className="preview-header">
+              <h2>Xem trước đề thi</h2>
+              <button type="button" onClick={handleClosePreview}>
+                Đóng
+              </button>
+            </div>
+            {previewLoading ? (
+              <p className="dashboard-status">Đang tải bản xem trước…</p>
+            ) : !preview ? (
+              <p className="dashboard-status">Không thể tải bản xem trước.</p>
+            ) : (
+              <div className="preview-content">
+                <div className="preview-meta">
+                  <h3>{preview.title}</h3>
+                  <p>Thời gian: {preview.duration_minutes} phút</p>
+                  {preview.instructions && (
+                    <p className="preview-instructions">{preview.instructions}</p>
+                  )}
+                </div>
+                {preview.sections.map((section, sectionIndex) => (
+                  <section key={section.id} className="preview-section">
+                    <h4>
+                      Phần {sectionIndex + 1}: {section.title}
+                    </h4>
+                    <ol className="preview-item-list">
+                      {section.items.map((item, itemIndex) => (
+                        <PreviewQuestion
+                          key={item.id}
+                          item={item}
+                          number={itemIndex + 1}
+                          getPromptText={getPreviewPromptText}
+                          getChoices={getPreviewChoices}
+                        />
+                      ))}
+                    </ol>
+                  </section>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
     </div>
+  );
+}
+
+function PreviewQuestion({
+  item,
+  number,
+  getPromptText,
+  getChoices,
+}: {
+  item: PreviewItem;
+  number: number;
+  getPromptText: (prompt: unknown) => string;
+  getChoices: (choices: unknown) => { id: string; label: string }[];
+}) {
+  const promptText = getPromptText(item.prompt);
+  const choices = getChoices(item.choices);
+
+  return (
+    <li className="preview-item">
+      <p className="preview-prompt">
+        <strong>Câu {number}:</strong> {promptText || 'Câu hỏi chưa có nội dung'}
+      </p>
+      {choices.length > 0 && (
+        <ul className="preview-options">
+          {choices.map((choice) => (
+            <li key={choice.id}>
+              <label className="preview-option">
+                <input type="radio" name={`preview-${item.id}`} value={choice.id} disabled />
+                <span>{choice.id}.</span> {choice.label}
+              </label>
+            </li>
+          ))}
+        </ul>
+      )}
+      <p className="preview-points">{item.points} điểm</p>
+    </li>
   );
 }

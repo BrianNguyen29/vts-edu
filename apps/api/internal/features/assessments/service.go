@@ -47,6 +47,10 @@ type Service interface {
 
 	ValidateAssessment(ctx context.Context, actor auth.Actor, assessmentID string) (ValidationResult, error)
 	PublishAssessment(ctx context.Context, actor auth.Actor, assessmentID string) (PublishResult, error)
+
+	DuplicateSection(ctx context.Context, actor auth.Actor, assessmentID, sectionID string) (SectionDetail, error)
+	DuplicateItem(ctx context.Context, actor auth.Actor, sectionID, itemID string) (ItemDetail, error)
+	PreviewAssessment(ctx context.Context, actor auth.Actor, assessmentID string) (AssessmentPreview, error)
 }
 
 type service struct {
@@ -680,6 +684,128 @@ func (s *service) PublishAssessment(ctx context.Context, actor auth.Actor, asses
 		return PublishResult{}, mapRepoError(err)
 	}
 	return result, nil
+}
+
+func (s *service) DuplicateSection(ctx context.Context, actor auth.Actor, assessmentID, sectionID string) (SectionDetail, error) {
+	if !isTeacherOrAdmin(actor.Roles) {
+		return SectionDetail{}, ErrUnauthorized
+	}
+	if err := s.requireManager(ctx, actor, assessmentID); err != nil {
+		return SectionDetail{}, err
+	}
+	if err := s.requireDraft(ctx, actor.OrgID, assessmentID); err != nil {
+		return SectionDetail{}, err
+	}
+
+	var section SectionDetail
+	err := s.tm.WithinTx(ctx, func(ctx context.Context, tx pgx.Tx) error {
+		var err error
+		section, err = s.repo.DuplicateSection(ctx, tx, actor.OrgID, assessmentID, sectionID)
+		return err
+	})
+	if err != nil {
+		return SectionDetail{}, mapRepoError(err)
+	}
+	return section, nil
+}
+
+func (s *service) DuplicateItem(ctx context.Context, actor auth.Actor, sectionID, itemID string) (ItemDetail, error) {
+	if !isTeacherOrAdmin(actor.Roles) {
+		return ItemDetail{}, ErrUnauthorized
+	}
+	assessmentID, err := s.repo.GetSectionAssessmentID(ctx, actor.OrgID, sectionID)
+	if err != nil {
+		return ItemDetail{}, mapRepoError(err)
+	}
+	if err := s.requireManager(ctx, actor, assessmentID); err != nil {
+		return ItemDetail{}, err
+	}
+	if err := s.requireDraft(ctx, actor.OrgID, assessmentID); err != nil {
+		return ItemDetail{}, err
+	}
+
+	var item ItemDetail
+	err = s.tm.WithinTx(ctx, func(ctx context.Context, tx pgx.Tx) error {
+		var err error
+		item, err = s.repo.DuplicateItem(ctx, tx, actor.OrgID, sectionID, itemID)
+		return err
+	})
+	if err != nil {
+		return ItemDetail{}, mapRepoError(err)
+	}
+	return item, nil
+}
+
+func (s *service) PreviewAssessment(ctx context.Context, actor auth.Actor, assessmentID string) (AssessmentPreview, error) {
+	if !isTeacherOrAdmin(actor.Roles) {
+		return AssessmentPreview{}, ErrUnauthorized
+	}
+	if err := s.requireManager(ctx, actor, assessmentID); err != nil {
+		return AssessmentPreview{}, err
+	}
+	if err := s.requireDraft(ctx, actor.OrgID, assessmentID); err != nil {
+		return AssessmentPreview{}, err
+	}
+	return s.buildPreview(ctx, actor.OrgID, assessmentID)
+}
+
+func (s *service) buildPreview(ctx context.Context, orgID, assessmentID string) (AssessmentPreview, error) {
+	assessment, err := s.repo.GetAssessment(ctx, orgID, assessmentID)
+	if err != nil {
+		return AssessmentPreview{}, mapRepoError(err)
+	}
+
+	sections, err := s.repo.GetAssessmentSections(ctx, orgID, assessmentID)
+	if err != nil {
+		return AssessmentPreview{}, err
+	}
+	items, err := s.repo.GetAssessmentItemsWithContent(ctx, orgID, assessmentID)
+	if err != nil {
+		return AssessmentPreview{}, err
+	}
+
+	sectionMap := make(map[string]*PreviewSection, len(sections))
+	for _, sec := range sections {
+		sectionMap[sec.ID] = &PreviewSection{
+			ID:       sec.ID,
+			Title:    sec.Title,
+			Position: sec.Position,
+			Items:    []PreviewItem{},
+		}
+	}
+	for _, it := range items {
+		sec := sectionMap[it.AssessmentSectionID]
+		if sec == nil {
+			continue
+		}
+		sec.Items = append(sec.Items, PreviewItem{
+			ID:                it.ID,
+			QuestionVersionID: it.QuestionVersionID,
+			Position:          it.Position,
+			Points:            it.Points,
+			Prompt:            it.Prompt,
+			Choices:           it.Choices,
+		})
+	}
+
+	previewSections := make([]PreviewSection, 0, len(sections))
+	for _, sec := range sections {
+		if ps := sectionMap[sec.ID]; ps != nil {
+			previewSections = append(previewSections, *ps)
+		}
+	}
+
+	return AssessmentPreview{
+		ID:              assessment.ID,
+		Title:           assessment.Title,
+		DurationMinutes: assessment.DurationMinutes,
+		MaxAttempts:     assessment.MaxAttempts,
+		Instructions:    assessment.Instructions,
+		OpensAt:         assessment.OpensAt,
+		ClosesAt:        assessment.ClosesAt,
+		Settings:        assessment.Settings,
+		Sections:        previewSections,
+	}, nil
 }
 
 func (s *service) requireManager(ctx context.Context, actor auth.Actor, assessmentID string) error {

@@ -2,6 +2,7 @@ package admin
 
 import (
 	"context"
+	"encoding/csv"
 	"encoding/json"
 	"fmt"
 	"strings"
@@ -20,12 +21,17 @@ type TransactionManager interface {
 type Service interface {
 	ListUsers(ctx context.Context, orgID string, opts ListOptions) ([]User, *PageInfo, error)
 	ListAuditLogs(ctx context.Context, orgID string, opts AuditLogListOptions) ([]AuditLog, *PageInfo, error)
+	ExportAuditLogs(ctx context.Context, orgID string, opts AuditLogListOptions) ([]AuditLogExport, error)
 	CreateUser(ctx context.Context, orgID, actorID string, req CreateUserRequest) (User, error)
 	UpdateRoles(ctx context.Context, orgID, actorID, userID string, req UpdateRolesRequest) error
 	ResetPassword(ctx context.Context, orgID, actorID, userID string, req ResetPasswordRequest) error
 	GetOrganization(ctx context.Context, orgID string) (Organization, error)
 	UpdateOrganization(ctx context.Context, orgID, actorID string, req UpdateOrganizationRequest) (Organization, error)
+
+	ImportUsers(ctx context.Context, orgID, actorID string, req ImportUsersRequest) (ImportUsersResult, error)
 }
+
+const maxBulkRows = 100
 
 type service struct {
 	repo Repository
@@ -103,6 +109,10 @@ func (s *service) ListAuditLogs(ctx context.Context, orgID string, opts AuditLog
 	return logs, page, nil
 }
 
+func (s *service) ExportAuditLogs(ctx context.Context, orgID string, opts AuditLogListOptions) ([]AuditLogExport, error) {
+	return s.repo.ExportAuditLogs(ctx, orgID, opts)
+}
+
 func (s *service) CreateUser(ctx context.Context, orgID, actorID string, req CreateUserRequest) (User, error) {
 	loginName := strings.ToLower(strings.TrimSpace(req.LoginName))
 	displayName := strings.TrimSpace(req.DisplayName)
@@ -169,6 +179,200 @@ func (s *service) CreateUser(ctx context.Context, orgID, actorID string, req Cre
 	}
 
 	return created, nil
+}
+
+type userImportRow struct {
+	rowNumber    int
+	loginName    string
+	displayName  string
+	email        string
+	tempPassword string
+	rawRoles     string
+}
+
+func parseUserImportCSV(csvText string) ([]userImportRow, error) {
+	reader := csv.NewReader(strings.NewReader(csvText))
+	reader.FieldsPerRecord = -1
+	records, err := reader.ReadAll()
+	if err != nil {
+		return nil, fmt.Errorf("invalid csv: %w", err)
+	}
+	if len(records) == 0 {
+		return nil, ErrInvalidInput
+	}
+
+	expected := []string{"login_name", "display_name", "email", "temporary_password", "roles"}
+	header := records[0]
+	if len(header) < len(expected) || !csvHeaderMatches(header, expected) {
+		return nil, ErrInvalidInput
+	}
+
+	data := records[1:]
+	if len(data) == 0 {
+		return nil, ErrInvalidInput
+	}
+	if len(data) > maxBulkRows {
+		return nil, ErrInvalidInput
+	}
+
+	rows := make([]userImportRow, len(data))
+	for i, rec := range data {
+		for len(rec) < len(expected) {
+			rec = append(rec, "")
+		}
+		rows[i] = userImportRow{
+			rowNumber:    i + 2,
+			loginName:    rec[0],
+			displayName:  rec[1],
+			email:        rec[2],
+			tempPassword: rec[3],
+			rawRoles:     rec[4],
+		}
+	}
+	return rows, nil
+}
+
+func csvHeaderMatches(header, expected []string) bool {
+	for i, want := range expected {
+		if i >= len(header) {
+			return false
+		}
+		if strings.ToLower(strings.TrimSpace(header[i])) != want {
+			return false
+		}
+	}
+	return true
+}
+
+func parseRoles(s string) []string {
+	parts := strings.Split(s, ",")
+	out := make([]string, 0, len(parts))
+	for _, p := range parts {
+		p = strings.TrimSpace(p)
+		if p != "" {
+			out = append(out, p)
+		}
+	}
+	return out
+}
+
+func (s *service) ImportUsers(ctx context.Context, orgID, actorID string, req ImportUsersRequest) (ImportUsersResult, error) {
+	rows, err := parseUserImportCSV(req.CSV)
+	if err != nil {
+		return ImportUsersResult{}, err
+	}
+
+	result := ImportUsersResult{
+		Total:  len(rows),
+		DryRun: req.DryRun,
+		Rows:   make([]ImportUserRow, len(rows)),
+	}
+
+	createdCount := 0
+	failedCount := 0
+	for i, row := range rows {
+		loginName := strings.ToLower(strings.TrimSpace(row.loginName))
+		displayName := strings.TrimSpace(row.displayName)
+		email := strings.TrimSpace(row.email)
+		tempPassword := row.tempPassword
+		roles, roleErr := normalizeRoles(parseRoles(row.rawRoles))
+
+		var rowErr error
+		switch {
+		case loginName == "" || displayName == "" || tempPassword == "":
+			rowErr = ErrInvalidInput
+		case roleErr != nil:
+			rowErr = roleErr
+		default:
+			if err := auth.ValidatePasswordStrength(tempPassword); err != nil {
+				rowErr = err
+			}
+		}
+
+		if rowErr == nil {
+			exists, err := s.repo.LoginExists(ctx, orgID, loginName)
+			if err != nil {
+				return result, err
+			}
+			if exists {
+				rowErr = ErrDuplicateLogin
+			}
+		}
+
+		var createdUserID string
+		if rowErr == nil && !req.DryRun {
+			hash, err := auth.HashPassword(tempPassword)
+			if err != nil {
+				return result, fmt.Errorf("hash password: %w", err)
+			}
+
+			var created User
+			err = s.tm.WithinTx(ctx, func(ctx context.Context, tx pgx.Tx) error {
+				u, err := s.repo.CreateUser(ctx, tx, orgID, displayName, email, loginName, hash, roles)
+				if err != nil {
+					return err
+				}
+				created = u
+				return auth.StorePasswordHistory(ctx, s.repo, tx, u.ID, "", hash)
+			})
+			if err != nil {
+				rowErr = err
+			} else {
+				createdUserID = created.ID
+			}
+		}
+
+		status := "created"
+		if rowErr != nil {
+			status = "error"
+			failedCount++
+		} else if req.DryRun {
+			status = "valid"
+		} else {
+			createdCount++
+		}
+
+		errMsg := ""
+		if rowErr != nil {
+			errMsg = rowErr.Error()
+		}
+		result.Rows[i] = ImportUserRow{
+			RowNumber: row.rowNumber,
+			UserID:    createdUserID,
+			LoginName: loginName,
+			Status:    status,
+			Error:     errMsg,
+		}
+	}
+
+	result.Created = createdCount
+	result.Failed = failedCount
+
+	if !req.DryRun {
+		after, _ := json.Marshal(map[string]any{
+			"created": createdCount,
+			"failed":  failedCount,
+			"total":   len(rows),
+		})
+		meta, _ := json.Marshal(map[string]any{
+			"dry_run": false,
+		})
+		if err := s.tm.WithinTx(ctx, func(ctx context.Context, tx pgx.Tx) error {
+			return s.repo.InsertAuditLog(ctx, tx, AuditLogParams{
+				OrganizationID: orgID,
+				ActorUserID:    actorID,
+				Action:         "user.import",
+				ResourceType:   "organization",
+				ResourceID:     orgID,
+				AfterJSON:      after,
+				MetadataJSON:   meta,
+			})
+		}); err != nil {
+			return result, fmt.Errorf("audit log: %w", err)
+		}
+	}
+
+	return result, nil
 }
 
 func (s *service) UpdateRoles(ctx context.Context, orgID, actorID, userID string, req UpdateRolesRequest) error {

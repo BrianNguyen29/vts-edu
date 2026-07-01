@@ -21,6 +21,8 @@ type Service interface {
 	SaveAnswer(ctx context.Context, actor auth.Actor, attemptID, itemID string, payload json.RawMessage) (*AnswerSaved, error)
 	SubmitAttempt(ctx context.Context, actor auth.Actor, attemptID string) (*AttemptSubmitted, error)
 	ListAssignedAssessments(ctx context.Context, actor auth.Actor) ([]AssignedAssessment, error)
+	ListAttemptHistory(ctx context.Context, actor auth.Actor) ([]StudentAttempt, error)
+	GetAttemptResult(ctx context.Context, actor auth.Actor, attemptID string) (*AttemptResult, error)
 	StartAttempt(ctx context.Context, actor auth.Actor, assessmentID string) (*AttemptSnapshot, error)
 }
 
@@ -182,6 +184,64 @@ func (s *service) SubmitAttempt(ctx context.Context, actor auth.Actor, attemptID
 	return result, nil
 }
 
+// ListAttemptHistory returns the current student's submitted/in-progress attempts.
+func (s *service) ListAttemptHistory(ctx context.Context, actor auth.Actor) ([]StudentAttempt, error) {
+	if !hasRole(actor.Roles, "student") {
+		return nil, auth.ErrUnauthorized
+	}
+	return s.repo.ListStudentAttempts(ctx, actor.OrgID, actor.UserID)
+}
+
+// GetAttemptResult returns the graded review view for a submitted or expired attempt.
+func (s *service) GetAttemptResult(ctx context.Context, actor auth.Actor, attemptID string) (*AttemptResult, error) {
+	attempt, err := s.repo.GetAttempt(ctx, attemptID, actor.OrgID, actor.UserID)
+	if err != nil {
+		return nil, err
+	}
+	if attempt.Status != "SUBMITTED" && attempt.Status != "EXPIRED" {
+		return nil, ErrAttemptNotSubmitted
+	}
+
+	items, err := s.repo.GetAttemptItems(ctx, attemptID, actor.OrgID)
+	if err != nil {
+		return nil, err
+	}
+
+	result := &AttemptResult{
+		ID:            attempt.ID,
+		AssessmentID:  attempt.AssessmentID,
+		Status:        attempt.Status,
+		SubmittedAt:   attempt.SubmittedAt,
+		Score:         defaultString(attempt.Score, "0.00"),
+		MaxScore:      defaultString(attempt.MaxScore, "0.00"),
+		GradingStatus: defaultString(attempt.GradingStatus, "GRADED"),
+		ServerTime:    time.Now().UTC(),
+		Items:         make([]AttemptResultItem, len(items)),
+	}
+
+	for i, it := range items {
+		item := AttemptResultItem{
+			ID:                it.ID,
+			QuestionVersionID: it.QuestionVersionID,
+			Position:          it.Position,
+			Points:            it.Points,
+			Prompt:            it.Prompt,
+			Choices:           it.Choices,
+			CorrectAnswer:     it.AnswerKey,
+		}
+		if it.Revision != nil {
+			item.StudentAnswer = &AttemptResultAnswer{
+				AnswerPayload: it.AnswerPayload,
+				AnsweredAt:    *it.AnsweredAt,
+			}
+		}
+		item.IsCorrect = it.Revision != nil && answerMatches(it.AnswerPayload, it.AnswerKey)
+		result.Items[i] = item
+	}
+
+	return result, nil
+}
+
 func gradeAttempt(items []AttemptItemRow) (string, string) {
 	score := big.NewRat(0, 1)
 	maxScore := big.NewRat(0, 1)
@@ -226,12 +286,41 @@ func defaultString(s *string, fallback string) string {
 	return *s
 }
 
-// ListAssignedAssessments returns the published/open assessments available to the current student.
+// ListAssignedAssessments returns all assessments assigned to the current student with availability.
 func (s *service) ListAssignedAssessments(ctx context.Context, actor auth.Actor) ([]AssignedAssessment, error) {
 	if !hasRole(actor.Roles, "student") {
 		return nil, auth.ErrUnauthorized
 	}
-	return s.repo.ListAssignedAssessments(ctx, actor.OrgID, actor.UserID)
+	rows, err := s.repo.ListAssignedAssessments(ctx, actor.OrgID, actor.UserID)
+	if err != nil {
+		return nil, err
+	}
+	now := time.Now().UTC()
+	for i := range rows {
+		rows[i].Availability = availabilityAt(now, rows[i].OpensAt, rows[i].ClosesAt)
+	}
+	return rows, nil
+}
+
+func availabilityAt(now time.Time, opensAt, closesAt *string) string {
+	var opens, closes *time.Time
+	if opensAt != nil && *opensAt != "" {
+		if t, err := time.Parse(time.RFC3339, *opensAt); err == nil {
+			opens = &t
+		}
+	}
+	if closesAt != nil && *closesAt != "" {
+		if t, err := time.Parse(time.RFC3339, *closesAt); err == nil {
+			closes = &t
+		}
+	}
+	if closes != nil && !now.Before(*closes) {
+		return "closed"
+	}
+	if opens != nil && now.Before(*opens) {
+		return "upcoming"
+	}
+	return "open"
 }
 
 // StartAttempt begins a new attempt or resumes an existing in-progress attempt for an assigned assessment.
@@ -240,7 +329,7 @@ func (s *service) StartAttempt(ctx context.Context, actor auth.Actor, assessment
 		return nil, auth.ErrUnauthorized
 	}
 
-	assigned, err := s.repo.ListAssignedAssessments(ctx, actor.OrgID, actor.UserID)
+	assigned, err := s.ListAssignedAssessments(ctx, actor)
 	if err != nil {
 		return nil, err
 	}
@@ -251,7 +340,7 @@ func (s *service) StartAttempt(ctx context.Context, actor auth.Actor, assessment
 			break
 		}
 	}
-	if target == nil {
+	if target == nil || target.Availability != "open" {
 		return nil, ErrAssessmentUnavailable
 	}
 

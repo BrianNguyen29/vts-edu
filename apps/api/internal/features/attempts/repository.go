@@ -55,6 +55,7 @@ type Repository interface {
 	SubmitAttempt(ctx context.Context, tx pgx.Tx, attemptID, orgID, userID, score, maxScore, gradingStatus string) (*GradingResult, error)
 
 	ListAssignedAssessments(ctx context.Context, orgID, userID string) ([]AssignedAssessment, error)
+	ListStudentAttempts(ctx context.Context, orgID, userID string) ([]StudentAttempt, error)
 	GetLatestPublication(ctx context.Context, orgID, assessmentID string) (*PublicationSnapshot, string, string, error)
 	GetInProgressAttempt(ctx context.Context, orgID, userID, assessmentID string) (*Attempt, error)
 	CountStudentAttempts(ctx context.Context, orgID, userID, assessmentID string) (int64, error)
@@ -429,12 +430,73 @@ func (r *sqlcRepository) ListAssignedAssessments(ctx context.Context, orgID, use
 			Status:          row.Status,
 			DurationMinutes: int(row.DurationMinutes),
 			MaxAttempts:     int(row.MaxAttempts),
+			AttemptsUsed:    int(row.AttemptsUsed),
 			Revision:        int(row.Revision),
 			PublicationID:   pubID,
 			PublishedAt:     publishedAt,
+			OpensAt:         tsStringPtr(row.OpensAt),
+			ClosesAt:        tsStringPtr(row.ClosesAt),
 		}
 	}
 	return result, nil
+}
+
+func tsStringPtr(t pgtype.Timestamptz) *string {
+	if t.Valid {
+		s := t.Time.Format(time.RFC3339)
+		return &s
+	}
+	return nil
+}
+
+func (r *sqlcRepository) ListStudentAttempts(ctx context.Context, orgID, userID string) ([]StudentAttempt, error) {
+	org, err := toUUID(orgID)
+	if err != nil {
+		return nil, fmt.Errorf("invalid organization id: %w", err)
+	}
+	usr, err := toUUID(userID)
+	if err != nil {
+		return nil, fmt.Errorf("invalid user id: %w", err)
+	}
+
+	rows, err := r.queries.ListStudentAttempts(ctx, attemptssqlc.ListStudentAttemptsParams{
+		OrganizationID: org,
+		StudentUserID:  usr,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("list student attempts: %w", err)
+	}
+
+	result := make([]StudentAttempt, len(rows))
+	for i, row := range rows {
+		result[i] = StudentAttempt{
+			ID:              row.ID.String(),
+			AssessmentID:    row.AssessmentID.String(),
+			AssessmentTitle: row.AssessmentTitle,
+			Status:          row.Status,
+			StartedAt:       tsPtr(row.StartedAt),
+			ExpiresAt:       tsPtr(row.ExpiresAt),
+			SubmittedAt:     tsPtr(row.SubmittedAt),
+			Score:           nonEmptyStringPtr(row.Score),
+			MaxScore:        nonEmptyStringPtr(row.MaxScore),
+			GradingStatus:   textPtr(row.GradingStatus),
+		}
+	}
+	return result, nil
+}
+
+func nullableString(t pgtype.Text) *string {
+	if t.Valid {
+		return &t.String
+	}
+	return nil
+}
+
+func nonEmptyStringPtr(s string) *string {
+	if s == "" {
+		return nil
+	}
+	return &s
 }
 
 func (r *sqlcRepository) GetLatestPublication(ctx context.Context, orgID, assessmentID string) (*PublicationSnapshot, string, string, error) {

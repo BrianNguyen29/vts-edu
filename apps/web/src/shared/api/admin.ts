@@ -15,6 +15,8 @@ export type UpdateRolesRequest = components['schemas']['UpdateRolesRequest'];
 export type ResetPasswordRequest = components['schemas']['ResetPasswordRequest'];
 export type UpdateOrganizationRequest = components['schemas']['UpdateOrganizationRequest'];
 export type AuditLog = components['schemas']['AuditLog'];
+export type ImportUsersRequest = components['schemas']['ImportUsersRequest'];
+export type ImportUsersResult = components['schemas']['ImportUsersResult'];
 
 export interface AuditLogListOptions {
   action?: string;
@@ -114,5 +116,14 @@ export async function listAuditLogs(
     await client.GET('/audit-logs', {
       params: { query: cleanAuditLogQuery(opts) },
     })
+  );
+}
+
+export async function importUsers(
+  req: ImportUsersRequest
+): Promise<ImportUsersResult> {
+  const client = await getOpenAPIClient();
+  return unwrapData<ImportUsersResult>(
+    await client.POST('/users/imports', { body: req })
   );
 }

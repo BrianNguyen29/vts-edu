@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { ApiResponseError } from '@/shared/api/attempts';
 import {
   addClassTeacher,
@@ -6,6 +6,8 @@ import {
   archiveCourse,
   archiveSubject,
   archiveTerm,
+  bulkAssignTeachers,
+  bulkEnrollStudents,
   createClass,
   createCourse,
   createSubject,
@@ -24,6 +26,9 @@ import {
   updateSubject,
   updateTerm,
   type AddClassTeacherRequest,
+  type BulkAssignTeacherItem,
+  type BulkAssignTeachersResult,
+  type BulkEnrollmentResult,
   type ClassSection,
   type ClassTeacher,
   type Course,
@@ -121,6 +126,19 @@ export function AcademicManagementPanel() {
   const [classStudents, setClassStudents] = useState<Enrollment[]>([]);
   const [detailLoading, setDetailLoading] = useState(false);
 
+  // bulk operations
+  const [bulkStudentIds, setBulkStudentIds] = useState<string[]>([]);
+  const [bulkTeacherItems, setBulkTeacherItems] = useState<
+    BulkAssignTeacherItem[]
+  >([]);
+  const [bulkPreview, setBulkPreview] = useState<
+    BulkEnrollmentResult | BulkAssignTeachersResult | null
+  >(null);
+  const [bulkMode, setBulkMode] = useState<'students' | 'teachers' | null>(
+    null
+  );
+  const [bulkLoading, setBulkLoading] = useState(false);
+
   useEffect(() => {
     let cancelled = false;
 
@@ -158,9 +176,11 @@ export function AcademicManagementPanel() {
     if (!managingClassId) {
       setClassTeachers([]);
       setClassStudents([]);
+      resetBulkState();
       return;
     }
 
+    resetBulkState();
     let cancelled = false;
 
     async function loadDetail() {
@@ -433,6 +453,110 @@ export function AcademicManagementPanel() {
     }
   }
 
+  function resetBulkState() {
+    setBulkStudentIds([]);
+    setBulkTeacherItems([]);
+    setBulkPreview(null);
+    setBulkMode(null);
+  }
+
+  function addBulkStudent(userId: string) {
+    setBulkStudentIds((prev) =>
+      prev.includes(userId) ? prev : [...prev, userId]
+    );
+    setBulkPreview(null);
+  }
+
+  function removeBulkStudent(userId: string) {
+    setBulkStudentIds((prev) => prev.filter((id) => id !== userId));
+    setBulkPreview(null);
+  }
+
+  function addBulkTeacher(userId: string, role: BulkAssignTeacherItem['role']) {
+    setBulkTeacherItems((prev) => {
+      const next = prev.filter((item) => item.user_id !== userId);
+      return [...next, { user_id: userId, role }];
+    });
+    setBulkPreview(null);
+  }
+
+  function removeBulkTeacher(userId: string) {
+    setBulkTeacherItems((prev) => prev.filter((item) => item.user_id !== userId));
+    setBulkPreview(null);
+  }
+
+  async function handleBulkEnroll(dryRun: boolean) {
+    if (!managingClassId || bulkStudentIds.length === 0) return;
+    clearMessages();
+    setBulkLoading(true);
+    try {
+      const result = await bulkEnrollStudents(managingClassId, {
+        user_ids: bulkStudentIds,
+        dry_run: dryRun,
+      });
+      setBulkPreview(result);
+      if (!dryRun) {
+        setSuccess(`Đã ghi danh ${result.enrolled}/${result.total} học sinh.`);
+        const [teachers, students] = await Promise.all([
+          listClassTeachers(managingClassId),
+          listEnrollments(managingClassId),
+        ]);
+        setClassTeachers(teachers.data);
+        setClassStudents(students.data);
+        setClasses((prev) =>
+          prev.map((cl) =>
+            cl.id === managingClassId
+              ? { ...cl, student_count: students.data.length }
+              : cl
+          )
+        );
+        resetBulkState();
+      }
+    } catch (err) {
+      setError(formatFriendlyError(err));
+      setBulkPreview(null);
+    } finally {
+      setBulkLoading(false);
+    }
+  }
+
+  async function handleBulkAssignTeachers(dryRun: boolean) {
+    if (!managingClassId || bulkTeacherItems.length === 0) return;
+    clearMessages();
+    setBulkLoading(true);
+    try {
+      const result = await bulkAssignTeachers(managingClassId, {
+        items: bulkTeacherItems,
+        dry_run: dryRun,
+      });
+      setBulkPreview(result);
+      if (!dryRun) {
+        setSuccess(
+          `Đã phân công ${result.assigned}/${result.total} giáo viên.`
+        );
+        const [teachers, students] = await Promise.all([
+          listClassTeachers(managingClassId),
+          listEnrollments(managingClassId),
+        ]);
+        setClassTeachers(teachers.data);
+        setClassStudents(students.data);
+        setClasses((prev) =>
+          prev.map((cl) =>
+            cl.id === managingClassId
+              ? { ...cl, teacher_count: teachers.data.length }
+              : cl
+          )
+        );
+        resetBulkState();
+      }
+    } catch (err) {
+      setError(formatFriendlyError(err));
+      setBulkPreview(null);
+    } finally {
+      setBulkLoading(false);
+    }
+  }
+
   const activeTerms = useMemo(
     () => terms.filter((t) => t.status === 'ACTIVE'),
     [terms]
@@ -595,6 +719,18 @@ export function AcademicManagementPanel() {
           onRemoveTeacher={handleRemoveTeacher}
           onEnrollStudent={handleEnrollStudent}
           onUnenrollStudent={handleUnenrollStudent}
+          bulkStudentIds={bulkStudentIds}
+          bulkTeacherItems={bulkTeacherItems}
+          bulkPreview={bulkPreview}
+          bulkMode={bulkMode}
+          bulkLoading={bulkLoading}
+          onAddBulkStudent={addBulkStudent}
+          onRemoveBulkStudent={removeBulkStudent}
+          onAddBulkTeacher={addBulkTeacher}
+          onRemoveBulkTeacher={removeBulkTeacher}
+          onSetBulkMode={setBulkMode}
+          onBulkEnroll={handleBulkEnroll}
+          onBulkAssignTeachers={handleBulkAssignTeachers}
         />
       )}
     </section>
@@ -1092,6 +1228,18 @@ function ClassManager({
   onRemoveTeacher,
   onEnrollStudent,
   onUnenrollStudent,
+  bulkStudentIds,
+  bulkTeacherItems,
+  bulkPreview,
+  bulkMode,
+  bulkLoading,
+  onAddBulkStudent,
+  onRemoveBulkStudent,
+  onAddBulkTeacher,
+  onRemoveBulkTeacher,
+  onSetBulkMode,
+  onBulkEnroll,
+  onBulkAssignTeachers,
 }: {
   classes: ClassSection[];
   courses: Course[];
@@ -1114,8 +1262,21 @@ function ClassManager({
   onRemoveTeacher: (userId: string) => void;
   onEnrollStudent: (userId: string) => void;
   onUnenrollStudent: (userId: string) => void;
+  bulkStudentIds: string[];
+  bulkTeacherItems: BulkAssignTeacherItem[];
+  bulkPreview: BulkEnrollmentResult | BulkAssignTeachersResult | null;
+  bulkMode: 'students' | 'teachers' | null;
+  bulkLoading: boolean;
+  onAddBulkStudent: (userId: string) => void;
+  onRemoveBulkStudent: (userId: string) => void;
+  onAddBulkTeacher: (userId: string, role: BulkAssignTeacherItem['role']) => void;
+  onRemoveBulkTeacher: (userId: string) => void;
+  onSetBulkMode: (mode: 'students' | 'teachers' | null) => void;
+  onBulkEnroll: (dryRun: boolean) => void;
+  onBulkAssignTeachers: (dryRun: boolean) => void;
 }) {
   const managingClass = classes.find((cl) => cl.id === managingClassId);
+  const teacherRoleRef = useRef<HTMLSelectElement>(null);
 
   return (
     <div className="academic-manager">
@@ -1299,6 +1460,197 @@ function ClassManager({
               </div>
             </>
           )}
+
+          <div className="academic-bulk-panel">
+            <h4>Thao tác hàng loạt</h4>
+            <div className="bulk-actions">
+              <button
+                type="button"
+                className={bulkMode === 'students' ? 'active' : ''}
+                onClick={() =>
+                  onSetBulkMode(bulkMode === 'students' ? null : 'students')
+                }
+              >
+                Ghi danh hàng loạt
+              </button>
+              <button
+                type="button"
+                className={bulkMode === 'teachers' ? 'active' : ''}
+                onClick={() =>
+                  onSetBulkMode(bulkMode === 'teachers' ? null : 'teachers')
+                }
+              >
+                Phân công giáo viên hàng loạt
+              </button>
+            </div>
+
+            {bulkMode === 'students' && (
+              <div className="bulk-mode">
+                <UserPicker
+                  role="student"
+                  onSelect={(userId) => onAddBulkStudent(userId)}
+                  buttonLabel="Thêm học sinh vào danh sách"
+                />
+                {bulkStudentIds.length === 0 ? (
+                  <p className="dashboard-status">
+                    Chưa chọn học sinh nào.
+                  </p>
+                ) : (
+                  <>
+                    <p>Đã chọn {bulkStudentIds.length} học sinh.</p>
+                    <ul className="academic-member-list compact">
+                      {bulkStudentIds.map((id) => (
+                        <li key={id}>
+                          <code>{id}</code>
+                          <button
+                            type="button"
+                            onClick={() => onRemoveBulkStudent(id)}
+                          >
+                            Xóa
+                          </button>
+                        </li>
+                      ))}
+                    </ul>
+                    <div className="form-actions">
+                      <button
+                        type="button"
+                        onClick={() => onBulkEnroll(true)}
+                        disabled={bulkLoading}
+                      >
+                        {bulkLoading && !bulkPreview
+                          ? 'Đang kiểm tra…'
+                          : 'Kiểm tra'}
+                      </button>
+                      <button
+                        type="button"
+                        className="primary"
+                        onClick={() => onBulkEnroll(false)}
+                        disabled={bulkLoading}
+                      >
+                        {bulkLoading && bulkPreview
+                          ? 'Đang ghi danh…'
+                          : 'Xác nhận ghi danh'}
+                      </button>
+                    </div>
+                  </>
+                )}
+              </div>
+            )}
+
+            {bulkMode === 'teachers' && (
+              <div className="bulk-mode">
+                <div className="bulk-teacher-picker">
+                  <UserPicker
+                    role="teacher"
+                    onSelect={(userId) =>
+                      onAddBulkTeacher(
+                        userId,
+                        teacherRoleRef.current?.value as
+                          | 'teacher'
+                          | 'assistant'
+                      )
+                    }
+                    buttonLabel="Thêm giáo viên vào danh sách"
+                  />
+                  <select ref={teacherRoleRef} defaultValue="teacher">
+                    <option value="teacher">Giáo viên</option>
+                    <option value="assistant">Trợ giảng</option>
+                  </select>
+                </div>
+                {bulkTeacherItems.length === 0 ? (
+                  <p className="dashboard-status">
+                    Chưa chọn giáo viên nào.
+                  </p>
+                ) : (
+                  <>
+                    <p>Đã chọn {bulkTeacherItems.length} giáo viên.</p>
+                    <ul className="academic-member-list compact">
+                      {bulkTeacherItems.map((item) => (
+                        <li key={item.user_id}>
+                          <code>{item.user_id}</code>
+                          <small>
+                            {item.role === 'assistant'
+                              ? 'Trợ giảng'
+                              : 'Giáo viên'}
+                          </small>
+                          <button
+                            type="button"
+                            onClick={() => onRemoveBulkTeacher(item.user_id)}
+                          >
+                            Xóa
+                          </button>
+                        </li>
+                      ))}
+                    </ul>
+                    <div className="form-actions">
+                      <button
+                        type="button"
+                        onClick={() => onBulkAssignTeachers(true)}
+                        disabled={bulkLoading}
+                      >
+                        {bulkLoading && !bulkPreview
+                          ? 'Đang kiểm tra…'
+                          : 'Kiểm tra'}
+                      </button>
+                      <button
+                        type="button"
+                        className="primary"
+                        onClick={() => onBulkAssignTeachers(false)}
+                        disabled={bulkLoading}
+                      >
+                        {bulkLoading && bulkPreview
+                          ? 'Đang phân công…'
+                          : 'Xác nhận phân công'}
+                      </button>
+                    </div>
+                  </>
+                )}
+              </div>
+            )}
+
+            {bulkPreview && (
+              <div className="bulk-preview">
+                <p>
+                  Tổng: <strong>{bulkPreview.total}</strong> · Thành công:{' '}
+                  <strong>
+                    {'enrolled' in bulkPreview
+                      ? bulkPreview.enrolled
+                      : bulkPreview.assigned}
+                  </strong>{' '}
+                  · Lỗi: <strong>{bulkPreview.failed}</strong>
+                  {bulkPreview.dry_run && (
+                    <span className="dry-run-badge">Chế độ kiểm tra</span>
+                  )}
+                </p>
+                <div className="table-wrap">
+                  <table className="gradebook-table">
+                    <thead>
+                      <tr>
+                        <th>User ID</th>
+                        <th>Trạng thái</th>
+                        <th>Lỗi</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {bulkPreview.rows.map((row, idx) => (
+                        <tr key={idx}>
+                          <td>
+                            <code>{row.user_id}</code>
+                          </td>
+                          <td>
+                            <span className={`status-badge ${row.status}`}>
+                              {row.status}
+                            </span>
+                          </td>
+                          <td>{row.error || '—'}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+          </div>
         </div>
       )}
     </div>

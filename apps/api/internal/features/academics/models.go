@@ -124,6 +124,56 @@ type EnrollStudentRequest struct {
 	UserID string `json:"user_id"`
 }
 
+// BulkEnrollRequest is the payload for POST /api/v1/classes/{class_id}/enrollments/bulk.
+type BulkEnrollRequest struct {
+	UserIDs []string `json:"user_ids"`
+	DryRun  bool     `json:"dry_run"`
+}
+
+// BulkEnrollmentRow is the per-row outcome of a bulk enrollment.
+type BulkEnrollmentRow struct {
+	UserID string `json:"user_id"`
+	Status string `json:"status"`
+	Error  string `json:"error,omitempty"`
+}
+
+// BulkEnrollmentResult is the response for a bulk enrollment operation.
+type BulkEnrollmentResult struct {
+	Total    int                 `json:"total"`
+	Enrolled int                 `json:"enrolled"`
+	Failed   int                 `json:"failed"`
+	DryRun   bool                `json:"dry_run"`
+	Rows     []BulkEnrollmentRow `json:"rows"`
+}
+
+// BulkAssignTeacherItem is a single teacher assignment in a bulk operation.
+type BulkAssignTeacherItem struct {
+	UserID string `json:"user_id"`
+	Role   string `json:"role,omitempty"`
+}
+
+// BulkAssignTeachersRequest is the payload for POST /api/v1/classes/{class_id}/teachers/bulk.
+type BulkAssignTeachersRequest struct {
+	Items  []BulkAssignTeacherItem `json:"items"`
+	DryRun bool                    `json:"dry_run"`
+}
+
+// BulkAssignTeacherRow is the per-row outcome of a bulk teacher assignment.
+type BulkAssignTeacherRow struct {
+	UserID string `json:"user_id"`
+	Status string `json:"status"`
+	Error  string `json:"error,omitempty"`
+}
+
+// BulkAssignTeachersResult is the response for a bulk teacher assignment operation.
+type BulkAssignTeachersResult struct {
+	Total    int                    `json:"total"`
+	Assigned int                    `json:"assigned"`
+	Failed   int                    `json:"failed"`
+	DryRun   bool                   `json:"dry_run"`
+	Rows     []BulkAssignTeacherRow `json:"rows"`
+}
+
 // MembershipInfo identifies an organization membership and its roles.
 type MembershipInfo struct {
 	ID     string
@@ -149,9 +199,22 @@ type DataEnvelope struct {
 // ErrorEnvelope wraps API error responses.
 type ErrorEnvelope struct {
 	Error struct {
-		Code    string `json:"code"`
-		Message string `json:"message"`
+		Code      string `json:"code"`
+		Message   string `json:"message"`
+		RequestID string `json:"request_id,omitempty"`
 	} `json:"error"`
+}
+
+// AuditLogParams is the persistence input for an audit log row.
+type AuditLogParams struct {
+	OrganizationID string
+	ActorUserID    string
+	Action         string
+	ResourceType   string
+	ResourceID     string
+	BeforeJSON     []byte
+	AfterJSON      []byte
+	MetadataJSON   []byte
 }
 
 func formatDate(t time.Time) string {

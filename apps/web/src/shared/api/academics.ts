@@ -29,6 +29,14 @@ export type AddClassTeacherRequest = components['schemas']['AddClassTeacherReque
 export type Enrollment = components['schemas']['Enrollment']['data'];
 export type EnrollmentList = components['schemas']['EnrollmentList'];
 export type EnrollStudentRequest = components['schemas']['EnrollStudentRequest'];
+export type BulkEnrollRequest = components['schemas']['BulkEnrollRequest'];
+export type BulkEnrollmentResult = components['schemas']['BulkEnrollmentResult'];
+export type BulkAssignTeacherItem =
+  components['schemas']['BulkAssignTeacherItem'];
+export type BulkAssignTeachersRequest =
+  components['schemas']['BulkAssignTeachersRequest'];
+export type BulkAssignTeachersResult =
+  components['schemas']['BulkAssignTeachersResult'];
 
 export async function listTerms(): Promise<TermList> {
   const client = await getOpenAPIClient();
@@ -289,6 +297,36 @@ export async function unenrollStudent(
   if (error) {
     throw createApiError(response.status, error);
   }
+}
+
+export async function bulkEnrollStudents(
+  classId: string,
+  body: BulkEnrollRequest
+): Promise<BulkEnrollmentResult> {
+  const client = await getOpenAPIClient();
+  const { data, error, response } = await client.POST(
+    '/classes/{class_id}/enrollments/bulk',
+    { params: { path: { class_id: classId } }, body }
+  );
+  if (!data || error) {
+    throw createApiError(response.status, error ?? {});
+  }
+  return (data as unknown as { data: BulkEnrollmentResult }).data;
+}
+
+export async function bulkAssignTeachers(
+  classId: string,
+  body: BulkAssignTeachersRequest
+): Promise<BulkAssignTeachersResult> {
+  const client = await getOpenAPIClient();
+  const { data, error, response } = await client.POST(
+    '/classes/{class_id}/teachers/bulk',
+    { params: { path: { class_id: classId } }, body }
+  );
+  if (!data || error) {
+    throw createApiError(response.status, error ?? {});
+  }
+  return (data as unknown as { data: BulkAssignTeachersResult }).data;
 }
 
 export { ApiResponseError };

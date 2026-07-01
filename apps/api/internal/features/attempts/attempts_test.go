@@ -26,6 +26,7 @@ type fakeRepo struct {
 	markExpired   func(ctx context.Context, tx pgx.Tx, id, orgID, userID string) error
 	submit        func(ctx context.Context, tx pgx.Tx, id, orgID, userID, score, maxScore, gradingStatus string) (*attempts.GradingResult, error)
 	listAssigned  func(ctx context.Context, orgID, userID string) ([]attempts.AssignedAssessment, error)
+	listHistory   func(ctx context.Context, orgID, userID string) ([]attempts.StudentAttempt, error)
 	getLatestPub  func(ctx context.Context, orgID, assessmentID string) (*attempts.PublicationSnapshot, string, string, error)
 	getInProgress func(ctx context.Context, orgID, userID, assessmentID string) (*attempts.Attempt, error)
 	countAttempts func(ctx context.Context, orgID, userID, assessmentID string) (int64, error)
@@ -64,6 +65,13 @@ func (f *fakeRepo) SubmitAttempt(ctx context.Context, tx pgx.Tx, id, orgID, user
 func (f *fakeRepo) ListAssignedAssessments(ctx context.Context, orgID, userID string) ([]attempts.AssignedAssessment, error) {
 	if f.listAssigned != nil {
 		return f.listAssigned(ctx, orgID, userID)
+	}
+	return nil, nil
+}
+
+func (f *fakeRepo) ListStudentAttempts(ctx context.Context, orgID, userID string) ([]attempts.StudentAttempt, error) {
+	if f.listHistory != nil {
+		return f.listHistory(ctx, orgID, userID)
 	}
 	return nil, nil
 }
@@ -692,5 +700,206 @@ func TestHandler_Submit_OK(t *testing.T) {
 	}
 	if resp.Data.GradingStatus != "GRADED" {
 		t.Errorf("grading_status = %q, want GRADED", resp.Data.GradingStatus)
+	}
+}
+
+func TestService_ListAssignedAssessments_Availability(t *testing.T) {
+	upcoming := time.Now().UTC().Add(time.Hour).Format(time.RFC3339)
+	open := time.Now().UTC().Add(-time.Hour).Format(time.RFC3339)
+	closed := time.Now().UTC().Add(-time.Hour).Format(time.RFC3339)
+	repo := &fakeRepo{
+		listAssigned: func(ctx context.Context, orgID, userID string) ([]attempts.AssignedAssessment, error) {
+			return []attempts.AssignedAssessment{
+				{ID: "a-upcoming", Title: "Future", Status: "OPEN", PublicationID: "pub-1", OpensAt: &upcoming},
+				{ID: "a-open", Title: "Current", Status: "OPEN", PublicationID: "pub-2", OpensAt: &open},
+				{ID: "a-closed", Title: "Past", Status: "PUBLISHED", PublicationID: "pub-3", ClosesAt: &closed},
+			}, nil
+		},
+	}
+	svc := attempts.NewService(repo, stubTxManager{})
+	result, err := svc.ListAssignedAssessments(context.Background(), auth.Actor{UserID: "user-id", OrgID: "org-id", Roles: []string{"student"}})
+	if err != nil {
+		t.Fatalf("ListAssignedAssessments failed: %v", err)
+	}
+	if len(result) != 3 {
+		t.Fatalf("expected 3 assessments, got %d", len(result))
+	}
+	want := map[string]string{"a-upcoming": "upcoming", "a-open": "open", "a-closed": "closed"}
+	for _, a := range result {
+		if a.Availability != want[a.ID] {
+			t.Errorf("availability for %s = %q, want %q", a.ID, a.Availability, want[a.ID])
+		}
+	}
+}
+
+func TestService_ListAttemptHistory_OK(t *testing.T) {
+	started := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	repo := &fakeRepo{
+		listHistory: func(ctx context.Context, orgID, userID string) ([]attempts.StudentAttempt, error) {
+			return []attempts.StudentAttempt{
+				{ID: "attempt-1", AssessmentID: "assessment-id", AssessmentTitle: "Quiz", Status: "SUBMITTED", StartedAt: &started},
+			}, nil
+		},
+	}
+	svc := attempts.NewService(repo, stubTxManager{})
+	result, err := svc.ListAttemptHistory(context.Background(), auth.Actor{UserID: "user-id", OrgID: "org-id", Roles: []string{"student"}})
+	if err != nil {
+		t.Fatalf("ListAttemptHistory failed: %v", err)
+	}
+	if len(result) != 1 {
+		t.Fatalf("expected 1 attempt, got %d", len(result))
+	}
+	if result[0].AssessmentTitle != "Quiz" {
+		t.Errorf("title = %q, want Quiz", result[0].AssessmentTitle)
+	}
+}
+
+func TestService_ListAttemptHistory_Forbidden(t *testing.T) {
+	svc := attempts.NewService(&fakeRepo{}, stubTxManager{})
+	_, err := svc.ListAttemptHistory(context.Background(), auth.Actor{UserID: "user-id", OrgID: "org-id", Roles: []string{"teacher"}})
+	if !errors.Is(err, auth.ErrUnauthorized) {
+		t.Fatalf("expected ErrUnauthorized, got %v", err)
+	}
+}
+
+func TestService_GetAttemptResult_OK(t *testing.T) {
+	rev := int64(1)
+	answered := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	score := "1.00"
+	maxScore := "2.00"
+	grading := "GRADED"
+	submitted := time.Date(2026, 1, 2, 0, 0, 0, 0, time.UTC)
+	repo := &fakeRepo{
+		getAttempt: func(ctx context.Context, id, orgID, userID string) (*attempts.Attempt, error) {
+			return &attempts.Attempt{
+				ID: id, OrganizationID: orgID, AssessmentID: "assessment-id", Status: "SUBMITTED",
+				SubmittedAt: &submitted, Score: &score, MaxScore: &maxScore, GradingStatus: &grading,
+			}, nil
+		},
+		getItems: func(ctx context.Context, id, orgID string) ([]attempts.AttemptItemRow, error) {
+			return []attempts.AttemptItemRow{
+				{
+					ID:            "item-1",
+					Position:      1,
+					Points:        "1.00",
+					AnswerPayload: json.RawMessage(`{"selected_option":"A"}`),
+					AnswerKey:     json.RawMessage(`{"correct_option":"A"}`),
+					Revision:      &rev,
+					AnsweredAt:    &answered,
+				},
+				{
+					ID:            "item-2",
+					Position:      2,
+					Points:        "1.00",
+					AnswerPayload: json.RawMessage(`{"selected_option":"C"}`),
+					AnswerKey:     json.RawMessage(`{"correct_option":"B"}`),
+					Revision:      &rev,
+					AnsweredAt:    &answered,
+				},
+			}, nil
+		},
+	}
+	svc := attempts.NewService(repo, stubTxManager{})
+	result, err := svc.GetAttemptResult(context.Background(), auth.Actor{UserID: "user-id", OrgID: "org-id"}, "attempt-id")
+	if err != nil {
+		t.Fatalf("GetAttemptResult failed: %v", err)
+	}
+	if result.Status != "SUBMITTED" {
+		t.Errorf("status = %q, want SUBMITTED", result.Status)
+	}
+	if result.Score != "1.00" {
+		t.Errorf("score = %q, want 1.00", result.Score)
+	}
+	if len(result.Items) != 2 {
+		t.Fatalf("expected 2 items, got %d", len(result.Items))
+	}
+	if !result.Items[0].IsCorrect {
+		t.Error("expected first item to be correct")
+	}
+	if result.Items[1].IsCorrect {
+		t.Error("expected second item to be incorrect")
+	}
+	if result.Items[0].StudentAnswer == nil {
+		t.Fatal("expected student answer on first item")
+	}
+}
+
+func TestService_GetAttemptResult_NotSubmitted(t *testing.T) {
+	repo := &fakeRepo{
+		getAttempt: func(ctx context.Context, id, orgID, userID string) (*attempts.Attempt, error) {
+			return &attempts.Attempt{ID: id, OrganizationID: orgID, AssessmentID: "assessment-id", Status: "IN_PROGRESS"}, nil
+		},
+	}
+	svc := attempts.NewService(repo, stubTxManager{})
+	_, err := svc.GetAttemptResult(context.Background(), auth.Actor{UserID: "user-id", OrgID: "org-id"}, "attempt-id")
+	if !errors.Is(err, attempts.ErrAttemptNotSubmitted) {
+		t.Fatalf("expected ErrAttemptNotSubmitted, got %v", err)
+	}
+}
+
+func TestHandler_ListAttemptHistory_OK(t *testing.T) {
+	started := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	repo := &fakeRepo{
+		listHistory: func(ctx context.Context, orgID, userID string) ([]attempts.StudentAttempt, error) {
+			return []attempts.StudentAttempt{{ID: "attempt-1", AssessmentID: "a", AssessmentTitle: "Quiz", Status: "SUBMITTED", StartedAt: &started}}, nil
+		},
+	}
+	h := attempts.NewHandler(attempts.NewService(repo, stubTxManager{}), newIssuer())
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/me/attempts", nil)
+	addBearer(req, newIssuer())
+	rec := httptest.NewRecorder()
+
+	h.ListAttemptHistory(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", rec.Code, http.StatusOK)
+	}
+}
+
+func TestHandler_GetAttemptResult_OK(t *testing.T) {
+	rev := int64(1)
+	answered := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	score := "1.00"
+	maxScore := "2.00"
+	grading := "GRADED"
+	submitted := time.Date(2026, 1, 2, 0, 0, 0, 0, time.UTC)
+	repo := &fakeRepo{
+		getAttempt: func(ctx context.Context, id, orgID, userID string) (*attempts.Attempt, error) {
+			return &attempts.Attempt{
+				ID: id, OrganizationID: orgID, AssessmentID: "assessment-id", Status: "SUBMITTED",
+				SubmittedAt: &submitted, Score: &score, MaxScore: &maxScore, GradingStatus: &grading,
+			}, nil
+		},
+		getItems: func(ctx context.Context, id, orgID string) ([]attempts.AttemptItemRow, error) {
+			return []attempts.AttemptItemRow{
+				{
+					ID:            "item-1",
+					Position:      1,
+					Points:        "1.00",
+					Prompt:        json.RawMessage(`{"text":"Q"}`),
+					Choices:       json.RawMessage(`[]`),
+					AnswerPayload: json.RawMessage(`{"selected_option":"A"}`),
+					AnswerKey:     json.RawMessage(`{"correct_option":"A"}`),
+					Revision:      &rev,
+					AnsweredAt:    &answered,
+				},
+			}, nil
+		},
+	}
+	h := attempts.NewHandler(attempts.NewService(repo, stubTxManager{}), newIssuer())
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/attempts/attempt-id/result", nil)
+	addBearer(req, newIssuer())
+	rec := httptest.NewRecorder()
+
+	rctx := chi.NewRouteContext()
+	rctx.URLParams.Add("attempt_id", "attempt-id")
+	req = req.WithContext(context.WithValue(req.Context(), chi.RouteCtxKey, rctx))
+
+	h.GetAttemptResult(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", rec.Code, http.StatusOK)
 	}
 }

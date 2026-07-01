@@ -31,6 +31,9 @@ type Repository interface {
 	CreateAssessmentItem(ctx context.Context, tx pgx.Tx, orgID, assessmentID, sectionID string, req CreateItemRequest) (ItemDetail, error)
 	CreateAssessmentTarget(ctx context.Context, tx pgx.Tx, orgID, assessmentID string, req CreateTargetRequest) (TargetDetail, error)
 
+	DuplicateSection(ctx context.Context, tx pgx.Tx, orgID, assessmentID, sectionID string) (SectionDetail, error)
+	DuplicateItem(ctx context.Context, tx pgx.Tx, orgID, sectionID, itemID string) (ItemDetail, error)
+
 	GetAssessmentSection(ctx context.Context, orgID, sectionID string) (SectionDetail, error)
 	UpdateAssessmentSection(ctx context.Context, tx pgx.Tx, orgID, sectionID string, req UpdateSectionRequest) (SectionDetail, error)
 	ArchiveAssessmentSection(ctx context.Context, tx pgx.Tx, orgID, sectionID string) error
@@ -1080,6 +1083,168 @@ func (r *sqlcRepository) CreateAssessmentItem(ctx context.Context, tx pgx.Tx, or
 		Position:          int(row.Position),
 		Points:            numericString(row.Points),
 	}, nil
+}
+
+func itemDetailFromCreateRow(row assessmentsqlc.CreateAssessmentItemRow) ItemDetail {
+	return ItemDetail{
+		ID:                row.ID.String(),
+		QuestionVersionID: row.QuestionVersionID.String(),
+		Position:          int(row.Position),
+		Points:            numericString(row.Points),
+	}
+}
+
+func (r *sqlcRepository) DuplicateSection(ctx context.Context, tx pgx.Tx, orgID, assessmentID, sectionID string) (SectionDetail, error) {
+	orgUUID, err := toUUID(orgID)
+	if err != nil {
+		return SectionDetail{}, fmt.Errorf("invalid organization id: %w", err)
+	}
+	assessUUID, err := toUUID(assessmentID)
+	if err != nil {
+		return SectionDetail{}, fmt.Errorf("invalid assessment id: %w", err)
+	}
+	sectionUUID, err := toUUID(sectionID)
+	if err != nil {
+		return SectionDetail{}, fmt.Errorf("invalid section id: %w", err)
+	}
+
+	source, err := r.queries.WithTx(tx).GetAssessmentSection(ctx, assessmentsqlc.GetAssessmentSectionParams{
+		SectionID:      sectionUUID,
+		OrganizationID: orgUUID,
+	})
+	if errors.Is(err, pgx.ErrNoRows) {
+		return SectionDetail{}, ErrNotFound
+	}
+	if err != nil {
+		return SectionDetail{}, fmt.Errorf("get source section: %w", err)
+	}
+	if source.AssessmentID != assessUUID || source.Status != "ACTIVE" {
+		return SectionDetail{}, ErrNotFound
+	}
+
+	sections, err := r.queries.WithTx(tx).GetAssessmentSections(ctx, assessmentsqlc.GetAssessmentSectionsParams{
+		OrganizationID: orgUUID,
+		AssessmentID:   assessUUID,
+	})
+	if err != nil {
+		return SectionDetail{}, fmt.Errorf("list sections: %w", err)
+	}
+	maxPos := 0
+	for _, sec := range sections {
+		if int(sec.Position) > maxPos {
+			maxPos = int(sec.Position)
+		}
+	}
+
+	newSection, err := r.queries.WithTx(tx).CreateAssessmentSection(ctx, assessmentsqlc.CreateAssessmentSectionParams{
+		OrganizationID: orgUUID,
+		AssessmentID:   assessUUID,
+		Title:          source.Title + " (copy)",
+		Position:       int32(maxPos + 10),
+	})
+	if err != nil {
+		return SectionDetail{}, fmt.Errorf("create duplicated section: %w", err)
+	}
+
+	sourceItems, err := r.queries.WithTx(tx).GetAssessmentItemsBySection(ctx, assessmentsqlc.GetAssessmentItemsBySectionParams{
+		OrganizationID: orgUUID,
+		SectionID:      sectionUUID,
+	})
+	if err != nil {
+		return SectionDetail{}, fmt.Errorf("list source items: %w", err)
+	}
+
+	items := make([]ItemDetail, len(sourceItems))
+	for i, it := range sourceItems {
+		row, err := r.queries.WithTx(tx).CreateAssessmentItem(ctx, assessmentsqlc.CreateAssessmentItemParams{
+			OrganizationID:      orgUUID,
+			AssessmentID:        assessUUID,
+			AssessmentSectionID: newSection.ID,
+			QuestionVersionID:   it.QuestionVersionID,
+			Position:            it.Position,
+			Points:              it.Points,
+		})
+		if err != nil {
+			return SectionDetail{}, fmt.Errorf("duplicate item: %w", err)
+		}
+		items[i] = itemDetailFromCreateRow(row)
+	}
+
+	var settings json.RawMessage
+	if len(newSection.SettingsJson) > 0 {
+		settings = newSection.SettingsJson
+	}
+	return SectionDetail{
+		ID:       newSection.ID.String(),
+		Title:    newSection.Title,
+		Position: int(newSection.Position),
+		Settings: settings,
+		Items:    items,
+	}, nil
+}
+
+func (r *sqlcRepository) DuplicateItem(ctx context.Context, tx pgx.Tx, orgID, sectionID, itemID string) (ItemDetail, error) {
+	orgUUID, err := toUUID(orgID)
+	if err != nil {
+		return ItemDetail{}, fmt.Errorf("invalid organization id: %w", err)
+	}
+	sectionUUID, err := toUUID(sectionID)
+	if err != nil {
+		return ItemDetail{}, fmt.Errorf("invalid section id: %w", err)
+	}
+	itemUUID, err := toUUID(itemID)
+	if err != nil {
+		return ItemDetail{}, fmt.Errorf("invalid item id: %w", err)
+	}
+
+	source, err := r.queries.WithTx(tx).GetAssessmentItem(ctx, assessmentsqlc.GetAssessmentItemParams{
+		ItemID:         itemUUID,
+		OrganizationID: orgUUID,
+	})
+	if errors.Is(err, pgx.ErrNoRows) {
+		return ItemDetail{}, ErrNotFound
+	}
+	if err != nil {
+		return ItemDetail{}, fmt.Errorf("get source item: %w", err)
+	}
+	if source.AssessmentSectionID != sectionUUID || source.Status != "ACTIVE" {
+		return ItemDetail{}, ErrNotFound
+	}
+
+	assessmentID, err := r.queries.WithTx(tx).GetSectionAssessmentID(ctx, assessmentsqlc.GetSectionAssessmentIDParams{
+		SectionID:      sectionUUID,
+		OrganizationID: orgUUID,
+	})
+	if err != nil {
+		return ItemDetail{}, fmt.Errorf("get section assessment id: %w", err)
+	}
+
+	sectionItems, err := r.queries.WithTx(tx).GetAssessmentItemsBySection(ctx, assessmentsqlc.GetAssessmentItemsBySectionParams{
+		OrganizationID: orgUUID,
+		SectionID:      sectionUUID,
+	})
+	if err != nil {
+		return ItemDetail{}, fmt.Errorf("list section items: %w", err)
+	}
+	maxPos := 0
+	for _, it := range sectionItems {
+		if int(it.Position) > maxPos {
+			maxPos = int(it.Position)
+		}
+	}
+
+	row, err := r.queries.WithTx(tx).CreateAssessmentItem(ctx, assessmentsqlc.CreateAssessmentItemParams{
+		OrganizationID:      orgUUID,
+		AssessmentID:        assessmentID,
+		AssessmentSectionID: sectionUUID,
+		QuestionVersionID:   source.QuestionVersionID,
+		Position:            int32(maxPos + 10),
+		Points:              source.Points,
+	})
+	if err != nil {
+		return ItemDetail{}, fmt.Errorf("create duplicated item: %w", err)
+	}
+	return itemDetailFromCreateRow(row), nil
 }
 
 func (r *sqlcRepository) CreateAssessmentTarget(ctx context.Context, tx pgx.Tx, orgID, assessmentID string, req CreateTargetRequest) (TargetDetail, error) {

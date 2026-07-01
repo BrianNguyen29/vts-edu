@@ -42,6 +42,11 @@ export type ReorderSectionsRequest =
   components['schemas']['ReorderSectionsRequest'];
 export type ReorderItemsRequest =
   components['schemas']['ReorderItemsRequest'];
+export type AssessmentPreview =
+  components['schemas']['AssessmentPreview']['data'];
+export type PreviewSection =
+  components['schemas']['PreviewSection']['data'];
+export type PreviewItem = components['schemas']['PreviewItem']['data'];
 
 function cleanListQuery(opts: ListOptions) {
   return {
@@ -264,6 +269,42 @@ export async function listPublications(
     await client.GET('/assessments/{id}/publications', {
       params: { path: { id: assessmentId } },
     })
+  );
+}
+
+export async function previewAssessment(id: string): Promise<AssessmentPreview> {
+  const client = await getOpenAPIClient();
+  return unwrapData<AssessmentPreview>(
+    await client.GET('/assessments/{id}/preview', {
+      params: { path: { id } },
+    })
+  );
+}
+
+export async function duplicateSection(
+  assessmentId: string,
+  sectionId: string
+): Promise<Section> {
+  const client = await getOpenAPIClient();
+  return unwrapData<Section>(
+    await client.POST('/assessments/{id}/sections/{section_id}/duplicate', {
+      params: { path: { id: assessmentId, section_id: sectionId } },
+    })
+  );
+}
+
+export async function duplicateItem(
+  sectionId: string,
+  itemId: string
+): Promise<Item> {
+  const client = await getOpenAPIClient();
+  return unwrapData<Item>(
+    await client.POST(
+      '/assessment-sections/{section_id}/items/{item_id}/duplicate',
+      {
+        params: { path: { section_id: sectionId, item_id: itemId } },
+      }
+    )
   );
 }
 

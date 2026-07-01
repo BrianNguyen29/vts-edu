@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '@/app/providers/auth-provider';
 import { ApiResponseError } from '@/shared/api/attempts';
 import {
@@ -265,13 +265,21 @@ export function TeacherDashboardPage() {
             <ul className="assessment-list">
               {assessments.map((assessment) => (
                 <li key={assessment.id} className="assessment-item">
-                  <div className="assessment-title">{assessment.title}</div>
-                  <div className="assessment-meta">
-                    <span className="assessment-status">{assessment.status}</span>
-                    <span className="assessment-duration">
-                      {assessment.duration_minutes} phút
-                    </span>
+                  <div className="assessment-info">
+                    <div className="assessment-title">{assessment.title}</div>
+                    <div className="assessment-meta">
+                      <span className="assessment-status">{assessment.status}</span>
+                      <span className="assessment-duration">
+                        {assessment.duration_minutes} phút
+                      </span>
+                    </div>
                   </div>
+                  <Link
+                    to={`/app/teacher/gradebook?tab=assessment&assessment=${assessment.id}`}
+                    className="button-link"
+                  >
+                    Sổ điểm
+                  </Link>
                 </li>
               ))}
             </ul>
@@ -329,6 +337,12 @@ export function TeacherDashboardPage() {
                         {classSection.teacher_count} giáo viên
                       </span>
                     </button>
+                    <Link
+                      to={`/app/teacher/gradebook?tab=class&class=${classSection.id}`}
+                      className="button-link"
+                    >
+                      Sổ điểm
+                    </Link>
                   </li>
                 ))}
               </ul>
@@ -338,10 +352,11 @@ export function TeacherDashboardPage() {
       </section>
 
       <div className="dashboard-cards">
-        <article className="dashboard-card">
+        <Link to="/app/teacher/gradebook" className="dashboard-card card-link">
           <h2>Chấm điểm</h2>
-          <p>Xem bài làm và cập nhật điểm.</p>
-        </article>
+          <p>Xem bài làm và xuất điểm theo đề thi hoặc lớp.</p>
+          <span className="card-link-action">Mở sổ điểm →</span>
+        </Link>
       </div>
     </div>
   );

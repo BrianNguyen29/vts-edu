@@ -13,4 +13,5 @@ var (
 	ErrAssessmentUnavailable = errors.New("assessment is not currently available")
 	ErrAttemptLimitReached   = errors.New("maximum number of attempts reached")
 	ErrNotAssigned           = errors.New("assessment is not assigned to this student")
+	ErrAttemptNotSubmitted   = errors.New("attempt has not been submitted")
 )

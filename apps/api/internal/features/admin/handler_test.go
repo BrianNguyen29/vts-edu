@@ -18,7 +18,9 @@ import (
 type fakeService struct {
 	listFunc          func(ctx context.Context, orgID string, opts admin.ListOptions) ([]admin.User, *admin.PageInfo, error)
 	listAuditFunc     func(ctx context.Context, orgID string, opts admin.AuditLogListOptions) ([]admin.AuditLog, *admin.PageInfo, error)
+	exportAuditFunc   func(ctx context.Context, orgID string, opts admin.AuditLogListOptions) ([]admin.AuditLogExport, error)
 	createFunc        func(ctx context.Context, orgID, actorID string, req admin.CreateUserRequest) (admin.User, error)
+	importUsersFunc   func(ctx context.Context, orgID, actorID string, req admin.ImportUsersRequest) (admin.ImportUsersResult, error)
 	updateRolesFunc   func(ctx context.Context, orgID, actorID, userID string, req admin.UpdateRolesRequest) error
 	resetPasswordFunc func(ctx context.Context, orgID, actorID, userID string, req admin.ResetPasswordRequest) error
 	getOrgFunc        func(ctx context.Context, orgID string) (admin.Organization, error)
@@ -33,8 +35,19 @@ func (f *fakeService) ListAuditLogs(ctx context.Context, orgID string, opts admi
 	return f.listAuditFunc(ctx, orgID, opts)
 }
 
+func (f *fakeService) ExportAuditLogs(ctx context.Context, orgID string, opts admin.AuditLogListOptions) ([]admin.AuditLogExport, error) {
+	if f.exportAuditFunc != nil {
+		return f.exportAuditFunc(ctx, orgID, opts)
+	}
+	return nil, nil
+}
+
 func (f *fakeService) CreateUser(ctx context.Context, orgID, actorID string, req admin.CreateUserRequest) (admin.User, error) {
 	return f.createFunc(ctx, orgID, actorID, req)
+}
+
+func (f *fakeService) ImportUsers(ctx context.Context, orgID, actorID string, req admin.ImportUsersRequest) (admin.ImportUsersResult, error) {
+	return f.importUsersFunc(ctx, orgID, actorID, req)
 }
 
 func (f *fakeService) UpdateRoles(ctx context.Context, orgID, actorID, userID string, req admin.UpdateRolesRequest) error {

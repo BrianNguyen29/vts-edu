@@ -2,6 +2,7 @@ package academics
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
@@ -46,7 +47,12 @@ type Service interface {
 	ListEnrollments(ctx context.Context, orgID string, userID string, roles []string, classID string) ([]Enrollment, error)
 	EnrollStudent(ctx context.Context, orgID string, roles []string, classID string, req EnrollStudentRequest) (Enrollment, error)
 	UnenrollStudent(ctx context.Context, orgID string, roles []string, classID, studentUserID string) error
+
+	BulkEnrollStudents(ctx context.Context, orgID string, roles []string, classID string, req BulkEnrollRequest) (BulkEnrollmentResult, error)
+	BulkAssignTeachers(ctx context.Context, orgID string, roles []string, classID string, req BulkAssignTeachersRequest) (BulkAssignTeachersResult, error)
 }
+
+const maxBulkItems = 100
 
 type service struct {
 	repo Repository
@@ -467,6 +473,212 @@ func (s *service) UnenrollStudent(ctx context.Context, orgID string, roles []str
 	return s.tm.WithinTx(ctx, func(ctx context.Context, tx pgx.Tx) error {
 		return s.repo.UnenrollStudent(ctx, tx, orgID, classID, membership.ID)
 	})
+}
+
+func (s *service) BulkEnrollStudents(ctx context.Context, orgID string, roles []string, classID string, req BulkEnrollRequest) (BulkEnrollmentResult, error) {
+	if err := requireAdmin(roles); err != nil {
+		return BulkEnrollmentResult{}, err
+	}
+	if len(req.UserIDs) == 0 || len(req.UserIDs) > maxBulkItems {
+		return BulkEnrollmentResult{}, ErrInvalidInput
+	}
+	exists, err := s.repo.ClassExists(ctx, orgID, classID)
+	if err != nil {
+		return BulkEnrollmentResult{}, err
+	}
+	if !exists {
+		return BulkEnrollmentResult{}, ErrNotFound
+	}
+
+	result := BulkEnrollmentResult{
+		Total:  len(req.UserIDs),
+		DryRun: req.DryRun,
+		Rows:   make([]BulkEnrollmentRow, len(req.UserIDs)),
+	}
+	enrolledCount := 0
+	failedCount := 0
+
+	for i, userID := range req.UserIDs {
+		membership, err := s.repo.GetMembershipByUserID(ctx, orgID, userID)
+		var rowErr error
+		switch {
+		case err != nil:
+			rowErr = err
+		case !hasRole(membership.Roles, "student"):
+			rowErr = ErrInvalidInput
+		}
+
+		if rowErr == nil && !req.DryRun {
+			err = s.tm.WithinTx(ctx, func(ctx context.Context, tx pgx.Tx) error {
+				_, err := s.repo.EnrollStudent(ctx, tx, orgID, classID, membership.ID)
+				return err
+			})
+			if err != nil {
+				if isDuplicateError(err) {
+					rowErr = ErrDuplicateEnrollment
+				} else {
+					rowErr = err
+				}
+			}
+		}
+
+		status := "enrolled"
+		if rowErr != nil {
+			status = "error"
+			failedCount++
+		} else if req.DryRun {
+			status = "valid"
+		} else {
+			enrolledCount++
+		}
+
+		result.Rows[i] = BulkEnrollmentRow{
+			UserID: userID,
+			Status: status,
+			Error:  errorString(rowErr),
+		}
+	}
+
+	result.Enrolled = enrolledCount
+	result.Failed = failedCount
+
+	if !req.DryRun {
+		after, _ := json.Marshal(map[string]any{
+			"enrolled": enrolledCount,
+			"failed":   failedCount,
+			"total":    len(req.UserIDs),
+		})
+		meta, _ := json.Marshal(map[string]any{
+			"class_id": classID,
+			"dry_run":  false,
+		})
+		if err := s.tm.WithinTx(ctx, func(ctx context.Context, tx pgx.Tx) error {
+			return s.repo.InsertAuditLog(ctx, tx, AuditLogParams{
+				OrganizationID: orgID,
+				ActorUserID:    "", // bulk actions do not have a single actor user
+				Action:         "class.enroll_bulk",
+				ResourceType:   "class",
+				ResourceID:     classID,
+				AfterJSON:      after,
+				MetadataJSON:   meta,
+			})
+		}); err != nil {
+			return result, fmt.Errorf("audit log: %w", err)
+		}
+	}
+
+	return result, nil
+}
+
+func (s *service) BulkAssignTeachers(ctx context.Context, orgID string, roles []string, classID string, req BulkAssignTeachersRequest) (BulkAssignTeachersResult, error) {
+	if err := requireAdmin(roles); err != nil {
+		return BulkAssignTeachersResult{}, err
+	}
+	if len(req.Items) == 0 || len(req.Items) > maxBulkItems {
+		return BulkAssignTeachersResult{}, ErrInvalidInput
+	}
+	exists, err := s.repo.ClassExists(ctx, orgID, classID)
+	if err != nil {
+		return BulkAssignTeachersResult{}, err
+	}
+	if !exists {
+		return BulkAssignTeachersResult{}, ErrNotFound
+	}
+
+	result := BulkAssignTeachersResult{
+		Total:  len(req.Items),
+		DryRun: req.DryRun,
+		Rows:   make([]BulkAssignTeacherRow, len(req.Items)),
+	}
+	assignedCount := 0
+	failedCount := 0
+
+	for i, item := range req.Items {
+		role := strings.ToLower(strings.TrimSpace(item.Role))
+		if role == "" {
+			role = "teacher"
+		}
+
+		membership, err := s.repo.GetMembershipByUserID(ctx, orgID, item.UserID)
+		var rowErr error
+		switch {
+		case item.UserID == "":
+			rowErr = ErrInvalidInput
+		case role != "teacher" && role != "assistant":
+			rowErr = ErrInvalidInput
+		case err != nil:
+			rowErr = err
+		case !hasRole(membership.Roles, "teacher"):
+			rowErr = ErrInvalidInput
+		}
+
+		if rowErr == nil && !req.DryRun {
+			err = s.tm.WithinTx(ctx, func(ctx context.Context, tx pgx.Tx) error {
+				_, err := s.repo.AddClassTeacher(ctx, tx, orgID, classID, membership.ID, role)
+				return err
+			})
+			if err != nil {
+				if isDuplicateError(err) {
+					rowErr = ErrDuplicateTeacher
+				} else {
+					rowErr = err
+				}
+			}
+		}
+
+		status := "assigned"
+		if rowErr != nil {
+			status = "error"
+			failedCount++
+		} else if req.DryRun {
+			status = "valid"
+		} else {
+			assignedCount++
+		}
+
+		result.Rows[i] = BulkAssignTeacherRow{
+			UserID: item.UserID,
+			Status: status,
+			Error:  errorString(rowErr),
+		}
+	}
+
+	result.Assigned = assignedCount
+	result.Failed = failedCount
+
+	if !req.DryRun {
+		after, _ := json.Marshal(map[string]any{
+			"assigned": assignedCount,
+			"failed":   failedCount,
+			"total":    len(req.Items),
+		})
+		meta, _ := json.Marshal(map[string]any{
+			"class_id": classID,
+			"dry_run":  false,
+		})
+		if err := s.tm.WithinTx(ctx, func(ctx context.Context, tx pgx.Tx) error {
+			return s.repo.InsertAuditLog(ctx, tx, AuditLogParams{
+				OrganizationID: orgID,
+				ActorUserID:    "",
+				Action:         "class.teacher_bulk",
+				ResourceType:   "class",
+				ResourceID:     classID,
+				AfterJSON:      after,
+				MetadataJSON:   meta,
+			})
+		}); err != nil {
+			return result, fmt.Errorf("audit log: %w", err)
+		}
+	}
+
+	return result, nil
+}
+
+func errorString(err error) string {
+	if err == nil {
+		return ""
+	}
+	return err.Error()
 }
 
 func (s *service) canAccessClass(ctx context.Context, orgID, userID string, roles []string, classID string) error {

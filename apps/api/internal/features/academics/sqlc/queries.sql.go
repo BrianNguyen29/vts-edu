@@ -387,6 +387,44 @@ func (q *Queries) GetMembershipByUserID(ctx context.Context, arg GetMembershipBy
 	return i, err
 }
 
+const insertAuditLog = `-- name: InsertAuditLog :exec
+INSERT INTO audit_logs (
+    organization_id,
+    actor_user_id,
+    action,
+    resource_type,
+    resource_id,
+    before_json,
+    after_json,
+    metadata_json
+) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+`
+
+type InsertAuditLogParams struct {
+	OrganizationID pgtype.UUID `json:"organization_id"`
+	ActorUserID    pgtype.UUID `json:"actor_user_id"`
+	Action         string      `json:"action"`
+	ResourceType   pgtype.Text `json:"resource_type"`
+	ResourceID     pgtype.UUID `json:"resource_id"`
+	BeforeJson     []byte      `json:"before_json"`
+	AfterJson      []byte      `json:"after_json"`
+	MetadataJson   []byte      `json:"metadata_json"`
+}
+
+func (q *Queries) InsertAuditLog(ctx context.Context, arg InsertAuditLogParams) error {
+	_, err := q.db.Exec(ctx, insertAuditLog,
+		arg.OrganizationID,
+		arg.ActorUserID,
+		arg.Action,
+		arg.ResourceType,
+		arg.ResourceID,
+		arg.BeforeJson,
+		arg.AfterJson,
+		arg.MetadataJson,
+	)
+	return err
+}
+
 const isClassTeacher = `-- name: IsClassTeacher :one
 SELECT EXISTS (
     SELECT 1

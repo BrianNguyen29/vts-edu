@@ -26,25 +26,25 @@ func NewHandler(svc Service, issuer *auth.TokenIssuer) *Handler {
 func (h *Handler) actor(w http.ResponseWriter, r *http.Request) (auth.Actor, bool) {
 	actor, err := auth.ActorFromRequest(r, h.issuer)
 	if err != nil {
-		writeError(w, http.StatusUnauthorized, "unauthorized", "missing or invalid access token")
+		writeError(w, r, http.StatusUnauthorized, "unauthorized", "missing or invalid access token")
 		return auth.Actor{}, false
 	}
 	return actor, true
 }
 
-func (h *Handler) mapError(w http.ResponseWriter, err error) {
+func (h *Handler) mapError(w http.ResponseWriter, r *http.Request, err error) {
 	switch {
 	case errors.Is(err, ErrInvalidCursor):
-		writeError(w, http.StatusBadRequest, "bad_request", "invalid cursor")
+		writeError(w, r, http.StatusBadRequest, "bad_request", "invalid cursor")
 	case errors.Is(err, ErrNotFound):
-		writeError(w, http.StatusNotFound, "not_found", err.Error())
+		writeError(w, r, http.StatusNotFound, "not_found", err.Error())
 	case errors.Is(err, ErrUnauthorized):
-		writeError(w, http.StatusForbidden, "forbidden", err.Error())
+		writeError(w, r, http.StatusForbidden, "forbidden", err.Error())
 	case errors.Is(err, ErrInvalidInput), errors.Is(err, ErrNotDraft), errors.Is(err, ErrValidationFailed),
 		errors.Is(err, ErrDuplicateSection), errors.Is(err, ErrDuplicateItem), errors.Is(err, ErrDuplicateTarget):
-		writeError(w, http.StatusBadRequest, "bad_request", err.Error())
+		writeError(w, r, http.StatusBadRequest, "bad_request", err.Error())
 	default:
-		writeError(w, http.StatusInternalServerError, "internal_error", "assessment operation failed")
+		writeError(w, r, http.StatusInternalServerError, "internal_error", "assessment operation failed")
 	}
 }
 
@@ -56,7 +56,7 @@ func (h *Handler) ListAssessments(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if !hasRequiredRole(actor.Roles, []string{"teacher", "admin"}) {
-		writeError(w, http.StatusForbidden, "forbidden", "insufficient permissions")
+		writeError(w, r, http.StatusForbidden, "forbidden", "insufficient permissions")
 		return
 	}
 
@@ -67,7 +67,7 @@ func (h *Handler) ListAssessments(w http.ResponseWriter, r *http.Request) {
 
 	list, page, err := h.svc.ListAssessments(r.Context(), actor.OrgID, opts)
 	if err != nil {
-		h.mapError(w, err)
+		h.mapError(w, r, err)
 		return
 	}
 
@@ -86,19 +86,19 @@ func (h *Handler) CreateAssessment(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if !csrf.Validate(r) {
-		writeError(w, http.StatusForbidden, "invalid_csrf", "invalid csrf token")
+		writeError(w, r, http.StatusForbidden, "invalid_csrf", "invalid csrf token")
 		return
 	}
 
 	var req CreateAssessmentRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "bad_request", "invalid request body")
+		writeError(w, r, http.StatusBadRequest, "bad_request", "invalid request body")
 		return
 	}
 
 	assessment, err := h.svc.CreateAssessment(r.Context(), actor, chi.URLParam(r, "class_id"), req)
 	if err != nil {
-		h.mapError(w, err)
+		h.mapError(w, r, err)
 		return
 	}
 	writeData(w, http.StatusCreated, assessment)
@@ -113,7 +113,7 @@ func (h *Handler) ListAssessmentsByClass(w http.ResponseWriter, r *http.Request)
 
 	list, err := h.svc.ListAssessmentsByClass(r.Context(), actor, chi.URLParam(r, "class_id"))
 	if err != nil {
-		h.mapError(w, err)
+		h.mapError(w, r, err)
 		return
 	}
 	writeData(w, http.StatusOK, list)
@@ -128,7 +128,7 @@ func (h *Handler) GetAssessment(w http.ResponseWriter, r *http.Request) {
 
 	assessment, err := h.svc.GetAssessment(r.Context(), actor, chi.URLParam(r, "id"))
 	if err != nil {
-		h.mapError(w, err)
+		h.mapError(w, r, err)
 		return
 	}
 	writeData(w, http.StatusOK, assessment)
@@ -141,19 +141,19 @@ func (h *Handler) UpdateAssessment(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if !csrf.Validate(r) {
-		writeError(w, http.StatusForbidden, "invalid_csrf", "invalid csrf token")
+		writeError(w, r, http.StatusForbidden, "invalid_csrf", "invalid csrf token")
 		return
 	}
 
 	var req UpdateAssessmentRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "bad_request", "invalid request body")
+		writeError(w, r, http.StatusBadRequest, "bad_request", "invalid request body")
 		return
 	}
 
 	assessment, err := h.svc.UpdateAssessment(r.Context(), actor, chi.URLParam(r, "id"), req)
 	if err != nil {
-		h.mapError(w, err)
+		h.mapError(w, r, err)
 		return
 	}
 	writeData(w, http.StatusOK, assessment)
@@ -166,19 +166,19 @@ func (h *Handler) CreateSection(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if !csrf.Validate(r) {
-		writeError(w, http.StatusForbidden, "invalid_csrf", "invalid csrf token")
+		writeError(w, r, http.StatusForbidden, "invalid_csrf", "invalid csrf token")
 		return
 	}
 
 	var req CreateSectionRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "bad_request", "invalid request body")
+		writeError(w, r, http.StatusBadRequest, "bad_request", "invalid request body")
 		return
 	}
 
 	section, err := h.svc.CreateSection(r.Context(), actor, chi.URLParam(r, "id"), req)
 	if err != nil {
-		h.mapError(w, err)
+		h.mapError(w, r, err)
 		return
 	}
 	writeData(w, http.StatusCreated, section)
@@ -191,19 +191,19 @@ func (h *Handler) CreateItem(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if !csrf.Validate(r) {
-		writeError(w, http.StatusForbidden, "invalid_csrf", "invalid csrf token")
+		writeError(w, r, http.StatusForbidden, "invalid_csrf", "invalid csrf token")
 		return
 	}
 
 	var req CreateItemRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "bad_request", "invalid request body")
+		writeError(w, r, http.StatusBadRequest, "bad_request", "invalid request body")
 		return
 	}
 
 	item, err := h.svc.CreateItem(r.Context(), actor, chi.URLParam(r, "section_id"), req)
 	if err != nil {
-		h.mapError(w, err)
+		h.mapError(w, r, err)
 		return
 	}
 	writeData(w, http.StatusCreated, item)
@@ -216,19 +216,19 @@ func (h *Handler) CreateTarget(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if !csrf.Validate(r) {
-		writeError(w, http.StatusForbidden, "invalid_csrf", "invalid csrf token")
+		writeError(w, r, http.StatusForbidden, "invalid_csrf", "invalid csrf token")
 		return
 	}
 
 	var req CreateTargetRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "bad_request", "invalid request body")
+		writeError(w, r, http.StatusBadRequest, "bad_request", "invalid request body")
 		return
 	}
 
 	target, err := h.svc.CreateTarget(r.Context(), actor, chi.URLParam(r, "id"), req)
 	if err != nil {
-		h.mapError(w, err)
+		h.mapError(w, r, err)
 		return
 	}
 	writeData(w, http.StatusCreated, target)
@@ -241,19 +241,19 @@ func (h *Handler) UpdateSection(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if !csrf.Validate(r) {
-		writeError(w, http.StatusForbidden, "invalid_csrf", "invalid csrf token")
+		writeError(w, r, http.StatusForbidden, "invalid_csrf", "invalid csrf token")
 		return
 	}
 
 	var req UpdateSectionRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "bad_request", "invalid request body")
+		writeError(w, r, http.StatusBadRequest, "bad_request", "invalid request body")
 		return
 	}
 
 	section, err := h.svc.UpdateSection(r.Context(), actor, chi.URLParam(r, "section_id"), req)
 	if err != nil {
-		h.mapError(w, err)
+		h.mapError(w, r, err)
 		return
 	}
 	writeData(w, http.StatusOK, section)
@@ -266,12 +266,12 @@ func (h *Handler) DeleteSection(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if !csrf.Validate(r) {
-		writeError(w, http.StatusForbidden, "invalid_csrf", "invalid csrf token")
+		writeError(w, r, http.StatusForbidden, "invalid_csrf", "invalid csrf token")
 		return
 	}
 
 	if err := h.svc.DeleteSection(r.Context(), actor, chi.URLParam(r, "section_id")); err != nil {
-		h.mapError(w, err)
+		h.mapError(w, r, err)
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
@@ -284,19 +284,19 @@ func (h *Handler) UpdateItem(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if !csrf.Validate(r) {
-		writeError(w, http.StatusForbidden, "invalid_csrf", "invalid csrf token")
+		writeError(w, r, http.StatusForbidden, "invalid_csrf", "invalid csrf token")
 		return
 	}
 
 	var req UpdateItemRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "bad_request", "invalid request body")
+		writeError(w, r, http.StatusBadRequest, "bad_request", "invalid request body")
 		return
 	}
 
 	item, err := h.svc.UpdateItem(r.Context(), actor, chi.URLParam(r, "item_id"), req)
 	if err != nil {
-		h.mapError(w, err)
+		h.mapError(w, r, err)
 		return
 	}
 	writeData(w, http.StatusOK, item)
@@ -309,12 +309,12 @@ func (h *Handler) DeleteItem(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if !csrf.Validate(r) {
-		writeError(w, http.StatusForbidden, "invalid_csrf", "invalid csrf token")
+		writeError(w, r, http.StatusForbidden, "invalid_csrf", "invalid csrf token")
 		return
 	}
 
 	if err := h.svc.DeleteItem(r.Context(), actor, chi.URLParam(r, "item_id")); err != nil {
-		h.mapError(w, err)
+		h.mapError(w, r, err)
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
@@ -327,12 +327,12 @@ func (h *Handler) DeleteTarget(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if !csrf.Validate(r) {
-		writeError(w, http.StatusForbidden, "invalid_csrf", "invalid csrf token")
+		writeError(w, r, http.StatusForbidden, "invalid_csrf", "invalid csrf token")
 		return
 	}
 
 	if err := h.svc.DeleteTarget(r.Context(), actor, chi.URLParam(r, "id"), chi.URLParam(r, "target_id")); err != nil {
-		h.mapError(w, err)
+		h.mapError(w, r, err)
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
@@ -345,18 +345,18 @@ func (h *Handler) ReorderSections(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if !csrf.Validate(r) {
-		writeError(w, http.StatusForbidden, "invalid_csrf", "invalid csrf token")
+		writeError(w, r, http.StatusForbidden, "invalid_csrf", "invalid csrf token")
 		return
 	}
 
 	var req ReorderSectionsRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "bad_request", "invalid request body")
+		writeError(w, r, http.StatusBadRequest, "bad_request", "invalid request body")
 		return
 	}
 
 	if err := h.svc.ReorderSections(r.Context(), actor, chi.URLParam(r, "id"), req); err != nil {
-		h.mapError(w, err)
+		h.mapError(w, r, err)
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
@@ -369,18 +369,18 @@ func (h *Handler) ReorderItems(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if !csrf.Validate(r) {
-		writeError(w, http.StatusForbidden, "invalid_csrf", "invalid csrf token")
+		writeError(w, r, http.StatusForbidden, "invalid_csrf", "invalid csrf token")
 		return
 	}
 
 	var req ReorderItemsRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "bad_request", "invalid request body")
+		writeError(w, r, http.StatusBadRequest, "bad_request", "invalid request body")
 		return
 	}
 
 	if err := h.svc.ReorderItems(r.Context(), actor, chi.URLParam(r, "section_id"), req); err != nil {
-		h.mapError(w, err)
+		h.mapError(w, r, err)
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
@@ -400,7 +400,7 @@ func (h *Handler) ListQuestions(w http.ResponseWriter, r *http.Request) {
 
 	list, page, err := h.svc.ListQuestions(r.Context(), actor, opts)
 	if err != nil {
-		h.mapError(w, err)
+		h.mapError(w, r, err)
 		return
 	}
 
@@ -421,7 +421,7 @@ func (h *Handler) ListPublications(w http.ResponseWriter, r *http.Request) {
 
 	pubs, err := h.svc.ListPublications(r.Context(), actor, chi.URLParam(r, "id"))
 	if err != nil {
-		h.mapError(w, err)
+		h.mapError(w, r, err)
 		return
 	}
 
@@ -437,7 +437,7 @@ func (h *Handler) ValidateAssessment(w http.ResponseWriter, r *http.Request) {
 
 	result, err := h.svc.ValidateAssessment(r.Context(), actor, chi.URLParam(r, "id"))
 	if err != nil {
-		h.mapError(w, err)
+		h.mapError(w, r, err)
 		return
 	}
 	writeData(w, http.StatusOK, result)
@@ -450,16 +450,69 @@ func (h *Handler) PublishAssessment(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if !csrf.Validate(r) {
-		writeError(w, http.StatusForbidden, "invalid_csrf", "invalid csrf token")
+		writeError(w, r, http.StatusForbidden, "invalid_csrf", "invalid csrf token")
 		return
 	}
 
 	result, err := h.svc.PublishAssessment(r.Context(), actor, chi.URLParam(r, "id"))
 	if err != nil {
-		h.mapError(w, err)
+		h.mapError(w, r, err)
 		return
 	}
 	writeData(w, http.StatusOK, result)
+}
+
+// DuplicateSection handles POST /api/v1/assessments/{id}/sections/{section_id}/duplicate.
+func (h *Handler) DuplicateSection(w http.ResponseWriter, r *http.Request) {
+	actor, ok := h.actor(w, r)
+	if !ok {
+		return
+	}
+	if !csrf.Validate(r) {
+		writeError(w, r, http.StatusForbidden, "invalid_csrf", "invalid csrf token")
+		return
+	}
+
+	section, err := h.svc.DuplicateSection(r.Context(), actor, chi.URLParam(r, "id"), chi.URLParam(r, "section_id"))
+	if err != nil {
+		h.mapError(w, r, err)
+		return
+	}
+	writeData(w, http.StatusCreated, section)
+}
+
+// DuplicateItem handles POST /api/v1/assessment-sections/{section_id}/items/{item_id}/duplicate.
+func (h *Handler) DuplicateItem(w http.ResponseWriter, r *http.Request) {
+	actor, ok := h.actor(w, r)
+	if !ok {
+		return
+	}
+	if !csrf.Validate(r) {
+		writeError(w, r, http.StatusForbidden, "invalid_csrf", "invalid csrf token")
+		return
+	}
+
+	item, err := h.svc.DuplicateItem(r.Context(), actor, chi.URLParam(r, "section_id"), chi.URLParam(r, "item_id"))
+	if err != nil {
+		h.mapError(w, r, err)
+		return
+	}
+	writeData(w, http.StatusCreated, item)
+}
+
+// PreviewAssessment handles GET /api/v1/assessments/{id}/preview.
+func (h *Handler) PreviewAssessment(w http.ResponseWriter, r *http.Request) {
+	actor, ok := h.actor(w, r)
+	if !ok {
+		return
+	}
+
+	preview, err := h.svc.PreviewAssessment(r.Context(), actor, chi.URLParam(r, "id"))
+	if err != nil {
+		h.mapError(w, r, err)
+		return
+	}
+	writeData(w, http.StatusOK, preview)
 }
 
 func parseListOptions(w http.ResponseWriter, r *http.Request) (ListOptions, bool) {
@@ -468,7 +521,7 @@ func parseListOptions(w http.ResponseWriter, r *http.Request) (ListOptions, bool
 	if l := r.URL.Query().Get("limit"); l != "" {
 		val, err := strconv.Atoi(l)
 		if err != nil || val < 1 {
-			writeError(w, http.StatusBadRequest, "bad_request", "invalid limit")
+			writeError(w, r, http.StatusBadRequest, "bad_request", "invalid limit")
 			return ListOptions{}, false
 		}
 		opts.Limit = val
@@ -477,7 +530,7 @@ func parseListOptions(w http.ResponseWriter, r *http.Request) (ListOptions, bool
 	if o := r.URL.Query().Get("offset"); o != "" {
 		val, err := strconv.Atoi(o)
 		if err != nil || val < 0 {
-			writeError(w, http.StatusBadRequest, "bad_request", "invalid offset")
+			writeError(w, r, http.StatusBadRequest, "bad_request", "invalid offset")
 			return ListOptions{}, false
 		}
 		opts.Offset = val
@@ -501,7 +554,7 @@ func parseQuestionListOptions(w http.ResponseWriter, r *http.Request) (ListQuest
 	if l := r.URL.Query().Get("limit"); l != "" {
 		val, err := strconv.Atoi(l)
 		if err != nil || val < 1 {
-			writeError(w, http.StatusBadRequest, "bad_request", "invalid limit")
+			writeError(w, r, http.StatusBadRequest, "bad_request", "invalid limit")
 			return ListQuestionsOptions{}, false
 		}
 		opts.Limit = val
@@ -510,7 +563,7 @@ func parseQuestionListOptions(w http.ResponseWriter, r *http.Request) (ListQuest
 	if o := r.URL.Query().Get("offset"); o != "" {
 		val, err := strconv.Atoi(o)
 		if err != nil || val < 0 {
-			writeError(w, http.StatusBadRequest, "bad_request", "invalid offset")
+			writeError(w, r, http.StatusBadRequest, "bad_request", "invalid offset")
 			return ListQuestionsOptions{}, false
 		}
 		opts.Offset = val

@@ -9,6 +9,9 @@ export type AnswerSnapshot = NonNullable<components['schemas']['AttemptItem']['a
 export type AnswerSaved = components['schemas']['SaveAnswerResponse']['data'];
 export type AttemptSubmitted = components['schemas']['AttemptSubmitted']['data'];
 export type AssignedAssessment = components['schemas']['AssignedAssessment'];
+export type StudentAttempt = components['schemas']['StudentAttempt'];
+export type AttemptResult = components['schemas']['AttemptResult']['data'];
+export type AttemptResultItem = components['schemas']['AttemptResultItem'];
 
 export interface ApiError {
   error: {
@@ -105,6 +108,22 @@ export async function startAttempt(assessmentId: string): Promise<AttemptSnapsho
   return unwrapData<AttemptSnapshot>(
     await client.POST('/assessments/{assessment_id}/attempts', {
       params: { path: { assessment_id: assessmentId } },
+    })
+  );
+}
+
+export async function listAttemptHistory(): Promise<StudentAttempt[]> {
+  const client = await getOpenAPIClient();
+  return unwrapData<StudentAttempt[]>(
+    await client.GET('/me/attempts')
+  );
+}
+
+export async function getAttemptResult(attemptId: string): Promise<AttemptResult> {
+  const client = await getOpenAPIClient();
+  return unwrapData<AttemptResult>(
+    await client.GET('/attempts/{attempt_id}/result', {
+      params: { path: { attempt_id: attemptId } },
     })
   );
 }

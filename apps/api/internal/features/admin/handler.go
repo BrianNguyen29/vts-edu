@@ -1,6 +1,7 @@
 package admin
 
 import (
+	"encoding/csv"
 	"encoding/json"
 	"errors"
 	"net/http"
@@ -26,7 +27,7 @@ func NewHandler(svc Service, issuer *auth.TokenIssuer) *Handler {
 func (h *Handler) requireAdmin(w http.ResponseWriter, r *http.Request) (auth.Actor, bool) {
 	actor, err := auth.ActorFromRequest(r, h.issuer)
 	if err != nil {
-		writeError(w, http.StatusUnauthorized, "unauthorized", "missing or invalid access token")
+		writeError(w, r, http.StatusUnauthorized, "unauthorized", "missing or invalid access token")
 		return auth.Actor{}, false
 	}
 
@@ -36,7 +37,7 @@ func (h *Handler) requireAdmin(w http.ResponseWriter, r *http.Request) (auth.Act
 		}
 	}
 
-	writeError(w, http.StatusForbidden, "forbidden", "insufficient permissions")
+	writeError(w, r, http.StatusForbidden, "forbidden", "insufficient permissions")
 	return auth.Actor{}, false
 }
 
@@ -55,10 +56,10 @@ func (h *Handler) ListUsers(w http.ResponseWriter, r *http.Request) {
 	users, page, err := h.svc.ListUsers(r.Context(), actor.OrgID, opts)
 	if err != nil {
 		if errors.Is(err, ErrInvalidCursor) {
-			writeError(w, http.StatusBadRequest, "bad_request", "invalid cursor")
+			writeError(w, r, http.StatusBadRequest, "bad_request", "invalid cursor")
 			return
 		}
-		writeError(w, http.StatusInternalServerError, "internal_error", "failed to list users")
+		writeError(w, r, http.StatusInternalServerError, "internal_error", "failed to list users")
 		return
 	}
 
@@ -85,10 +86,10 @@ func (h *Handler) ListAuditLogs(w http.ResponseWriter, r *http.Request) {
 	logs, page, err := h.svc.ListAuditLogs(r.Context(), actor.OrgID, opts)
 	if err != nil {
 		if errors.Is(err, ErrInvalidCursor) {
-			writeError(w, http.StatusBadRequest, "bad_request", "invalid cursor")
+			writeError(w, r, http.StatusBadRequest, "bad_request", "invalid cursor")
 			return
 		}
-		writeError(w, http.StatusInternalServerError, "internal_error", "failed to list audit logs")
+		writeError(w, r, http.StatusInternalServerError, "internal_error", "failed to list audit logs")
 		return
 	}
 
@@ -100,6 +101,84 @@ func (h *Handler) ListAuditLogs(w http.ResponseWriter, r *http.Request) {
 	writeData(w, http.StatusOK, logs)
 }
 
+// ExportAuditLogs handles GET /api/v1/audit-logs/export.
+func (h *Handler) ExportAuditLogs(w http.ResponseWriter, r *http.Request) {
+	actor, ok := h.requireAdmin(w, r)
+	if !ok {
+		return
+	}
+
+	opts, ok := parseAuditLogListOptions(w, r)
+	if !ok {
+		return
+	}
+
+	logs, err := h.svc.ExportAuditLogs(r.Context(), actor.OrgID, opts)
+	if err != nil {
+		writeError(w, r, http.StatusInternalServerError, "internal_error", "failed to export audit logs")
+		return
+	}
+
+	w.Header().Set("Content-Type", "text/csv")
+	w.Header().Set("Content-Disposition", "attachment; filename=audit-logs.csv")
+	writer := csv.NewWriter(w)
+	defer writer.Flush()
+
+	header := []string{"id", "created_at", "actor_name", "actor_user_id", "action", "resource_type", "resource_id", "before_json", "after_json", "metadata_json"}
+	if err := writer.Write(header); err != nil {
+		return
+	}
+
+	for _, log := range logs {
+		row := []string{
+			log.ID,
+			log.CreatedAt,
+			log.ActorName,
+			log.ActorUserID,
+			log.Action,
+			log.ResourceType,
+			log.ResourceID,
+			log.Before,
+			log.After,
+			log.Metadata,
+		}
+		if err := writer.Write(row); err != nil {
+			return
+		}
+	}
+}
+
+// ImportUsers handles POST /api/v1/users/imports.
+func (h *Handler) ImportUsers(w http.ResponseWriter, r *http.Request) {
+	actor, ok := h.requireAdmin(w, r)
+	if !ok {
+		return
+	}
+
+	var req ImportUsersRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, r, http.StatusBadRequest, "bad_request", "invalid request body")
+		return
+	}
+
+	result, err := h.svc.ImportUsers(r.Context(), actor.OrgID, actor.UserID, req)
+	if err != nil {
+		switch {
+		case errors.Is(err, ErrInvalidInput):
+			writeError(w, r, http.StatusBadRequest, "bad_request", err.Error())
+		default:
+			writeError(w, r, http.StatusInternalServerError, "internal_error", "failed to import users")
+		}
+		return
+	}
+
+	if req.DryRun {
+		writeData(w, http.StatusOK, result)
+		return
+	}
+	writeData(w, http.StatusCreated, result)
+}
+
 // CreateUser handles POST /api/v1/users.
 func (h *Handler) CreateUser(w http.ResponseWriter, r *http.Request) {
 	actor, ok := h.requireAdmin(w, r)
@@ -109,7 +188,7 @@ func (h *Handler) CreateUser(w http.ResponseWriter, r *http.Request) {
 
 	var req CreateUserRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "bad_request", "invalid request body")
+		writeError(w, r, http.StatusBadRequest, "bad_request", "invalid request body")
 		return
 	}
 
@@ -117,11 +196,11 @@ func (h *Handler) CreateUser(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		switch {
 		case errors.Is(err, ErrDuplicateLogin):
-			writeError(w, http.StatusConflict, "duplicate_login", err.Error())
+			writeError(w, r, http.StatusConflict, "duplicate_login", err.Error())
 		case errors.Is(err, ErrInvalidInput), errors.Is(err, auth.ErrWeakPassword), errors.Is(err, auth.ErrPasswordReused):
-			writeError(w, http.StatusBadRequest, "bad_request", err.Error())
+			writeError(w, r, http.StatusBadRequest, "bad_request", err.Error())
 		default:
-			writeError(w, http.StatusInternalServerError, "internal_error", "failed to create user")
+			writeError(w, r, http.StatusInternalServerError, "internal_error", "failed to create user")
 		}
 		return
 	}
@@ -138,7 +217,7 @@ func (h *Handler) UpdateRoles(w http.ResponseWriter, r *http.Request) {
 
 	var req UpdateRolesRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "bad_request", "invalid request body")
+		writeError(w, r, http.StatusBadRequest, "bad_request", "invalid request body")
 		return
 	}
 
@@ -146,11 +225,11 @@ func (h *Handler) UpdateRoles(w http.ResponseWriter, r *http.Request) {
 	if err := h.svc.UpdateRoles(r.Context(), actor.OrgID, actor.UserID, userID, req); err != nil {
 		switch {
 		case errors.Is(err, ErrUserNotFound):
-			writeError(w, http.StatusNotFound, "not_found", err.Error())
+			writeError(w, r, http.StatusNotFound, "not_found", err.Error())
 		case errors.Is(err, ErrInvalidInput):
-			writeError(w, http.StatusBadRequest, "bad_request", err.Error())
+			writeError(w, r, http.StatusBadRequest, "bad_request", err.Error())
 		default:
-			writeError(w, http.StatusInternalServerError, "internal_error", "failed to update roles")
+			writeError(w, r, http.StatusInternalServerError, "internal_error", "failed to update roles")
 		}
 		return
 	}
@@ -167,7 +246,7 @@ func (h *Handler) ResetPassword(w http.ResponseWriter, r *http.Request) {
 
 	var req ResetPasswordRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "bad_request", "invalid request body")
+		writeError(w, r, http.StatusBadRequest, "bad_request", "invalid request body")
 		return
 	}
 
@@ -175,11 +254,11 @@ func (h *Handler) ResetPassword(w http.ResponseWriter, r *http.Request) {
 	if err := h.svc.ResetPassword(r.Context(), actor.OrgID, actor.UserID, userID, req); err != nil {
 		switch {
 		case errors.Is(err, ErrUserNotFound):
-			writeError(w, http.StatusNotFound, "not_found", err.Error())
+			writeError(w, r, http.StatusNotFound, "not_found", err.Error())
 		case errors.Is(err, ErrInvalidInput), errors.Is(err, auth.ErrWeakPassword), errors.Is(err, auth.ErrPasswordReused):
-			writeError(w, http.StatusBadRequest, "bad_request", err.Error())
+			writeError(w, r, http.StatusBadRequest, "bad_request", err.Error())
 		default:
-			writeError(w, http.StatusInternalServerError, "internal_error", "failed to reset password")
+			writeError(w, r, http.StatusInternalServerError, "internal_error", "failed to reset password")
 		}
 		return
 	}
@@ -196,7 +275,7 @@ func (h *Handler) GetOrganization(w http.ResponseWriter, r *http.Request) {
 
 	org, err := h.svc.GetOrganization(r.Context(), actor.OrgID)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "internal_error", "failed to load organization")
+		writeError(w, r, http.StatusInternalServerError, "internal_error", "failed to load organization")
 		return
 	}
 
@@ -212,7 +291,7 @@ func (h *Handler) UpdateOrganization(w http.ResponseWriter, r *http.Request) {
 
 	var req UpdateOrganizationRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "bad_request", "invalid request body")
+		writeError(w, r, http.StatusBadRequest, "bad_request", "invalid request body")
 		return
 	}
 
@@ -220,11 +299,11 @@ func (h *Handler) UpdateOrganization(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		switch {
 		case errors.Is(err, ErrOrganizationNotFound):
-			writeError(w, http.StatusNotFound, "not_found", err.Error())
+			writeError(w, r, http.StatusNotFound, "not_found", err.Error())
 		case errors.Is(err, ErrInvalidInput):
-			writeError(w, http.StatusBadRequest, "bad_request", err.Error())
+			writeError(w, r, http.StatusBadRequest, "bad_request", err.Error())
 		default:
-			writeError(w, http.StatusInternalServerError, "internal_error", "failed to update organization")
+			writeError(w, r, http.StatusInternalServerError, "internal_error", "failed to update organization")
 		}
 		return
 	}
@@ -238,7 +317,7 @@ func parseListOptions(w http.ResponseWriter, r *http.Request) (ListOptions, bool
 	if l := r.URL.Query().Get("limit"); l != "" {
 		val, err := strconv.Atoi(l)
 		if err != nil || val < 1 {
-			writeError(w, http.StatusBadRequest, "bad_request", "invalid limit")
+			writeError(w, r, http.StatusBadRequest, "bad_request", "invalid limit")
 			return ListOptions{}, false
 		}
 		opts.Limit = val
@@ -247,7 +326,7 @@ func parseListOptions(w http.ResponseWriter, r *http.Request) (ListOptions, bool
 	if o := r.URL.Query().Get("offset"); o != "" {
 		val, err := strconv.Atoi(o)
 		if err != nil || val < 0 {
-			writeError(w, http.StatusBadRequest, "bad_request", "invalid offset")
+			writeError(w, r, http.StatusBadRequest, "bad_request", "invalid offset")
 			return ListOptions{}, false
 		}
 		opts.Offset = val
@@ -275,13 +354,13 @@ func parseAuditLogListOptions(w http.ResponseWriter, r *http.Request) (AuditLogL
 
 	if opts.From != "" {
 		if _, err := time.Parse(time.RFC3339, opts.From); err != nil {
-			writeError(w, http.StatusBadRequest, "bad_request", "invalid from timestamp")
+			writeError(w, r, http.StatusBadRequest, "bad_request", "invalid from timestamp")
 			return AuditLogListOptions{}, false
 		}
 	}
 	if opts.To != "" {
 		if _, err := time.Parse(time.RFC3339, opts.To); err != nil {
-			writeError(w, http.StatusBadRequest, "bad_request", "invalid to timestamp")
+			writeError(w, r, http.StatusBadRequest, "bad_request", "invalid to timestamp")
 			return AuditLogListOptions{}, false
 		}
 	}
@@ -289,7 +368,7 @@ func parseAuditLogListOptions(w http.ResponseWriter, r *http.Request) (AuditLogL
 	if l := r.URL.Query().Get("limit"); l != "" {
 		val, err := strconv.Atoi(l)
 		if err != nil || val < 1 {
-			writeError(w, http.StatusBadRequest, "bad_request", "invalid limit")
+			writeError(w, r, http.StatusBadRequest, "bad_request", "invalid limit")
 			return AuditLogListOptions{}, false
 		}
 		opts.Limit = val
@@ -298,7 +377,7 @@ func parseAuditLogListOptions(w http.ResponseWriter, r *http.Request) (AuditLogL
 	if o := r.URL.Query().Get("offset"); o != "" {
 		val, err := strconv.Atoi(o)
 		if err != nil || val < 0 {
-			writeError(w, http.StatusBadRequest, "bad_request", "invalid offset")
+			writeError(w, r, http.StatusBadRequest, "bad_request", "invalid offset")
 			return AuditLogListOptions{}, false
 		}
 		opts.Offset = val

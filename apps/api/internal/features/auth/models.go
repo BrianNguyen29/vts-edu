@@ -43,8 +43,9 @@ type DataEnvelope struct {
 // ErrorEnvelope wraps API error responses.
 type ErrorEnvelope struct {
 	Error struct {
-		Code    string `json:"code"`
-		Message string `json:"message"`
+		Code      string `json:"code"`
+		Message   string `json:"message"`
+		RequestID string `json:"request_id,omitempty"`
 	} `json:"error"`
 }
 

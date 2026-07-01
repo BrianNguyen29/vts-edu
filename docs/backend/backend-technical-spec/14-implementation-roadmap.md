@@ -39,12 +39,12 @@ Exit criteria:
 - sqlc migration for `assessments`, `admin`, `auth`, and `attempts` repositories, preserving `Repository` interfaces.
 - Generated OpenAPI TypeScript types CI check (`pnpm api:types`, `pnpm api:sqlc`).
 
-### Phase 2 — Academic structure (2–3 tuần)
+### Phase 2 — Academic structure (2–3 tuần) ✅ Core implemented
 
-- Terms, subjects, courses, classes.
-- Teacher assignment.
-- Enrollment/bulk import.
-- Authorization class scope.
+- Terms, subjects, courses, classes (CRUD + archive).
+- Teacher assignment (single + bulk).
+- Enrollment/bulk import (single + bulk).
+- Authorization class scope (teacher sees assigned classes; student access gated via enrollment).
 
 ### Phase 3 — Resources/files (2–3 tuần)
 
@@ -99,7 +99,7 @@ Exit criteria:
 
 - **Current**: Hand-maintained OpenAPI skeleton covers the current API surface in `docs/backend/backend-technical-spec/openapi/openapi-skeleton.yaml`. TypeScript types are generated from it into `apps/web/src/shared/api/openapi-schema.d.ts` using `openapi-typescript` (type-only; no runtime client).
 - **Stage 1 — sqlc migration (completed)**: `assessments`, `admin`, `auth`, and `attempts` repositories migrated to sqlc generated queries while keeping `Repository` interfaces stable. No runtime handler/service rewrite.
-- **Stage 2 — Huma migration (deferred)**: Add Huma operation definitions behind existing handlers or incrementally replace handler wiring while preserving response envelopes. OpenAPI generation becomes automatic. As of the academic/openapi-fetch batch, the manual skeleton covers ~44 paths (above the original ~20–25 threshold), but `openapi-typescript` + `openapi-fetch` are working well. Huma remains deferred because migration risk/cost still outweighs manual maintenance. Revisit trigger: spec drift incidents ≥ 2/month, paths ≥ 60, need runtime contract validation, or a dedicated refactor sprint with ≥ 80% handler test coverage.
+- **Stage 2 — Huma migration (deferred)**: Add Huma operation definitions behind existing handlers or incrementally replace handler wiring while preserving response envelopes. OpenAPI generation becomes automatic. As of the latest batch (builder polish / student / gradebook / bulk / hardening), the manual skeleton covers **58 paths** (up from ~44), very close to the 60-path threshold. `openapi-typescript` + `openapi-fetch` plus the `generated-code-check` CI job continue to keep manual maintenance manageable. Huma remains deferred because migration risk/cost still outweighs manual maintenance, especially for auth cookie/CSRF/refresh-sensitive handlers and middleware ordering. Revisit trigger: spec drift incidents ≥ 2/month, paths ≥ 60, need runtime contract validation, or a dedicated refactor sprint with ≥ 80% handler test coverage.
 - **Stage 3 — Client generation**: Generate frontend API client/types from the Huma/OpenAPI contract once it stabilizes.
 - **Breached-password provider (deferred)**: HIBP/external corpus integration deferred pending a privacy/egress ADR; password history + lockout + blocklist implemented as interim controls.
 

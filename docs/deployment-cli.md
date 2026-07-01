@@ -98,3 +98,18 @@ Before deploying, run the full auth → attempt flow locally. See [`docs/e2e-loc
 ## Backend deployment
 
 The Go API is deployed to **Render Free**, not Vercel. See `apps/api/render.yaml` and `config/render.env.example`.
+
+## Post-deploy smoke test
+
+After a Render deploy finishes, run the same smoke suite against the live origin:
+
+```bash
+API_BASE=https://<your-api>.onrender.com ./scripts/render_smoke.sh
+```
+
+The script uses `scripts/e2e_smoke_api.mjs` with `API_BASE` set to the Render origin, so it exercises auth, attempts, assessment builder, admin, academics, gradebook, bulk operations, and audit logs against the deployed service without starting a local database or building the binary.
+
+Requirements:
+
+- The origin must expose `/readyz` and the demo seed data used by the smoke suite.
+- Do not run this against a production instance with real user data; it mutates state (creates users, classes, assessments, attempts) using the seeded demo accounts.

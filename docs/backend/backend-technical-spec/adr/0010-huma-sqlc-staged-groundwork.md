@@ -56,6 +56,28 @@ Sau khi hoàn thành batch academics và migrate toàn bộ frontend helpers san
 
 Nếu kích hoạt, migration sẽ diễn ra theo feature slice (auth → admin → attempts → assessments → academics) thay vì big-bang, và `Repository` interfaces hiện tại sẽ được giữ nguyên.
 
+### Huma revisit (post-builder-polish / student / gradebook / bulk / hardening)
+
+Sau khi hoàn thành các batch gần nhất (builder polish: duplicate section/item + preview; student experience: `/me/attempts`, `/attempts/{id}/result`; gradebook: results/CSV export; bulk operations: CSV import users, bulk enroll/bulk assign teachers; production hardening: rate limit, request ID + structured logging, audit CSV export, Render smoke), nhóm đã đo lại chi phí duy trì skeleton thủ công:
+
+- **Kích thước spec hiện tại**: OpenAPI skeleton đang định nghĩa **58 paths** (tính theo `paths:` trong `openapi-skeleton.yaml`), tăng từ 44 paths ở lần revisit trước và rất gần ngưỡng 60.
+- **Tiến bộ giảm chi phí manual maintenance**:
+  - `openapi-typescript` + `openapi-fetch` đã cover toàn bộ frontend helpers; type-safety ở frontend không còn phụ thuộc Huma.
+  - CI `generated-code-check` (`pnpm api:types`, `pnpm api:sqlc`, `git diff --exit-code`) bắt drift giữa spec và generated code.
+  - Request ID và structured logging đã được thêm mà không cần Huma, giảm một trong các lý do ban đầu để dùng Huma (observability/validation).
+- **Rủi ro migration vẫn cao**: auth cookie/CSRF double-submit, refresh rotation, response envelope tùy chỉnh, và rate-limit middleware ordering vẫn đòi hỏi mapping cẩn thận khi chuyển sang Huma operations. Chi phí refactor ước tính vẫn lớn hơn chi phí duy trì skeleton ít nhất một sprint.
+
+### Decision (updated)
+
+- **Huma runtime migration vẫn tạm hoãn.** OpenAPI skeleton được duy trì thủ công; `openapi-typescript` + `openapi-fetch` vẫn đáp ứng đủ nhu cầu type-safety ở frontend.
+- **Ngưỡng tái xem xét tiếp theo** (điều chỉnh theo tốc độ tăng paths):
+  1. Spec drift gây lỗi production hoặc lỗi type generation ≥ 2 lần trong một tháng.
+  2. Số paths vượt quá **60** (hiện tại **58**), tức là manual maintenance sắp bùng nổ.
+  3. Cần tự động kiểm tra request/response schema ở runtime cho API contract phức tạp hơn (ví dụ: public/external API consumer).
+  4. Một sprint dành riêng cho refactor được phê duyệt, và có thể viết test coverage ≥ 80% cho các handlers trước khi chuyển đổi.
+
+Nếu kích hoạt, migration vẫn theo feature slice, bắt đầu từ handler ít nhạy cảm nhất (academics hoặc gradebook) và để auth cuối cùng.
+
 ## Consequences
 
 ### Positive

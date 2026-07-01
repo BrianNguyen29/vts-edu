@@ -3,6 +3,7 @@ package admin
 import (
 	"context"
 	"errors"
+	"fmt"
 	"testing"
 
 	"github.com/BrianNguyen29/vts-edu/apps/api/internal/features/auth"
@@ -14,6 +15,7 @@ type fakeRepository struct {
 	countUsersFunc               func(ctx context.Context, orgID string, opts ListOptions) (int64, error)
 	listAuditFunc                func(ctx context.Context, orgID string, opts AuditLogListOptions) ([]AuditLog, error)
 	countAuditFunc               func(ctx context.Context, orgID string, opts AuditLogListOptions) (int64, error)
+	exportAuditFunc              func(ctx context.Context, orgID string, opts AuditLogListOptions) ([]AuditLogExport, error)
 	loginExistsFunc              func(ctx context.Context, orgID, loginName string) (bool, error)
 	createFunc                   func(ctx context.Context, tx pgx.Tx, orgID, displayName, email, loginName, passwordHash string, roles []string) (User, error)
 	membershipFunc               func(ctx context.Context, orgID, userID string) (string, error)
@@ -52,6 +54,13 @@ func (f *fakeRepository) CountAuditLogs(ctx context.Context, orgID string, opts 
 		return f.countAuditFunc(ctx, orgID, opts)
 	}
 	return 0, nil
+}
+
+func (f *fakeRepository) ExportAuditLogs(ctx context.Context, orgID string, opts AuditLogListOptions) ([]AuditLogExport, error) {
+	if f.exportAuditFunc != nil {
+		return f.exportAuditFunc(ctx, orgID, opts)
+	}
+	return nil, nil
 }
 
 func (f *fakeRepository) LoginExists(ctx context.Context, orgID, loginName string) (bool, error) {
@@ -455,5 +464,87 @@ func TestService_UpdateOrganization_OK(t *testing.T) {
 	}
 	if len(repo.auditLogs) != 1 || repo.auditLogs[0].Action != "organization.update" {
 		t.Errorf("expected audit log organization.update, got %v", repo.auditLogs)
+	}
+}
+
+func TestService_ImportUsers_DryRun(t *testing.T) {
+	repo := &fakeRepository{
+		loginExistsFunc: func(ctx context.Context, orgID, loginName string) (bool, error) {
+			return false, nil
+		},
+	}
+	svc := NewService(repo, stubTxManager{})
+	csv := "login_name,display_name,email,temporary_password,roles\n" +
+		"bulk01,Bulk One,bulk1@example.com,TempPass123!,student\n" +
+		"bulk02,Bulk Two,bulk2@example.com,TempPass123!,teacher\n" +
+		"bulk03,,bulk3@example.com,TempPass123!,student\n"
+
+	result, err := svc.ImportUsers(context.Background(), "org-id", "actor-1", ImportUsersRequest{CSV: csv, DryRun: true})
+	if err != nil {
+		t.Fatalf("ImportUsers failed: %v", err)
+	}
+	if result.Total != 3 {
+		t.Errorf("total = %d, want 3", result.Total)
+	}
+	if result.Created != 0 {
+		t.Errorf("created = %d, want 0 on dry run", result.Created)
+	}
+	if result.Failed != 1 {
+		t.Errorf("failed = %d, want 1", result.Failed)
+	}
+	if len(result.Rows) != 3 {
+		t.Fatalf("rows = %d, want 3", len(result.Rows))
+	}
+	if result.Rows[0].Status != "valid" {
+		t.Errorf("row 1 status = %q, want valid", result.Rows[0].Status)
+	}
+	if result.Rows[2].Status != "error" {
+		t.Errorf("row 3 status = %q, want error", result.Rows[2].Status)
+	}
+	if len(repo.auditLogs) != 0 {
+		t.Errorf("expected no audit logs on dry run, got %d", len(repo.auditLogs))
+	}
+}
+
+func TestService_ImportUsers_Confirm(t *testing.T) {
+	created := 0
+	repo := &fakeRepository{
+		loginExistsFunc: func(ctx context.Context, orgID, loginName string) (bool, error) {
+			return false, nil
+		},
+		createFunc: func(ctx context.Context, tx pgx.Tx, orgID, displayName, email, loginName, passwordHash string, roles []string) (User, error) {
+			created++
+			return User{ID: fmt.Sprintf("user-%d", created), LoginName: loginName, DisplayName: displayName, Roles: roles, MustChangePassword: true}, nil
+		},
+	}
+	svc := NewService(repo, stubTxManager{})
+	csv := "login_name,display_name,email,temporary_password,roles\n" +
+		"bulk01,Bulk One,bulk1@example.com,TempPass123!,student\n"
+
+	result, err := svc.ImportUsers(context.Background(), "org-id", "actor-1", ImportUsersRequest{CSV: csv, DryRun: false})
+	if err != nil {
+		t.Fatalf("ImportUsers failed: %v", err)
+	}
+	if result.Created != 1 {
+		t.Errorf("created = %d, want 1", result.Created)
+	}
+	if len(result.Rows) != 1 || result.Rows[0].Status != "created" {
+		t.Errorf("row status = %q, want created", result.Rows[0].Status)
+	}
+	if len(repo.auditLogs) != 1 || repo.auditLogs[0].Action != "user.import" {
+		t.Errorf("expected user.import audit log, got %v", repo.auditLogs)
+	}
+}
+
+func TestService_ImportUsers_TooManyRows(t *testing.T) {
+	repo := &fakeRepository{}
+	svc := NewService(repo, stubTxManager{})
+	csv := "login_name,display_name,email,temporary_password,roles\n"
+	for i := 0; i <= maxBulkRows; i++ {
+		csv += fmt.Sprintf("u%d,User %d,u%d@example.com,TempPass123!,student\n", i, i, i)
+	}
+	_, err := svc.ImportUsers(context.Background(), "org-id", "actor-1", ImportUsersRequest{CSV: csv})
+	if !errors.Is(err, ErrInvalidInput) {
+		t.Fatalf("expected ErrInvalidInput, got %v", err)
 	}
 }

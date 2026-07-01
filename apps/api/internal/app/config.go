@@ -3,6 +3,7 @@ package app
 import (
 	"fmt"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -27,6 +28,12 @@ type Config struct {
 	SupabaseURL            string
 	SupabaseServiceRoleKey string
 	SupabaseStorageBucket  string
+
+	RateLimitEnabled bool
+	RateLimitRPS     float64
+	RateLimitBurst   int
+	RateLimitTTL     time.Duration
+	RateLimitCleanup time.Duration
 }
 
 // LoadConfig reads environment variables with safe defaults for local dev.
@@ -49,6 +56,12 @@ func LoadConfig() (*Config, error) {
 		SupabaseURL:            getEnv("SUPABASE_URL", ""),
 		SupabaseServiceRoleKey: getEnv("SUPABASE_SERVICE_ROLE_KEY", ""),
 		SupabaseStorageBucket:  getEnv("SUPABASE_STORAGE_BUCKET", "vts-edu-files"),
+
+		RateLimitEnabled: getEnv("RATE_LIMIT_ENABLED", "false") == "true",
+		RateLimitRPS:     parseFloat(getEnv("RATE_LIMIT_RPS", "10")),
+		RateLimitBurst:   parseInt(getEnv("RATE_LIMIT_BURST", "20")),
+		RateLimitTTL:     parseDuration(getEnv("RATE_LIMIT_TTL", "5m")),
+		RateLimitCleanup: parseDuration(getEnv("RATE_LIMIT_CLEANUP", "1m")),
 	}
 
 	var missing []string
@@ -80,6 +93,14 @@ func parseInt(s string) int {
 	fmt.Sscanf(s, "%d", &n)
 	if n <= 0 {
 		return 5
+	}
+	return n
+}
+
+func parseFloat(s string) float64 {
+	n, err := strconv.ParseFloat(s, 64)
+	if err != nil || n <= 0 {
+		return 10.0
 	}
 	return n
 }

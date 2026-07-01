@@ -235,3 +235,15 @@ SELECT EXISTS (
       AND id = $2
       AND status = 'ACTIVE'
 );
+
+-- name: InsertAuditLog :exec
+INSERT INTO audit_logs (
+    organization_id,
+    actor_user_id,
+    action,
+    resource_type,
+    resource_id,
+    before_json,
+    after_json,
+    metadata_json
+) VALUES ($1, $2, $3, $4, $5, $6, $7, $8);

@@ -180,6 +180,86 @@ func (q *Queries) DeleteRoles(ctx context.Context, membershipID pgtype.UUID) err
 	return err
 }
 
+const exportAuditLogs = `-- name: ExportAuditLogs :many
+SELECT
+    al.id,
+    al.created_at,
+    u.display_name AS actor_name,
+    al.actor_user_id,
+    al.action,
+    al.resource_type,
+    al.resource_id,
+    al.before_json,
+    al.after_json,
+    al.metadata_json
+FROM audit_logs al
+LEFT JOIN users u ON u.id = al.actor_user_id
+WHERE al.organization_id = $1
+  AND ($2::text = '' OR al.action = $2)
+  AND ($3::text = '' OR al.actor_user_id::text = $3)
+  AND ($4::text = '' OR al.created_at >= $4::timestamptz)
+  AND ($5::text = '' OR al.created_at <= $5::timestamptz)
+ORDER BY al.created_at DESC, al.id DESC
+`
+
+type ExportAuditLogsParams struct {
+	OrganizationID pgtype.UUID `json:"organization_id"`
+	ActionName     string      `json:"action_name"`
+	ActorUserID    string      `json:"actor_user_id"`
+	FromTime       string      `json:"from_time"`
+	ToTime         string      `json:"to_time"`
+}
+
+type ExportAuditLogsRow struct {
+	ID           pgtype.UUID        `json:"id"`
+	CreatedAt    pgtype.Timestamptz `json:"created_at"`
+	ActorName    pgtype.Text        `json:"actor_name"`
+	ActorUserID  pgtype.UUID        `json:"actor_user_id"`
+	Action       string             `json:"action"`
+	ResourceType pgtype.Text        `json:"resource_type"`
+	ResourceID   pgtype.UUID        `json:"resource_id"`
+	BeforeJson   []byte             `json:"before_json"`
+	AfterJson    []byte             `json:"after_json"`
+	MetadataJson []byte             `json:"metadata_json"`
+}
+
+func (q *Queries) ExportAuditLogs(ctx context.Context, arg ExportAuditLogsParams) ([]ExportAuditLogsRow, error) {
+	rows, err := q.db.Query(ctx, exportAuditLogs,
+		arg.OrganizationID,
+		arg.ActionName,
+		arg.ActorUserID,
+		arg.FromTime,
+		arg.ToTime,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ExportAuditLogsRow
+	for rows.Next() {
+		var i ExportAuditLogsRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.CreatedAt,
+			&i.ActorName,
+			&i.ActorUserID,
+			&i.Action,
+			&i.ResourceType,
+			&i.ResourceID,
+			&i.BeforeJson,
+			&i.AfterJson,
+			&i.MetadataJson,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const getLoginPasswordHash = `-- name: GetLoginPasswordHash :one
 SELECT password_hash
 FROM membership_login_names

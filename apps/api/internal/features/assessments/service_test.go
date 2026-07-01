@@ -18,6 +18,8 @@ type fakeRepo struct {
 	createSectionFunc                 func(ctx context.Context, tx pgx.Tx, orgID, assessmentID string, req CreateSectionRequest) (SectionDetail, error)
 	createItemFunc                    func(ctx context.Context, tx pgx.Tx, orgID, assessmentID, sectionID string, req CreateItemRequest) (ItemDetail, error)
 	createTargetFunc                  func(ctx context.Context, tx pgx.Tx, orgID, assessmentID string, req CreateTargetRequest) (TargetDetail, error)
+	duplicateSectionFunc              func(ctx context.Context, tx pgx.Tx, orgID, assessmentID, sectionID string) (SectionDetail, error)
+	duplicateItemFunc                 func(ctx context.Context, tx pgx.Tx, orgID, sectionID, itemID string) (ItemDetail, error)
 	getSectionAssessmentIDFunc        func(ctx context.Context, orgID, sectionID string) (string, error)
 	updateAssessmentSectionFunc       func(ctx context.Context, tx pgx.Tx, orgID, sectionID string, req UpdateSectionRequest) (SectionDetail, error)
 	archiveAssessmentSectionFunc      func(ctx context.Context, tx pgx.Tx, orgID, sectionID string) error
@@ -247,6 +249,20 @@ func (f *fakeRepo) CreateAssessmentTarget(ctx context.Context, tx pgx.Tx, orgID,
 		return f.createTargetFunc(ctx, tx, orgID, assessmentID, req)
 	}
 	return TargetDetail{}, nil
+}
+
+func (f *fakeRepo) DuplicateSection(ctx context.Context, tx pgx.Tx, orgID, assessmentID, sectionID string) (SectionDetail, error) {
+	if f.duplicateSectionFunc != nil {
+		return f.duplicateSectionFunc(ctx, tx, orgID, assessmentID, sectionID)
+	}
+	return SectionDetail{}, nil
+}
+
+func (f *fakeRepo) DuplicateItem(ctx context.Context, tx pgx.Tx, orgID, sectionID, itemID string) (ItemDetail, error) {
+	if f.duplicateItemFunc != nil {
+		return f.duplicateItemFunc(ctx, tx, orgID, sectionID, itemID)
+	}
+	return ItemDetail{}, nil
 }
 
 func (f *fakeRepo) PublishAssessment(ctx context.Context, tx pgx.Tx, orgID, assessmentID, newStatus string) (int, error) {
@@ -571,5 +587,109 @@ func TestService_GetAssessment_NestsItemsUnderSections(t *testing.T) {
 	}
 	if len(detail.Targets) != 1 {
 		t.Errorf("expected 1 target, got %d", len(detail.Targets))
+	}
+}
+
+func TestService_DuplicateSection_Success(t *testing.T) {
+	repo := &fakeRepo{
+		isAssessmentManagerFunc: func(ctx context.Context, orgID, userID, assessmentID string) (bool, error) {
+			return true, nil
+		},
+		getAssessmentFunc: func(ctx context.Context, orgID, assessmentID string) (AssessmentDetail, error) {
+			return AssessmentDetail{ID: assessmentID, Status: "DRAFT"}, nil
+		},
+		duplicateSectionFunc: func(ctx context.Context, tx pgx.Tx, orgID, assessmentID, sectionID string) (SectionDetail, error) {
+			return SectionDetail{ID: "sec-copy", Title: "Part A (copy)", Position: 20, Items: []ItemDetail{{ID: "item-copy", QuestionVersionID: "qv-1", Position: 10, Points: "1.00"}}}, nil
+		},
+	}
+	svc := NewService(repo, stubTxManager{})
+	section, err := svc.DuplicateSection(context.Background(), auth.Actor{Roles: []string{"teacher"}}, "assess-1", "sec-1")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if section.Title != "Part A (copy)" {
+		t.Errorf("title = %q, want Part A (copy)", section.Title)
+	}
+	if len(section.Items) != 1 {
+		t.Errorf("expected 1 duplicated item, got %d", len(section.Items))
+	}
+}
+
+func TestService_DuplicateSection_NotDraft(t *testing.T) {
+	repo := &fakeRepo{
+		isAssessmentManagerFunc: func(ctx context.Context, orgID, userID, assessmentID string) (bool, error) {
+			return true, nil
+		},
+		getAssessmentFunc: func(ctx context.Context, orgID, assessmentID string) (AssessmentDetail, error) {
+			return AssessmentDetail{ID: assessmentID, Status: "OPEN"}, nil
+		},
+	}
+	svc := NewService(repo, stubTxManager{})
+	_, err := svc.DuplicateSection(context.Background(), auth.Actor{Roles: []string{"teacher"}}, "assess-1", "sec-1")
+	if !errors.Is(err, ErrNotDraft) {
+		t.Fatalf("expected ErrNotDraft, got %v", err)
+	}
+}
+
+func TestService_DuplicateItem_Success(t *testing.T) {
+	repo := &fakeRepo{
+		isAssessmentManagerFunc: func(ctx context.Context, orgID, userID, assessmentID string) (bool, error) {
+			return true, nil
+		},
+		getSectionAssessmentIDFunc: func(ctx context.Context, orgID, sectionID string) (string, error) {
+			return "assess-1", nil
+		},
+		getAssessmentFunc: func(ctx context.Context, orgID, assessmentID string) (AssessmentDetail, error) {
+			return AssessmentDetail{ID: assessmentID, Status: "DRAFT"}, nil
+		},
+		duplicateItemFunc: func(ctx context.Context, tx pgx.Tx, orgID, sectionID, itemID string) (ItemDetail, error) {
+			return ItemDetail{ID: "item-copy", QuestionVersionID: "qv-1", Position: 20, Points: "1.00"}, nil
+		},
+	}
+	svc := NewService(repo, stubTxManager{})
+	item, err := svc.DuplicateItem(context.Background(), auth.Actor{Roles: []string{"teacher"}}, "sec-1", "item-1")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if item.Position != 20 {
+		t.Errorf("position = %d, want 20", item.Position)
+	}
+}
+
+func TestService_PreviewAssessment_HidesAnswerKey(t *testing.T) {
+	repo := &fakeRepo{
+		isAssessmentManagerFunc: func(ctx context.Context, orgID, userID, assessmentID string) (bool, error) {
+			return true, nil
+		},
+		getAssessmentFunc: func(ctx context.Context, orgID, assessmentID string) (AssessmentDetail, error) {
+			return AssessmentDetail{ID: assessmentID, Title: "Quiz", Status: "DRAFT", DurationMinutes: 30, MaxAttempts: 1}, nil
+		},
+		getAssessmentSectionsFunc: func(ctx context.Context, orgID, assessmentID string) ([]SectionDetail, error) {
+			return []SectionDetail{{ID: "sec-1", Title: "Part A", Position: 1, Items: []ItemDetail{}}}, nil
+		},
+		getAssessmentItemsWithContentFunc: func(ctx context.Context, orgID, assessmentID string) ([]ItemContentRow, error) {
+			return []ItemContentRow{{
+				ID: "item-1", AssessmentSectionID: "sec-1", QuestionVersionID: "qv-1", Position: 1, Points: "1.00",
+				Prompt: []byte(`{"text":"Q"}`), Choices: []byte(`[{"id":"a","text":"A"}]`), AnswerKey: []byte(`{"correct":"a"}`), MaxScore: "1.00",
+			}}, nil
+		},
+	}
+	svc := NewService(repo, stubTxManager{})
+	preview, err := svc.PreviewAssessment(context.Background(), auth.Actor{Roles: []string{"teacher"}}, "assess-1")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(preview.Sections) != 1 {
+		t.Fatalf("expected 1 section, got %d", len(preview.Sections))
+	}
+	if len(preview.Sections[0].Items) != 1 {
+		t.Fatalf("expected 1 item, got %d", len(preview.Sections[0].Items))
+	}
+	item := preview.Sections[0].Items[0]
+	if string(item.Prompt) == "" {
+		t.Error("expected prompt to be present")
+	}
+	if string(item.Choices) == "" {
+		t.Error("expected choices to be present")
 	}
 }

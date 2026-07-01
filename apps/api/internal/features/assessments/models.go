@@ -160,6 +160,37 @@ type ValidationError struct {
 	Message string `json:"message"`
 }
 
+// PreviewItem is a student-safe item in an assessment preview.
+type PreviewItem struct {
+	ID                string          `json:"id"`
+	QuestionVersionID string          `json:"question_version_id"`
+	Position          int             `json:"position"`
+	Points            string          `json:"points"`
+	Prompt            json.RawMessage `json:"prompt"`
+	Choices           json.RawMessage `json:"choices"`
+}
+
+// PreviewSection is a student-safe section in an assessment preview.
+type PreviewSection struct {
+	ID       string        `json:"id"`
+	Title    string        `json:"title"`
+	Position int           `json:"position"`
+	Items    []PreviewItem `json:"items"`
+}
+
+// AssessmentPreview is the student-safe view returned by GET /assessments/{id}/preview.
+type AssessmentPreview struct {
+	ID              string           `json:"id"`
+	Title           string           `json:"title"`
+	DurationMinutes int              `json:"duration_minutes"`
+	MaxAttempts     int              `json:"max_attempts"`
+	Instructions    string           `json:"instructions,omitempty"`
+	OpensAt         *string          `json:"opens_at,omitempty"`
+	ClosesAt        *string          `json:"closes_at,omitempty"`
+	Settings        json.RawMessage  `json:"settings,omitempty"`
+	Sections        []PreviewSection `json:"sections"`
+}
+
 // ListOptions is the optional pagination/search input for list endpoints.
 type ListOptions struct {
 	Query  string
@@ -187,7 +218,8 @@ type DataEnvelope struct {
 // ErrorEnvelope wraps API error responses.
 type ErrorEnvelope struct {
 	Error struct {
-		Code    string `json:"code"`
-		Message string `json:"message"`
+		Code      string `json:"code"`
+		Message   string `json:"message"`
+		RequestID string `json:"request_id,omitempty"`
 	} `json:"error"`
 }

@@ -112,6 +112,14 @@ func (f *fakeService) UnenrollStudent(ctx context.Context, orgID string, roles [
 	return nil
 }
 
+func (f *fakeService) BulkEnrollStudents(ctx context.Context, orgID string, roles []string, classID string, req academics.BulkEnrollRequest) (academics.BulkEnrollmentResult, error) {
+	return academics.BulkEnrollmentResult{}, nil
+}
+
+func (f *fakeService) BulkAssignTeachers(ctx context.Context, orgID string, roles []string, classID string, req academics.BulkAssignTeachersRequest) (academics.BulkAssignTeachersResult, error) {
+	return academics.BulkAssignTeachersResult{}, nil
+}
+
 func tokenWithRoles(roles []string) string {
 	issuer := auth.NewTokenIssuer("test-signing-key-minimum-32-bytes-long", "test-issuer", "test-audience", 15*time.Minute)
 	token, _, err := issuer.IssueAccessToken("user-id", "org-id", "session-id", roles, 1, false)

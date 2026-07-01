@@ -137,6 +137,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/me/attempts": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Student only. Returns the current student's attempt history. */
+        get: operations["attempts.listAttemptHistory"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/assessments/{assessment_id}/attempts": {
         parameters: {
             query?: never;
@@ -198,6 +215,23 @@ export interface paths {
         put?: never;
         /** @description Requires Bearer access token and `X-CSRF-Token` header. */
         post: operations["attempts.submit"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/attempts/{attempt_id}/result": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Student only. Returns the graded result for a submitted or expired attempt. */
+        get: operations["attempts.getResult"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -273,6 +307,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/users/imports": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Admin only. Import up to 100 users from a CSV string. Set `dry_run` to validate without creating. */
+        post: operations["users.import"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/organizations/current": {
         parameters: {
             query?: never;
@@ -300,6 +351,23 @@ export interface paths {
         };
         /** @description Admin only. List audit logs for the current organization, optionally filtered. */
         get: operations["auditLogs.list"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/audit-logs/export": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Admin only. Export audit logs for the current organization as CSV. */
+        get: operations["auditLogs.export"];
         put?: never;
         post?: never;
         delete?: never;
@@ -488,6 +556,23 @@ export interface paths {
         patch: operations["assessments.update"];
         trace?: never;
     };
+    "/assessments/{id}/preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Teacher or admin only. Get a student-safe preview of a draft assessment. Excludes answer keys. */
+        get: operations["assessments.preview"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/assessments/{id}/sections": {
         parameters: {
             query?: never;
@@ -505,6 +590,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/assessments/{id}/sections/{section_id}/duplicate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Teacher or admin only. Duplicate an active section and all its items within a draft assessment. Requires `X-CSRF-Token` header. */
+        post: operations["assessments.duplicateSection"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/assessment-sections/{section_id}/items": {
         parameters: {
             query?: never;
@@ -516,6 +618,23 @@ export interface paths {
         put?: never;
         /** @description Teacher or admin only. Add an item from a question version to a section. Requires `X-CSRF-Token` header. */
         post: operations["assessments.createItem"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/assessment-sections/{section_id}/items/{item_id}/duplicate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Teacher or admin only. Duplicate an active item within its section. Requires `X-CSRF-Token` header. */
+        post: operations["assessments.duplicateItem"];
         delete?: never;
         options?: never;
         head?: never;
@@ -677,6 +796,57 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/assessments/{id}/attempts": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Teacher or admin only. Lists all attempts for an assessment. Teachers see only assessments targeting classes they teach. */
+        get: operations["gradebook.listAssessmentAttempts"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/assessments/{id}/results": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Teacher or admin only. Summary of attempt results for an assessment. */
+        get: operations["gradebook.getAssessmentResults"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/assessments/{id}/attempts/export": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Teacher or admin only. CSV export of attempts for an assessment. */
+        get: operations["gradebook.exportAssessmentAttemptsCSV"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/questions": {
         parameters: {
             query?: never;
@@ -706,6 +876,23 @@ export interface paths {
         put?: never;
         /** @description Admin only. Requires `X-CSRF-Token` header. */
         post: operations["academics.addClassTeacher"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/classes/{class_id}/teachers/bulk": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Admin only. Bulk assign up to 100 teachers to a class. Set `dry_run` to validate without assigning. */
+        post: operations["academics.bulkAssignTeachers"];
         delete?: never;
         options?: never;
         head?: never;
@@ -747,6 +934,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/classes/{class_id}/enrollments/bulk": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Admin only. Bulk enroll up to 100 students into a class. Set `dry_run` to validate without enrolling. */
+        post: operations["academics.bulkEnrollStudents"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/classes/{class_id}/enrollments/{user_id}": {
         parameters: {
             query?: never;
@@ -759,6 +963,40 @@ export interface paths {
         post?: never;
         /** @description Admin only. Unenroll a student from a class. */
         delete: operations["academics.unenrollStudent"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/classes/{class_id}/gradebook": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Teacher or admin only. Gradebook for a class, with the latest attempt per student and assessment. */
+        get: operations["gradebook.getClassGradebook"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/classes/{class_id}/gradebook/export": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Teacher or admin only. CSV export of the class gradebook. */
+        get: operations["gradebook.exportClassGradebookCSV"];
+        put?: never;
+        post?: never;
+        delete?: never;
         options?: never;
         head?: never;
         patch?: never;
@@ -910,13 +1148,90 @@ export interface components {
             title: string;
             /** @enum {string} */
             status: "OPEN" | "PUBLISHED";
+            /** @enum {string} */
+            availability: "upcoming" | "open" | "closed";
             duration_minutes: number;
             max_attempts: number;
+            attempts_used: number;
             revision: number;
             /** Format: uuid */
             publication_id: string;
             /** Format: date-time */
             published_at: string;
+            /** Format: date-time */
+            opens_at?: string | null;
+            /** Format: date-time */
+            closes_at?: string | null;
+        };
+        StudentAttemptList: {
+            data: components["schemas"]["StudentAttempt"][];
+        };
+        StudentAttempt: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            assessment_id: string;
+            assessment_title: string;
+            /** @enum {string} */
+            status: "CREATED" | "IN_PROGRESS" | "SUBMITTED" | "EXPIRED" | "TERMINATED";
+            /** Format: date-time */
+            started_at: string;
+            /** Format: date-time */
+            expires_at?: string | null;
+            /** Format: date-time */
+            submitted_at?: string | null;
+            score?: string | null;
+            max_score?: string | null;
+            grading_status?: string | null;
+        };
+        AttemptResult: {
+            data: {
+                /** Format: uuid */
+                id: string;
+                /** Format: uuid */
+                assessment_id: string;
+                /** @enum {string} */
+                status: "SUBMITTED" | "EXPIRED";
+                /** Format: date-time */
+                submitted_at?: string;
+                score?: string;
+                max_score?: string;
+                /** @enum {string} */
+                grading_status?: "GRADED";
+                /** Format: date-time */
+                server_time: string;
+                items: components["schemas"]["AttemptResultItem"][];
+            };
+        };
+        AttemptResultItem: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            question_version_id: string;
+            position: number;
+            points: string;
+            prompt: {
+                text?: string;
+            } & {
+                [key: string]: unknown;
+            };
+            choices: ({
+                id?: string;
+                text?: string;
+            } & {
+                [key: string]: unknown;
+            })[];
+            correct_answer: {
+                [key: string]: unknown;
+            };
+            student_answer?: {
+                answer_payload: {
+                    [key: string]: unknown;
+                };
+                /** Format: date-time */
+                answered_at: string;
+            };
+            is_correct: boolean;
         };
         PageInfo: {
             limit: number;
@@ -964,6 +1279,28 @@ export interface components {
         ResetPasswordRequest: {
             /** @description Must contain at least one uppercase letter, one lowercase letter, one digit, and not match a common blocklist. */
             temporary_password: string;
+        };
+        ImportUsersRequest: {
+            /** @description CSV text with header login_name,display_name,email,temporary_password,roles */
+            csv: string;
+            /** @default false */
+            dry_run: boolean;
+        };
+        ImportUserRow: {
+            row_number: number;
+            /** Format: uuid */
+            user_id?: string | null;
+            login_name: string;
+            /** @enum {string} */
+            status: "valid" | "created" | "error";
+            error?: string | null;
+        };
+        ImportUsersResult: {
+            total: number;
+            created: number;
+            failed: number;
+            dry_run: boolean;
+            rows: components["schemas"]["ImportUserRow"][];
         };
         AuditLogList: {
             data: components["schemas"]["AuditLog"][];
@@ -1175,6 +1512,31 @@ export interface components {
             /** @enum {string} */
             role?: "teacher" | "assistant";
         };
+        BulkAssignTeacherItem: {
+            /** Format: uuid */
+            user_id: string;
+            /** @enum {string} */
+            role?: "teacher" | "assistant";
+        };
+        BulkAssignTeachersRequest: {
+            items: components["schemas"]["BulkAssignTeacherItem"][];
+            /** @default false */
+            dry_run: boolean;
+        };
+        BulkAssignTeacherRow: {
+            /** Format: uuid */
+            user_id: string;
+            /** @enum {string} */
+            status: "valid" | "assigned" | "error";
+            error?: string | null;
+        };
+        BulkAssignTeachersResult: {
+            total: number;
+            assigned: number;
+            failed: number;
+            dry_run: boolean;
+            rows: components["schemas"]["BulkAssignTeacherRow"][];
+        };
         Enrollment: {
             data: {
                 /** Format: uuid */
@@ -1192,6 +1554,25 @@ export interface components {
         EnrollStudentRequest: {
             /** Format: uuid */
             user_id: string;
+        };
+        BulkEnrollRequest: {
+            user_ids: string[];
+            /** @default false */
+            dry_run: boolean;
+        };
+        BulkEnrollmentRow: {
+            /** Format: uuid */
+            user_id: string;
+            /** @enum {string} */
+            status: "valid" | "enrolled" | "error";
+            error?: string | null;
+        };
+        BulkEnrollmentResult: {
+            total: number;
+            enrolled: number;
+            failed: number;
+            dry_run: boolean;
+            rows: components["schemas"]["BulkEnrollmentRow"][];
         };
         AssessmentDetail: {
             data: {
@@ -1243,6 +1624,49 @@ export interface components {
                 question_version_id: string;
                 position: number;
                 points: string;
+            };
+        };
+        AssessmentPreview: {
+            data: {
+                /** Format: uuid */
+                id: string;
+                title: string;
+                duration_minutes: number;
+                max_attempts: number;
+                instructions?: string | null;
+                /** Format: date-time */
+                opens_at?: string | null;
+                /** Format: date-time */
+                closes_at?: string | null;
+                settings?: {
+                    [key: string]: unknown;
+                };
+                sections: components["schemas"]["PreviewSection"]["data"][];
+            };
+        };
+        PreviewSection: {
+            data: {
+                /** Format: uuid */
+                id: string;
+                title: string;
+                position: number;
+                items: components["schemas"]["PreviewItem"]["data"][];
+            };
+        };
+        PreviewItem: {
+            data: {
+                /** Format: uuid */
+                id: string;
+                /** Format: uuid */
+                question_version_id: string;
+                position: number;
+                points: string;
+                prompt: {
+                    [key: string]: unknown;
+                };
+                choices: {
+                    [key: string]: unknown;
+                }[];
             };
         };
         Target: {
@@ -1340,6 +1764,60 @@ export interface components {
             status: "DRAFT" | "SCHEDULED" | "OPEN" | "CLOSED" | "GRADING" | "REVIEWED" | "PUBLISHED" | "ARCHIVED";
             /** Format: date-time */
             published_at: string;
+        };
+        AssessmentAttemptList: {
+            data: components["schemas"]["AssessmentAttempt"][];
+        };
+        AssessmentAttempt: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            assessment_id: string;
+            /** Format: uuid */
+            student_user_id: string;
+            student_name?: string;
+            /** @enum {string} */
+            status: "CREATED" | "IN_PROGRESS" | "SUBMITTED" | "EXPIRED" | "TERMINATED";
+            /** Format: date-time */
+            started_at?: string | null;
+            /** Format: date-time */
+            expires_at?: string | null;
+            /** Format: date-time */
+            submitted_at?: string | null;
+            score?: string | null;
+            max_score?: string | null;
+            grading_status?: string | null;
+        };
+        AssessmentResult: {
+            data: {
+                /** Format: uuid */
+                assessment_id: string;
+                total_attempts: number;
+                submitted_count: number;
+                in_progress_count: number;
+                expired_count: number;
+                average_score?: string | null;
+                max_score?: string | null;
+            };
+        };
+        ClassGradebookList: {
+            data: components["schemas"]["ClassGradebookEntry"][];
+        };
+        ClassGradebookEntry: {
+            /** Format: uuid */
+            student_user_id: string;
+            student_name: string;
+            /** Format: uuid */
+            assessment_id: string;
+            assessment_title: string;
+            /** Format: uuid */
+            attempt_id?: string | null;
+            /** @enum {string|null} */
+            status?: "CREATED" | "IN_PROGRESS" | "SUBMITTED" | "EXPIRED" | "TERMINATED" | null;
+            score?: string | null;
+            max_score?: string | null;
+            /** Format: date-time */
+            submitted_at?: string | null;
         };
         Problem: {
             /** Format: uri-reference */
@@ -1614,6 +2092,28 @@ export interface operations {
             403: components["responses"]["Forbidden"];
         };
     };
+    "attempts.listAttemptHistory": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Attempt history */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StudentAttemptList"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+        };
+    };
     "attempts.start": {
         parameters: {
             query?: never;
@@ -1713,6 +2213,32 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["AttemptSubmitted"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+        };
+    };
+    "attempts.getResult": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                attempt_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Attempt result with student answers and correct answers */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AttemptResult"];
                 };
             };
             401: components["responses"]["Unauthorized"];
@@ -1877,6 +2403,42 @@ export interface operations {
             404: components["responses"]["NotFound"];
         };
     };
+    "users.import": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ImportUsersRequest"];
+            };
+        };
+        responses: {
+            /** @description Dry-run validation result */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ImportUsersResult"];
+                };
+            };
+            /** @description Users imported */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ImportUsersResult"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+        };
+    };
     "organizations.getCurrent": {
         parameters: {
             query?: never;
@@ -1962,6 +2524,37 @@ export interface operations {
                 };
             };
             400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+        };
+    };
+    "auditLogs.export": {
+        parameters: {
+            query?: {
+                /** @description Filter by action name. */
+                action?: string;
+                /** @description Filter by actor user ID. */
+                actor_user_id?: string;
+                /** @description Start timestamp (RFC3339). */
+                from?: string;
+                /** @description End timestamp (RFC3339). */
+                to?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description CSV export of audit logs */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "text/csv": string;
+                };
+            };
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["Forbidden"];
         };
@@ -2462,6 +3055,31 @@ export interface operations {
             404: components["responses"]["NotFound"];
         };
     };
+    "assessments.preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Assessment preview */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AssessmentPreview"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
     "assessments.createSection": {
         parameters: {
             query?: never;
@@ -2493,6 +3111,33 @@ export interface operations {
             409: components["responses"]["Conflict"];
         };
     };
+    "assessments.duplicateSection": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+                section_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Section duplicated */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Section"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
     "assessments.createItem": {
         parameters: {
             query?: never;
@@ -2522,6 +3167,33 @@ export interface operations {
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
             409: components["responses"]["Conflict"];
+        };
+    };
+    "assessments.duplicateItem": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                section_id: string;
+                item_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Item duplicated */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Item"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
         };
     };
     "assessments.createTarget": {
@@ -2819,6 +3491,81 @@ export interface operations {
             404: components["responses"]["NotFound"];
         };
     };
+    "gradebook.listAssessmentAttempts": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Assessment attempts */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AssessmentAttemptList"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    "gradebook.getAssessmentResults": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Assessment results summary */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AssessmentResult"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    "gradebook.exportAssessmentAttemptsCSV": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description CSV export */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "text/csv": string;
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
     "assessments.listQuestions": {
         parameters: {
             query?: {
@@ -2905,6 +3652,46 @@ export interface operations {
             409: components["responses"]["Conflict"];
         };
     };
+    "academics.bulkAssignTeachers": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                class_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BulkAssignTeachersRequest"];
+            };
+        };
+        responses: {
+            /** @description Dry-run validation result */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BulkAssignTeachersResult"];
+                };
+            };
+            /** @description Teachers assigned */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BulkAssignTeachersResult"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+        };
+    };
     "academics.removeClassTeacher": {
         parameters: {
             query?: never;
@@ -2979,6 +3766,46 @@ export interface operations {
             409: components["responses"]["Conflict"];
         };
     };
+    "academics.bulkEnrollStudents": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                class_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BulkEnrollRequest"];
+            };
+        };
+        responses: {
+            /** @description Dry-run validation result */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BulkEnrollmentResult"];
+                };
+            };
+            /** @description Students enrolled */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BulkEnrollmentResult"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+        };
+    };
     "academics.unenrollStudent": {
         parameters: {
             query?: never;
@@ -2992,6 +3819,56 @@ export interface operations {
         requestBody?: never;
         responses: {
             200: components["responses"]["SuccessResponse"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    "gradebook.getClassGradebook": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                class_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Class gradebook */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ClassGradebookList"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    "gradebook.exportClassGradebookCSV": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                class_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description CSV export */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "text/csv": string;
+                };
+            };
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];

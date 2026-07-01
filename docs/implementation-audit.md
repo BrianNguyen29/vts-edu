@@ -11,8 +11,8 @@ Repo-wide implementation tracking. Append-only; do not delete historical entries
 | S2 | Attempt runtime + question snapshots + grading (get/save/submit, ownership, request-time expiry, MCQ grading) | fixer | Implemented |
 | S2.5 | Teacher assessment list | fixer | Implemented |
 | S3 | Admin user/org management | fixer | Implemented |
-| S4 | Academics + full question bank + assessment builder | fixer/designer | Not started |
-| S5 | Resources, assignments, gradebook | fixer/designer | Not started |
+| S4 | Academics + full question bank + assessment builder | fixer/designer | Partial — academics CRUD/bulk, assessment builder core, question bank minimal implemented |
+| S5 | Resources, assignments, gradebook | fixer/designer | Partial — gradebook backend implemented; resources/assignments not started |
 
 ## S0 Backend foundation
 
@@ -571,6 +571,32 @@ Repo-wide implementation tracking. Append-only; do not delete historical entries
 - The original ~20–25 endpoint threshold was crossed, but the cost crossover point is higher now that generated types and typed fetch client are automated.
 - If Huma is revisited, migration will proceed by feature slice (auth → admin → attempts → assessments → academics), preserving `Repository` interfaces and avoiding big-bang rewrite.
 
+## 2026-07-01 — Builder polish backend
+
+### Done
+
+- [x] Added `POST /api/v1/assessments/{assessment_id}/sections/{section_id}/duplicate` to clone an active section and all its items within a DRAFT assessment.
+- [x] Added `POST /api/v1/assessment-sections/{section_id}/items/{item_id}/duplicate` to clone an active item within its section.
+- [x] Added `GET /api/v1/assessments/{assessment_id}/preview` returning a student-safe preview with prompts/choices/points/structure and no `answer_key`.
+- [x] Enforced DRAFT-only and teacher/admin manager authorization for duplicate endpoints and preview.
+- [x] Added `DuplicateSection`/`DuplicateItem` to `assessments.Repository` and sqlc-backed implementation using existing generated queries inside transactions.
+- [x] Added service/handler tests for duplicate success, duplicate not-draft rejection, and preview hiding `answer_key`.
+- [x] Updated OpenAPI skeleton with duplicate/preview paths and `AssessmentPreview`, `PreviewSection`, `PreviewItem` schemas; regenerated TypeScript types.
+- [x] Extended E2E smoke to exercise section duplicate, item duplicate, and preview assertions (prompt/choices present, `answer_key` absent).
+
+### Deferred / not in scope
+
+- Frontend UI for duplicate/preview buttons.
+- Autosave backend endpoint (existing PATCH assessment settings already supports autosave configuration).
+- Student history/gradebook/bulk operations.
+
+### Decisions / notes
+
+- Duplicate section title is `{source_title} (copy)` and the new section is placed at `max(section positions) + 10`.
+- Duplicated items keep the same points and question version as the source; the new item is placed at `max(item positions in section) + 10`.
+- Preview reuses `GetAssessmentItemsWithContent` and strips `answer_key` in the service layer rather than adding a separate query.
+- The archived-item position unique-constraint interaction in smoke was avoided by not reordering items after delete/re-add in the same section.
+
 ## Change log
 
 | Date | Task | Files changed | Verification |
@@ -579,4 +605,100 @@ Repo-wide implementation tracking. Append-only; do not delete historical entries
 | 2026-06-30 | Attempt generation backend | `apps/api/internal/features/attempts/*`, `apps/api/cmd/server/main.go`, `docs/backend/backend-technical-spec/openapi/openapi-skeleton.yaml`, `apps/web/src/shared/api/openapi-schema.d.ts`, `scripts/e2e_smoke_api.mjs`, `docs/implementation-audit.md` | `pnpm check` xanh; `pnpm e2e:smoke` xanh. |
 | 2026-06-30 | Academic admin backend gaps | `apps/api/internal/features/academics/*`, `apps/api/cmd/server/main.go`, `docs/backend/backend-technical-spec/openapi/openapi-skeleton.yaml`, `apps/web/src/shared/api/openapi-schema.d.ts`, `scripts/e2e_smoke_api.mjs`, `docs/implementation-audit.md` | `pnpm check` xanh; `pnpm e2e:smoke` xanh. |
 | 2026-06-30 | OpenAPI fetch client migration expansion | `apps/web/src/shared/api/openapi-client.ts`, `apps/web/src/shared/api/attempts.ts`, `apps/web/src/shared/api/admin.ts`, `apps/web/src/shared/api/assessments.ts`, `docs/backend/backend-technical-spec/adr/0010-huma-sqlc-staged-groundwork.md`, `docs/implementation-audit.md` | `pnpm web:typecheck`, `pnpm web:build`, `pnpm check`, `pnpm e2e:smoke` xanh; toàn bộ helpers frontend sử dụng `openapi-fetch`.
-| 2026-06-30 | Huma revisit docs | `docs/backend/backend-technical-spec/adr/0010-huma-sqlc-staged-groundwork.md`, `docs/backend/backend-technical-spec/14-implementation-roadmap.md`, `docs/implementation-audit.md` | `pnpm check` xanh; ADR ghi rõ 44 paths, Huma vẫn deferred, và các trigger tái xem xét.
+| 2026-06-30 | Huma revisit docs | `docs/backend/backend-technical-spec/adr/0010-huma-sqlc-staged-groundwork.md`, `docs/backend/backend-technical-spec/14-implementation-roadmap.md`, `docs/implementation-audit.md` | `pnpm check` xanh; ADR ghi rõ 44 paths, Huma vẫn deferred, và các trigger tái xem xét. |
+| 2026-07-01 | Builder polish backend | `apps/api/internal/features/assessments/*`, `apps/api/cmd/server/main.go`, `docs/backend/backend-technical-spec/openapi/openapi-skeleton.yaml`, `apps/web/src/shared/api/openapi-schema.d.ts`, `scripts/e2e_smoke_api.mjs`, `docs/implementation-audit.md` | `pnpm api:sqlc`, `pnpm api:types`, `pnpm check`, `pnpm e2e:smoke` xanh; duplicate section/item và preview hoạt động.
+
+## 2026-07-01 — Student experience backend
+
+### Done
+
+- [x] Extended `GET /api/v1/me/assessments` to return all assigned assessments with `availability` (`upcoming|open|closed`), `attempts_used`, schedule fields (`opens_at`, `closes_at`), and publication metadata.
+- [x] Added `GET /api/v1/me/attempts` returning the current student's attempt history with assessment title, status, timing, and score/grading summary.
+- [x] Added `GET /api/v1/attempts/{attempt_id}/result` returning a graded review view with prompts, choices, student answers, correct answers, and per-item `is_correct`.
+- [x] Enforced student-only authorization for the new endpoints and restricted result review to `SUBMITTED`/`EXPIRED` attempts.
+- [x] Updated `ListAssignedAssessments` sqlc query to drop the request-time window filter, require a published version, and include an `attempts_used` lateral count.
+- [x] Added `ListStudentAttempts` sqlc query and repository method.
+- [x] Updated OpenAPI skeleton with `/me/attempts`, `/attempts/{attempt_id}/result`, extended `AssignedAssessment`, and new `StudentAttempt`, `StudentAttemptList`, `AttemptResult`, `AttemptResultItem` schemas; regenerated TypeScript types.
+- [x] Added service/handler tests for availability classification, attempt history, result review, and result-not-submitted rejection.
+- [x] Extended E2E smoke to assert `availability`/`attempts_used` on assigned assessments, save/submit a generated attempt, review its result, and verify attempt history.
+
+### Deferred / not in scope
+
+- Frontend pages for student assessment list, attempt history, and result review.
+- Release scheduling controls beyond immediate post-submit review.
+- Gradebook or teacher result views.
+
+### Decisions / notes
+
+- Availability is computed in the service layer against `time.Now().UTC()` so the same query can return upcoming/open/closed assessments without N+1 filters.
+- `StartAttempt` now validates that the target assessment's computed availability is `open`, preventing starts on upcoming or closed assessments.
+- Result review reuses the existing `GetAttempt` + `GetAttemptItems` queries (which already include `answer_key` snapshots) and marks `is_correct` using the same MCQ matching logic as submit grading.
+
+## Change log
+
+| Date | Task | Files changed | Verification |
+|---|---|---|---|
+| 2026-06-30 | ADR/docs Huma + breach evaluation | `docs/backend/backend-technical-spec/adr/0010-huma-sqlc-staged-groundwork.md`, `docs/backend/backend-technical-spec/adr/0011-breached-password-provider.md`, `docs/backend/backend-technical-spec/14-implementation-roadmap.md`, `docs/implementation-audit.md` | Docs syntax/yaml reviewed; `pnpm check` xanh. |
+| 2026-06-30 | Attempt generation backend | `apps/api/internal/features/attempts/*`, `apps/api/cmd/server/main.go`, `docs/backend/backend-technical-spec/openapi/openapi-skeleton.yaml`, `apps/web/src/shared/api/openapi-schema.d.ts`, `scripts/e2e_smoke_api.mjs`, `docs/implementation-audit.md` | `pnpm check` xanh; `pnpm e2e:smoke` xanh. |
+| 2026-06-30 | Academic admin backend gaps | `apps/api/internal/features/academics/*`, `apps/api/cmd/server/main.go`, `docs/backend/backend-technical-spec/openapi/openapi-skeleton.yaml`, `apps/web/src/shared/api/openapi-schema.d.ts`, `scripts/e2e_smoke_api.mjs`, `docs/implementation-audit.md` | `pnpm check` xanh; `pnpm e2e:smoke` xanh. |
+| 2026-06-30 | OpenAPI fetch client migration expansion | `apps/web/src/shared/api/openapi-client.ts`, `apps/web/src/shared/api/attempts.ts`, `apps/web/src/shared/api/admin.ts`, `apps/web/src/shared/api/assessments.ts`, `docs/backend/backend-technical-spec/adr/0010-huma-sqlc-staged-groundwork.md`, `docs/implementation-audit.md` | `pnpm web:typecheck`, `pnpm web:build`, `pnpm check`, `pnpm e2e:smoke` xanh; toàn bộ helpers frontend sử dụng `openapi-fetch`. |
+| 2026-06-30 | Huma revisit docs | `docs/backend/backend-technical-spec/adr/0010-huma-sqlc-staged-groundwork.md`, `docs/backend/backend-technical-spec/14-implementation-roadmap.md`, `docs/implementation-audit.md` | `pnpm check` xanh; ADR ghi rõ 44 paths, Huma vẫn deferred, và các trigger tái xem xét. |
+| 2026-07-01 | Builder polish backend | `apps/api/internal/features/assessments/*`, `apps/api/cmd/server/main.go`, `docs/backend/backend-technical-spec/openapi/openapi-skeleton.yaml`, `apps/web/src/shared/api/openapi-schema.d.ts`, `scripts/e2e_smoke_api.mjs`, `docs/implementation-audit.md` | `pnpm api:sqlc`, `pnpm api:types`, `pnpm check`, `pnpm e2e:smoke` xanh; duplicate section/item và preview hoạt động. |
+| 2026-07-01 | Student experience backend | `apps/api/internal/features/attempts/*`, `apps/api/cmd/server/main.go`, `docs/backend/backend-technical-spec/openapi/openapi-skeleton.yaml`, `apps/web/src/shared/api/openapi-schema.d.ts`, `scripts/e2e_smoke_api.mjs`, `docs/implementation-audit.md` | `pnpm api:sqlc`, `pnpm api:types`, `pnpm check`, `pnpm e2e:smoke` xanh; student list/history/result endpoints hoạt động.
+| 2026-07-01 | Teacher gradebook backend + smoke fix | `apps/api/internal/features/gradebook/*`, `apps/api/internal/features/academics/*`, `apps/api/cmd/server/main.go`, `docs/backend/backend-technical-spec/openapi/openapi-skeleton.yaml`, `apps/web/src/shared/api/openapi-schema.d.ts`, `scripts/e2e_smoke_api.mjs`, `docs/implementation-audit.md` | `pnpm check` & `pnpm e2e:smoke` xanh; sửa handler `class_id` param, gradebook/results/export endpoints hoạt động.
+| 2026-07-01 | Admin bulk operations backend | `apps/api/internal/features/admin/*`, `apps/api/internal/features/academics/*`, `apps/api/cmd/server/main.go`, `docs/backend/backend-technical-spec/openapi/openapi-skeleton.yaml`, `apps/web/src/shared/api/openapi-schema.d.ts`, `scripts/e2e_smoke_api.mjs`, `docs/implementation-audit.md` | `pnpm api:sqlc`, `pnpm api:types`, `pnpm check`, `pnpm e2e:smoke` xanh; CSV import users, bulk enroll, bulk assign teachers với dry_run/confirm. |
+
+## 2026-07-01 — Production hardening backend
+
+### Done
+
+- [x] Added in-memory per-IP token-bucket rate limiter (`internal/platform/ratelimit`) with configurable RPS/burst/TTL/cleanup and exclusion for `/healthz`, `/readyz`, `/api/v1/auth/csrf-token`, and `OPTIONS`.
+- [x] Added `RATE_LIMIT_*` env config to `apps/api/internal/app/config.go` and `config/render.env.example`; disabled by default for local dev.
+- [x] Added structured request logger (`internal/platform/middleware/requestlogger.go`) emitting `request_id`, method, path, status, duration, and remote address.
+- [x] Wired `middleware.RequestID`, request logger, and rate-limit middleware into `cmd/server/main.go`.
+- [x] Propagated `request_id` to all JSON error envelopes across `admin`, `academics`, `auth`, `attempts`, and `assessments` features.
+- [x] Added `GET /api/v1/audit-logs/export` admin-only CSV export with the same filters as the list endpoint and actor name join.
+- [x] Added `scripts/render_smoke.sh` for post-deploy smoke against a Render origin and documented usage in `docs/deployment-cli.md`.
+- [x] Updated E2E smoke to exercise audit-log CSV export and made `API_BASE` overridable via env for Render reuse.
+- [x] Updated OpenAPI skeleton with `/audit-logs/export` and regenerated TypeScript types.
+
+### Deferred / not in scope
+
+- Redis/external rate-limit backend.
+- Request ID display in frontend error pages.
+- Full audit-log UI/dashboard.
+
+### Decisions / notes
+
+- Rate limiter is stateful in-process and sufficient for a single Render instance; scale-out would require a shared store and a separate ADR.
+- Request logging uses `chi` `WrapResponseWriter` to capture status without changing handler signatures.
+- CSV export streams via `encoding/csv` without loading all rows into memory at once.
+
+## 2026-07-01 — Huma revisit docs (post-polish/student/gradebook/bulk/hardening)
+
+### Done
+
+- [x] Revisited Huma decision after builder polish, student history/review, gradebook, bulk operations, and production hardening batches.
+- [x] Measured current OpenAPI skeleton size: **58 paths** in `openapi-skeleton.yaml` (up from 44), very close to the 60-path revisit threshold.
+- [x] Recorded that manual spec maintenance remains manageable because `openapi-typescript` + `openapi-fetch` plus the `generated-code-check` CI job cover frontend type-safety and catch generated-code drift.
+- [x] Confirmed Huma runtime migration remains **deferred** due to higher refactor risk/cost than manual maintenance, especially for auth cookie/CSRF/refresh-sensitive handlers and middleware ordering.
+- [x] Updated ADR-0010 with current path count and explicit next-review triggers.
+- [x] Updated `14-implementation-roadmap.md` Stage 2 to reflect 58 paths and the unchanged revisit triggers.
+
+### Deferred / not in scope
+
+- No Huma dependency installation.
+- No handler/router code changes.
+- No runtime OpenAPI generation.
+
+### Decisions / notes
+
+- The 60-path threshold is likely to be crossed soon, but the cost crossover depends on actual spec-drift incidents, not just path count.
+- If Huma is revisited, migration will start with lower-risk slices (academics/gradebook) and leave auth for last.
+
+## Change log
+
+| Date | Task | Files changed | Verification |
+|---|---|---|---|
+| 2026-07-01 | Production hardening backend | `apps/api/internal/platform/ratelimit/*`, `apps/api/internal/platform/middleware/requestlogger.go`, `apps/api/internal/app/config.go`, `apps/api/cmd/server/main.go`, `apps/api/internal/features/admin/*`, `apps/api/internal/features/{academics,auth,attempts,assessments}/{response.go,models.go,handler.go}`, `docs/backend/backend-technical-spec/openapi/openapi-skeleton.yaml`, `apps/web/src/shared/api/openapi-schema.d.ts`, `scripts/e2e_smoke_api.mjs`, `scripts/render_smoke.sh`, `docs/deployment-cli.md`, `config/render.env.example`, `docs/implementation-audit.md` | `pnpm api:sqlc`, `pnpm api:types`, `pnpm check`, `pnpm e2e:smoke` xanh; rate limit, request logging, request ID errors, audit CSV export, và Render smoke hoạt động. |
+| 2026-07-01 | Huma revisit docs | `docs/backend/backend-technical-spec/adr/0010-huma-sqlc-staged-groundwork.md`, `docs/backend/backend-technical-spec/14-implementation-roadmap.md`, `docs/implementation-audit.md` | Docs reviewed; `pnpm check` xanh; ADR ghi rõ 58 paths, Huma vẫn deferred, và các trigger tái xem xét. |

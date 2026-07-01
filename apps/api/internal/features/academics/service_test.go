@@ -12,6 +12,8 @@ import (
 type fakeRepository struct {
 	listClassesFunc           func(ctx context.Context, orgID, membershipID string, forTeacher bool) ([]ClassSection, error)
 	listEnrollmentsFunc       func(ctx context.Context, orgID, classID string) ([]Enrollment, error)
+	enrollStudentFunc         func(ctx context.Context, tx pgx.Tx, orgID, classID, membershipID string) (Enrollment, error)
+	addClassTeacherFunc       func(ctx context.Context, tx pgx.Tx, orgID, classID, membershipID, role string) (ClassTeacher, error)
 	getMembershipByUserIDFunc func(ctx context.Context, orgID, userID string) (MembershipInfo, error)
 	isClassTeacherFunc        func(ctx context.Context, orgID, classID, membershipID string) (bool, error)
 	classExistsFunc           func(ctx context.Context, orgID, classID string) (bool, error)
@@ -89,6 +91,9 @@ func (f *fakeRepository) ListClassTeachers(ctx context.Context, orgID, classID s
 }
 
 func (f *fakeRepository) AddClassTeacher(ctx context.Context, tx pgx.Tx, orgID, classID, membershipID, role string) (ClassTeacher, error) {
+	if f.addClassTeacherFunc != nil {
+		return f.addClassTeacherFunc(ctx, tx, orgID, classID, membershipID, role)
+	}
 	return ClassTeacher{}, nil
 }
 
@@ -104,6 +109,9 @@ func (f *fakeRepository) ListEnrollments(ctx context.Context, orgID, classID str
 }
 
 func (f *fakeRepository) EnrollStudent(ctx context.Context, tx pgx.Tx, orgID, classID, membershipID string) (Enrollment, error) {
+	if f.enrollStudentFunc != nil {
+		return f.enrollStudentFunc(ctx, tx, orgID, classID, membershipID)
+	}
 	return Enrollment{}, nil
 }
 
@@ -130,6 +138,10 @@ func (f *fakeRepository) ClassExists(ctx context.Context, orgID, classID string)
 		return f.classExistsFunc(ctx, orgID, classID)
 	}
 	return false, nil
+}
+
+func (f *fakeRepository) InsertAuditLog(ctx context.Context, tx pgx.Tx, p AuditLogParams) error {
+	return nil
 }
 
 type stubTxManager struct{}
@@ -292,5 +304,123 @@ func TestService_UpdateClass_InvalidInput(t *testing.T) {
 	_, err := svc.UpdateClass(context.Background(), "org-1", []string{"admin"}, "class-1", UpdateClassRequest{CourseID: "course-1", Name: ""})
 	if !errors.Is(err, ErrInvalidInput) {
 		t.Fatalf("expected ErrInvalidInput, got %v", err)
+	}
+}
+
+func TestService_BulkEnrollStudents_DryRun(t *testing.T) {
+	repo := &fakeRepository{
+		classExistsFunc: func(ctx context.Context, orgID, classID string) (bool, error) {
+			return true, nil
+		},
+		getMembershipByUserIDFunc: func(ctx context.Context, orgID, userID string) (MembershipInfo, error) {
+			if userID == "student-1" || userID == "student-2" {
+				return MembershipInfo{ID: "m-" + userID, UserID: userID, Roles: []string{"student"}}, nil
+			}
+			return MembershipInfo{ID: "m-" + userID, UserID: userID, Roles: []string{"teacher"}}, nil
+		},
+	}
+	svc := NewService(repo, stubTxManager{})
+	result, err := svc.BulkEnrollStudents(context.Background(), "org-1", []string{"admin"}, "class-1", BulkEnrollRequest{
+		UserIDs: []string{"student-1", "student-2", "teacher-1"},
+		DryRun:  true,
+	})
+	if err != nil {
+		t.Fatalf("BulkEnrollStudents failed: %v", err)
+	}
+	if result.Total != 3 {
+		t.Errorf("total = %d, want 3", result.Total)
+	}
+	if result.Enrolled != 0 {
+		t.Errorf("enrolled = %d, want 0 on dry run", result.Enrolled)
+	}
+	if result.Failed != 1 {
+		t.Errorf("failed = %d, want 1", result.Failed)
+	}
+}
+
+func TestService_BulkEnrollStudents_Confirm(t *testing.T) {
+	enrolled := 0
+	repo := &fakeRepository{
+		classExistsFunc: func(ctx context.Context, orgID, classID string) (bool, error) {
+			return true, nil
+		},
+		getMembershipByUserIDFunc: func(ctx context.Context, orgID, userID string) (MembershipInfo, error) {
+			return MembershipInfo{ID: "m-" + userID, UserID: userID, Roles: []string{"student"}}, nil
+		},
+		enrollStudentFunc: func(ctx context.Context, tx pgx.Tx, orgID, classID, membershipID string) (Enrollment, error) {
+			enrolled++
+			return Enrollment{ID: "e-1", UserID: "student-1"}, nil
+		},
+	}
+	svc := NewService(repo, stubTxManager{})
+	result, err := svc.BulkEnrollStudents(context.Background(), "org-1", []string{"admin"}, "class-1", BulkEnrollRequest{
+		UserIDs: []string{"student-1"},
+		DryRun:  false,
+	})
+	if err != nil {
+		t.Fatalf("BulkEnrollStudents failed: %v", err)
+	}
+	if result.Enrolled != 1 {
+		t.Errorf("enrolled = %d, want 1", result.Enrolled)
+	}
+}
+
+func TestService_BulkAssignTeachers_DryRun(t *testing.T) {
+	repo := &fakeRepository{
+		classExistsFunc: func(ctx context.Context, orgID, classID string) (bool, error) {
+			return true, nil
+		},
+		getMembershipByUserIDFunc: func(ctx context.Context, orgID, userID string) (MembershipInfo, error) {
+			if userID == "teacher-1" {
+				return MembershipInfo{ID: "m-" + userID, UserID: userID, Roles: []string{"teacher"}}, nil
+			}
+			return MembershipInfo{ID: "m-" + userID, UserID: userID, Roles: []string{"student"}}, nil
+		},
+	}
+	svc := NewService(repo, stubTxManager{})
+	result, err := svc.BulkAssignTeachers(context.Background(), "org-1", []string{"admin"}, "class-1", BulkAssignTeachersRequest{
+		Items: []BulkAssignTeacherItem{
+			{UserID: "teacher-1", Role: "teacher"},
+			{UserID: "student-1", Role: "assistant"},
+		},
+		DryRun: true,
+	})
+	if err != nil {
+		t.Fatalf("BulkAssignTeachers failed: %v", err)
+	}
+	if result.Total != 2 {
+		t.Errorf("total = %d, want 2", result.Total)
+	}
+	if result.Failed != 1 {
+		t.Errorf("failed = %d, want 1", result.Failed)
+	}
+}
+
+func TestService_BulkAssignTeachers_Confirm(t *testing.T) {
+	assigned := 0
+	repo := &fakeRepository{
+		classExistsFunc: func(ctx context.Context, orgID, classID string) (bool, error) {
+			return true, nil
+		},
+		getMembershipByUserIDFunc: func(ctx context.Context, orgID, userID string) (MembershipInfo, error) {
+			return MembershipInfo{ID: "m-" + userID, UserID: userID, Roles: []string{"teacher"}}, nil
+		},
+		addClassTeacherFunc: func(ctx context.Context, tx pgx.Tx, orgID, classID, membershipID, role string) (ClassTeacher, error) {
+			assigned++
+			return ClassTeacher{ID: "ct-1", UserID: "teacher-1", Role: role}, nil
+		},
+	}
+	svc := NewService(repo, stubTxManager{})
+	result, err := svc.BulkAssignTeachers(context.Background(), "org-1", []string{"admin"}, "class-1", BulkAssignTeachersRequest{
+		Items: []BulkAssignTeacherItem{
+			{UserID: "teacher-1"},
+		},
+		DryRun: false,
+	})
+	if err != nil {
+		t.Fatalf("BulkAssignTeachers failed: %v", err)
+	}
+	if result.Assigned != 1 {
+		t.Errorf("assigned = %d, want 1", result.Assigned)
 	}
 }

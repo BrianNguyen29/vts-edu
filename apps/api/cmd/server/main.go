@@ -13,8 +13,11 @@ import (
 	"github.com/BrianNguyen29/vts-edu/apps/api/internal/features/assessments"
 	"github.com/BrianNguyen29/vts-edu/apps/api/internal/features/attempts"
 	"github.com/BrianNguyen29/vts-edu/apps/api/internal/features/auth"
+	"github.com/BrianNguyen29/vts-edu/apps/api/internal/features/gradebook"
 	"github.com/BrianNguyen29/vts-edu/apps/api/internal/platform/csrf"
 	"github.com/BrianNguyen29/vts-edu/apps/api/internal/platform/db"
+	vtsmiddleware "github.com/BrianNguyen29/vts-edu/apps/api/internal/platform/middleware"
+	"github.com/BrianNguyen29/vts-edu/apps/api/internal/platform/ratelimit"
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 )
@@ -34,6 +37,9 @@ func main() {
 
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
 	slog.SetDefault(logger)
+
+	limiter := ratelimit.New(cfg.RateLimitEnabled, cfg.RateLimitRPS, cfg.RateLimitBurst, cfg.RateLimitTTL, cfg.RateLimitCleanup)
+	defer limiter.Stop()
 
 	ctx := context.Background()
 	var pool *db.Pool
@@ -60,6 +66,7 @@ func main() {
 	var assessmentsHandler *assessments.Handler
 	var adminHandler *admin.Handler
 	var academicsHandler *academics.Handler
+	var gradebookHandler *gradebook.Handler
 	if !cfg.DatabaseSkip {
 		authIssuer := auth.NewTokenIssuer(cfg.JWTSigningKey, "vts-edu-api", "vts-edu-web", cfg.AccessTokenTTL)
 		authRepo := auth.NewRepository(pool.Pool)
@@ -81,12 +88,17 @@ func main() {
 		academicsRepo := academics.NewRepository(pool.Pool)
 		academicsSvc := academics.NewService(academicsRepo, srv.txManager)
 		academicsHandler = academics.NewHandler(academicsSvc, authIssuer)
+
+		gradebookRepo := gradebook.NewRepository(pool.Pool)
+		gradebookSvc := gradebook.NewService(gradebookRepo, &gradebook.AcademicAccessAdapter{Repo: academicsRepo})
+		gradebookHandler = gradebook.NewHandler(gradebookSvc, authIssuer)
 	}
 
 	r := chi.NewRouter()
 	r.Use(middleware.RequestID)
 	r.Use(middleware.Recoverer)
-	r.Use(middleware.Logger)
+	r.Use(vtsmiddleware.RequestLogger)
+	r.Use(ratelimit.Middleware(limiter))
 	r.Use(corsMiddleware(cfg.FrontendOrigins))
 
 	r.Get("/healthz", srv.healthHandler)
@@ -116,16 +128,20 @@ func main() {
 		// Request-time expiration reconciliation happens inside submit/save handlers.
 		if attemptsHandler != nil {
 			r.Get("/me/assessments", attemptsHandler.ListAssignedAssessments)
+			r.Get("/me/attempts", attemptsHandler.ListAttemptHistory)
 			r.Post("/assessments/{assessment_id}/attempts", attemptsHandler.StartAttempt)
 
 			r.Get("/attempts/{attempt_id}", attemptsHandler.GetAttempt)
+			r.Get("/attempts/{attempt_id}/result", attemptsHandler.GetAttemptResult)
 			r.Put("/attempts/{attempt_id}/answers/{attempt_item_id}", attemptsHandler.SaveAnswer)
 			r.Post("/attempts/{attempt_id}/submit", attemptsHandler.SubmitAttempt)
 		} else {
 			r.Get("/me/assessments", srv.meAssessmentsPlaceholderHandler)
+			r.Get("/me/attempts", srv.meAttemptsPlaceholderHandler)
 			r.Post("/assessments/{assessment_id}/attempts", srv.startAttemptPlaceholderHandler)
 
 			r.Get("/attempts/{attempt_id}", srv.getAttemptPlaceholderHandler)
+			r.Get("/attempts/{attempt_id}/result", srv.getAttemptResultPlaceholderHandler)
 			r.Put("/attempts/{attempt_id}/answers/{attempt_item_id}", srv.saveAnswerPlaceholderHandler)
 			r.Post("/attempts/{attempt_id}/submit", srv.submitPlaceholderHandler)
 		}
@@ -137,12 +153,15 @@ func main() {
 			r.Post("/classes/{class_id}/assessments", assessmentsHandler.CreateAssessment)
 			r.Get("/classes/{class_id}/assessments", assessmentsHandler.ListAssessmentsByClass)
 			r.Get("/assessments/{id}", assessmentsHandler.GetAssessment)
+			r.Get("/assessments/{id}/preview", assessmentsHandler.PreviewAssessment)
 			r.Patch("/assessments/{id}", assessmentsHandler.UpdateAssessment)
 			r.Post("/assessments/{id}/sections", assessmentsHandler.CreateSection)
+			r.Post("/assessments/{id}/sections/{section_id}/duplicate", assessmentsHandler.DuplicateSection)
 			r.Patch("/assessment-sections/{section_id}", assessmentsHandler.UpdateSection)
 			r.Delete("/assessment-sections/{section_id}", assessmentsHandler.DeleteSection)
 			r.Post("/assessments/{id}/sections/reorder", assessmentsHandler.ReorderSections)
 			r.Post("/assessment-sections/{section_id}/items", assessmentsHandler.CreateItem)
+			r.Post("/assessment-sections/{section_id}/items/{item_id}/duplicate", assessmentsHandler.DuplicateItem)
 			r.Patch("/assessment-items/{item_id}", assessmentsHandler.UpdateItem)
 			r.Delete("/assessment-items/{item_id}", assessmentsHandler.DeleteItem)
 			r.Post("/assessment-sections/{section_id}/items/reorder", assessmentsHandler.ReorderItems)
@@ -151,6 +170,10 @@ func main() {
 			r.Post("/assessments/{id}/validate", assessmentsHandler.ValidateAssessment)
 			r.Post("/assessments/{id}/publish", assessmentsHandler.PublishAssessment)
 			r.Get("/assessments/{id}/publications", assessmentsHandler.ListPublications)
+
+			r.Get("/assessments/{id}/attempts", gradebookHandler.ListAssessmentAttempts)
+			r.Get("/assessments/{id}/results", gradebookHandler.GetAssessmentResults)
+			r.Get("/assessments/{id}/attempts/export", gradebookHandler.ExportAssessmentAttemptsCSV)
 
 			r.Get("/questions", assessmentsHandler.ListQuestions)
 		} else {
@@ -171,11 +194,13 @@ func main() {
 		if adminHandler != nil {
 			r.Get("/users", adminHandler.ListUsers)
 			r.Post("/users", adminHandler.CreateUser)
+			r.Post("/users/imports", adminHandler.ImportUsers)
 			r.Put("/users/{user_id}/roles", adminHandler.UpdateRoles)
 			r.Post("/users/{user_id}/reset-password", adminHandler.ResetPassword)
 			r.Get("/organizations/current", adminHandler.GetOrganization)
 			r.Patch("/organizations/current", adminHandler.UpdateOrganization)
 			r.Get("/audit-logs", adminHandler.ListAuditLogs)
+			r.Get("/audit-logs/export", adminHandler.ExportAuditLogs)
 		} else {
 			r.Get("/users", srv.adminPlaceholderHandler)
 			r.Post("/users", srv.adminPlaceholderHandler)
@@ -184,6 +209,7 @@ func main() {
 			r.Get("/organizations/current", srv.adminPlaceholderHandler)
 			r.Patch("/organizations/current", srv.adminPlaceholderHandler)
 			r.Get("/audit-logs", srv.adminPlaceholderHandler)
+			r.Get("/audit-logs/export", srv.adminPlaceholderHandler)
 		}
 
 		// Academics endpoints.
@@ -209,10 +235,15 @@ func main() {
 			r.Delete("/classes/{class_id}", academicsHandler.ArchiveClass)
 			r.Get("/classes/{class_id}/teachers", academicsHandler.ListClassTeachers)
 			r.Post("/classes/{class_id}/teachers", academicsHandler.AddClassTeacher)
+			r.Post("/classes/{class_id}/teachers/bulk", academicsHandler.BulkAssignTeachers)
 			r.Delete("/classes/{class_id}/teachers/{user_id}", academicsHandler.RemoveClassTeacher)
 			r.Get("/classes/{class_id}/enrollments", academicsHandler.ListEnrollments)
 			r.Post("/classes/{class_id}/enrollments", academicsHandler.EnrollStudent)
+			r.Post("/classes/{class_id}/enrollments/bulk", academicsHandler.BulkEnrollStudents)
 			r.Delete("/classes/{class_id}/enrollments/{user_id}", academicsHandler.UnenrollStudent)
+
+			r.Get("/classes/{class_id}/gradebook", gradebookHandler.GetClassGradebook)
+			r.Get("/classes/{class_id}/gradebook/export", gradebookHandler.ExportClassGradebookCSV)
 		} else {
 			r.Get("/academic-terms", srv.academicsPlaceholderHandler)
 			r.Post("/academic-terms", srv.academicsPlaceholderHandler)
@@ -344,6 +375,10 @@ func (s *server) meAssessmentsPlaceholderHandler(w http.ResponseWriter, r *http.
 	writeJSON(w, http.StatusServiceUnavailable, map[string]string{"message": "me assessments placeholder; database unavailable"})
 }
 
+func (s *server) meAttemptsPlaceholderHandler(w http.ResponseWriter, r *http.Request) {
+	writeJSON(w, http.StatusServiceUnavailable, map[string]string{"message": "me attempts placeholder; database unavailable"})
+}
+
 func (s *server) startAttemptPlaceholderHandler(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusServiceUnavailable, map[string]string{"message": "start attempt placeholder; database unavailable"})
 }
@@ -354,6 +389,14 @@ func (s *server) getAttemptPlaceholderHandler(w http.ResponseWriter, r *http.Req
 	writeJSON(w, http.StatusOK, map[string]any{
 		"attempt_id": attemptID,
 		"status":     "IN_PROGRESS",
+	})
+}
+
+func (s *server) getAttemptResultPlaceholderHandler(w http.ResponseWriter, r *http.Request) {
+	attemptID := chi.URLParam(r, "attempt_id")
+	writeJSON(w, http.StatusServiceUnavailable, map[string]any{
+		"attempt_id": attemptID,
+		"message":    "attempt result placeholder; database unavailable",
 	})
 }
 
