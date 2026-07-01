@@ -130,7 +130,7 @@ Exit criteria:
 
 **C. Feature work (chỉ bắt đầu sau khi A & B xong)**
 
-- Resources/files: signed download (URL hết hạn ngắn) + production storage adapter (Supabase/S3-compatible, thay thế `LocalProvider` trong môi trường prod); upload progress + resume; inline preview; class-scoped resources.
+- Resources/files: signed download (URL hết hạn ngắn) + inline preview + class-scoped resources + upload progress + resume. **Production storage adapter đã ship 2026-07-01** (`SupabaseProvider` với server-proxy download, `X-Content-Type-Options: nosniff`, content type allowlist). Local provider vẫn là default; Supabase bật qua `RESOURCE_STORAGE_TYPE=supabase` + 3 biến `SUPABASE_*`. Signed URL/CDN/multipart resumable vẫn deferred.
 - Non-MCQ question types và manual review workflow (rubric, file submission, teacher feedback).
 - Accessibility full audit (WCAG 2.1 AA, axe-core CI, focus management cho builder/exam/admin, keyboard regression suite).
 - Performance, cross-browser (Firefox/WebKit), notifications, installable PWA.

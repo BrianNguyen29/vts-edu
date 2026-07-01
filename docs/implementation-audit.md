@@ -1056,3 +1056,45 @@ Repo-wide implementation tracking. Append-only; do not delete historical entries
 - The three open issues each need their own bounded spike before runtime migration can be approved. The next recommended spike is on a streaming candidate (resources download) to test Huma's `http.Flusher`/SSE handling — the second risk axis the roadmap calls out.
 - Hand-maintained `openapi-skeleton.yaml` remains the source of truth for `openapi-typescript` on main until the runtime migration is approved.
 
+## 2026-07-01 — Production Supabase storage adapter (slice-9-storage-adapter)
+
+### Done
+
+- [x] Added `apps/api/internal/platform/storage/supabase.go` with `SupabaseProvider` implementing the existing `storage.Provider` (Store/Retrieve/Delete) over the Supabase Storage REST API. Endpoint shape: `POST/GET/DELETE /storage/v1/object/{bucket}/{key}` with `Authorization: Bearer <service role>` + `apikey` headers. The service role key is propagated only on the wire and is never included in error messages, logs, or HTTP responses.
+- [x] Added `internal/platform/storage/content_type.go` with `SanitizeContentType` and `AllowedDownloadContentTypes` (text/*, common image, PDF, Office documents, json/zip/octet-stream). Anything outside the allowlist falls back to `application/octet-stream`. Service-layer upload and handler-layer download both run the sanitizer as defence-in-depth.
+- [x] Hardened the resources download response: `X-Content-Type-Options: nosniff` is now set on every download and the persisted content type is run through `SanitizeContentType` before being emitted.
+- [x] Updated `internal/app/config.go` to fail fast when `RESOURCE_STORAGE_TYPE=supabase` and any of `SUPABASE_URL` / `SUPABASE_SERVICE_ROLE_KEY` / `SUPABASE_STORAGE_BUCKET` is missing. The error message names which var is missing but never the value.
+- [x] Wired `cmd/server/main.go::buildResourceStorageProvider` to switch on `RESOURCE_STORAGE_TYPE` (`local` keeps the existing behaviour; `supabase` constructs a `SupabaseProvider`; unknown values are rejected). The local default is preserved for backwards compatibility.
+- [x] Tests:
+  - `internal/platform/storage/supabase_test.go` (9 cases): config validation rejects missing/bad inputs, `Store` uses `Authorization: Bearer <key>` + `apikey` + correct path/body, `Store` masks upstream error bodies (no key leak), `Retrieve` returns body, `Retrieve` 404 maps to `ErrObjectNotFound`, `Delete` is idempotent on 404, unsafe keys are rejected, 5xx retried up to 3 times, size mismatch detected, `context` cancellation honoured, `SanitizeContentType` falls back correctly across case/parameter/empty/malformed inputs.
+  - `internal/features/resources/handler_test.go` (3 new cases): `X-Content-Type-Options: nosniff` set on success, `Content-Type` falls back to `application/octet-stream` for disallowed types, missing auth returns 401.
+  - `internal/features/resources/service_test.go` (+1 case): uploaded attacker-controlled content type is sanitized at the service boundary.
+  - Total: 13 new cases, all passing alongside the 21 pre-existing storage tests and 5 pre-existing resources tests.
+- [x] Updated `config/render.env.example` to document `RESOURCE_STORAGE_TYPE`, `RESOURCE_LOCAL_PATH`, `MAX_UPLOAD_SIZE` and the private-bucket / server-proxy requirement.
+
+### Security notes
+
+- The `SupabaseProvider` is the only place that touches the service role key. It is never logged, never put in an error message, and never returned in a response. Unit tests assert the absence of the key in error strings for non-2xx upload paths and for context-cancellation errors.
+- Endpoint construction is isolated to `SupabaseProvider.objectPath`, and the same `isSafeKey` helper from the local provider is reused so the hex-key invariant is enforced uniformly. No signed-URL generation is exposed.
+- The bucket is expected to be private; downloads are proxied through the API (no redirect to a signed URL). The `Retrieve` response body is the only thing the client ever sees.
+- 5xx responses are retried (idempotent for `GET`/`DELETE`; `POST` is only safe because the key is generated locally and the upstream object endpoint returns 409 on conflict, which is a permanent error).
+- `Retrieve` returns a `*http.Response.Body`; the caller (`Resources` service) closes it. `Store` drains the response body to enable connection reuse.
+- `RESOURCE_LOCAL_PATH` is unchanged for the `local` backend. The two backends share `isSafeKey` and `generateKey` so storage keys remain hex-only and server-generated across deployments.
+
+### Verification
+
+- `go build ./...` clean.
+- `go test ./...` clean (no regressions in auth, attempts, assessments, admin, gradebook, csrf, ratelimit, scheduler, storage, resources).
+- `go vet ./...` clean.
+- `gofmt -l .` clean.
+- `pnpm check` clean (web typecheck/build + Go test/vet/gofmt).
+- `pnpm e2e:smoke` (existing `local` path): resources create + upload + publish + student list + download pass without changes.
+- `pnpm e2e:browser` is not re-run for this slice because the changes are backend-only and the existing 20 specs already cover the resources download UX.
+
+### Decisions / notes
+
+- Kept the local provider as the default (`RESOURCE_STORAGE_TYPE=local` is the default in `LoadConfig` and in `render.env.example`). The Supabase adapter is opt-in, so an environment that never sets `RESOURCE_STORAGE_TYPE=supabase` will not change behaviour.
+- Did **not** introduce signed URLs, CDN, multipart upload to Supabase (with `tus`/resumable), or public-bucket assumptions. Those are explicitly listed in ADR-0009 deferred and would each warrant their own slice if revisited.
+- Did **not** create the Supabase bucket via the API. The bucket must already exist (private) and is the operator's responsibility; the API only requires that the service role key can read/write the configured bucket.
+- `MaxRetries` on the Supabase provider defaults to 2 (3 attempts total). 5xx is the only retryable class; the response body of a 5xx is drained before the retry so the connection can be reused. Non-5xx errors (401/403/404/409/...) bubble up immediately.
+

@@ -256,3 +256,31 @@ func TestService_DownloadFile_RequiresPublishedForStudent(t *testing.T) {
 		t.Fatalf("unexpected size: %d", file.SizeBytes)
 	}
 }
+
+func TestService_UploadFile_SanitizesDisallowedContentType(t *testing.T) {
+	repo := newFakeRepo()
+	store := &fakeStorage{storeKey: "k"}
+	svc := NewService(repo, store, 1024)
+	teacher := newActor("teacher")
+	created, err := svc.CreateResource(context.Background(), teacher, CreateResourceRequest{Title: "Doc", ContextType: ContextTypeOrganization, ContextID: "org-1"})
+	if err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	// Attacker tries to set an exotic content type. Service should
+	// sanitize to application/octet-stream before persisting.
+	uploaded, err := svc.UploadFile(context.Background(), teacher, created.ID, "doc.bin", "application/x-evil", bytes.NewReader([]byte("x")), 1)
+	if err != nil {
+		t.Fatalf("upload: %v", err)
+	}
+	if uploaded.ContentType != "application/octet-stream" {
+		t.Fatalf("expected sanitized content type, got %q", uploaded.ContentType)
+	}
+	// And on the way out, file.ContentType is also sanitized.
+	_, file, err := svc.DownloadFile(context.Background(), teacher, created.ID)
+	if err != nil {
+		t.Fatalf("download: %v", err)
+	}
+	if file.ContentType != "application/octet-stream" {
+		t.Fatalf("expected sanitized content type on read-back, got %q", file.ContentType)
+	}
+}

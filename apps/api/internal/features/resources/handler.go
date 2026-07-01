@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/BrianNguyen29/vts-edu/apps/api/internal/features/auth"
+	"github.com/BrianNguyen29/vts-edu/apps/api/internal/platform/storage"
 	"github.com/go-chi/chi/v5"
 )
 
@@ -184,9 +185,11 @@ func (h *Handler) DownloadFile(w http.ResponseWriter, r *http.Request) {
 	}
 	defer reader.Close()
 
-	w.Header().Set("Content-Type", file.ContentType)
+	contentType := storage.SanitizeContentType(file.ContentType)
+	w.Header().Set("Content-Type", contentType)
 	w.Header().Set("Content-Length", strconv.FormatInt(file.SizeBytes, 10))
 	w.Header().Set("Content-Disposition", "attachment; filename=\""+safeFilename(file.OriginalName)+"\"")
+	w.Header().Set("X-Content-Type-Options", "nosniff")
 	w.WriteHeader(http.StatusOK)
 	_, _ = io.Copy(w, reader)
 }

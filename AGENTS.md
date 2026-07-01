@@ -111,6 +111,7 @@ docker build -t vts-edu-api -f apps/api/Dockerfile apps/api
 - Attempt history cursor pagination: backend keyset pagination for `GET /me/attempts`, frontend infinite-query/load-more UI.
 - Exam offline resilience MVP: IndexedDB per-attempt/item draft storage, local-save-before-API, pending draft sync on load/online, cleanup after submit, offline banner/status.
 - Resources MVP: org-scoped file materials with `LocalProvider` storage seam (server-generated hex keys, path-traversal safe), tenant + role checks, multipart upload (max 10 MiB), publish/archive, bearer-auth download with sanitized `Content-Disposition`. OpenAPI skeleton and `openapi-schema.d.ts` regenerated. Minimal teacher/admin upload UI and student list/download UI at `/app/resources`.
+- Production storage adapter: `SupabaseProvider` in `apps/api/internal/platform/storage/supabase.go` (POST/GET/DELETE `/storage/v1/object/{bucket}/{key}` with service-role auth). Opt-in via `RESOURCE_STORAGE_TYPE=supabase`; requires `SUPABASE_URL` + `SUPABASE_SERVICE_ROLE_KEY` + `SUPABASE_STORAGE_BUCKET` (fail-fast on missing). Service role key never in errors/logs/responses. Bucket must be private; download is server-proxy only (`X-Content-Type-Options: nosniff` + content type allowlist via `storage.SanitizeContentType`). Local provider remains the default.
 
 > **Note on Koyeb artifacts:** files such as `apps/api/koyeb.yaml` are legacy. Render is the current backend deployment target.
 

@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"os"
@@ -483,8 +484,17 @@ func buildResourceStorageProvider(cfg *app.Config) (storage.Provider, error) {
 	switch cfg.ResourceStorageType {
 	case "local", "":
 		return storage.NewLocalProvider(cfg.ResourceLocalPath)
+	case "supabase":
+		// Fail fast: NewSupabaseProvider validates the required env vars
+		// and returns a sanitized error. The service role key is never
+		// logged; the error message only mentions which field is missing.
+		return storage.NewSupabaseProvider(storage.SupabaseConfig{
+			BaseURL: cfg.SupabaseURL,
+			Bucket:  cfg.SupabaseStorageBucket,
+			APIKey:  cfg.SupabaseServiceRoleKey,
+		})
 	default:
-		return storage.NewLocalProvider(cfg.ResourceLocalPath)
+		return nil, fmt.Errorf("unknown RESOURCE_STORAGE_TYPE %q (expected local or supabase)", cfg.ResourceStorageType)
 	}
 }
 

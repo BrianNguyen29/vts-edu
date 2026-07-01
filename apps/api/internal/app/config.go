@@ -88,6 +88,20 @@ func LoadConfig() (*Config, error) {
 	if cfg.RefreshTokenKey == "" {
 		missing = append(missing, "REFRESH_TOKEN_KEY")
 	}
+	if cfg.ResourceStorageType == "supabase" {
+		// Fail fast: the service role key is server-side only and must
+		// be present when RESOURCE_STORAGE_TYPE=supabase. The check
+		// never logs the value.
+		if cfg.SupabaseURL == "" {
+			missing = append(missing, "SUPABASE_URL (required when RESOURCE_STORAGE_TYPE=supabase)")
+		}
+		if cfg.SupabaseServiceRoleKey == "" {
+			missing = append(missing, "SUPABASE_SERVICE_ROLE_KEY (required when RESOURCE_STORAGE_TYPE=supabase; server-side only)")
+		}
+		if cfg.SupabaseStorageBucket == "" {
+			missing = append(missing, "SUPABASE_STORAGE_BUCKET (required when RESOURCE_STORAGE_TYPE=supabase)")
+		}
+	}
 	if len(missing) > 0 {
 		return nil, fmt.Errorf("missing required environment variables: %s", strings.Join(missing, ", "))
 	}

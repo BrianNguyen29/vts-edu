@@ -84,6 +84,11 @@ func (s *service) UploadFile(ctx context.Context, actor auth.Actor, resourceID, 
 	if fileName == "" {
 		return ResourceFile{}, ErrInvalidInput
 	}
+	// Sanitize the uploaded content type against the allowlist. The
+	// download path re-validates on the way out, so anything outside
+	// the list is replaced with application/octet-stream and stays
+	// safe across all storage backends.
+	contentType = storage.SanitizeContentType(contentType)
 
 	resource, err := s.repo.GetResource(ctx, actor.OrgID, resourceID)
 	if err != nil {
