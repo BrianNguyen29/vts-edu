@@ -60,7 +60,7 @@ Nếu kích hoạt, migration sẽ diễn ra theo feature slice (auth → admin 
 
 Sau khi hoàn thành các batch gần nhất (builder polish: duplicate section/item + preview; student experience: `/me/attempts`, `/attempts/{id}/result`; gradebook: results/CSV export; bulk operations: CSV import users, bulk enroll/bulk assign teachers; production hardening: rate limit, request ID + structured logging, audit CSV export, Render smoke), nhóm đã đo lại chi phí duy trì skeleton thủ công:
 
-- **Kích thước spec hiện tại**: OpenAPI skeleton đang định nghĩa **58 paths** (tính theo `paths:` trong `openapi-skeleton.yaml`), tăng từ 44 paths ở lần revisit trước và rất gần ngưỡng 60.
+- **Kích thước spec hiện tại (tại batch này)**: OpenAPI skeleton đang định nghĩa **58 paths** (tính theo `paths:` trong `openapi-skeleton.yaml`), tăng từ 44 paths ở lần revisit trước và rất gần ngưỡng 60. Con số 58 này phản ánh trạng thái tại lần đo sau batch builder polish / student / gradebook / bulk / hardening; kích thước hiện tại (sau resources MVP + query state + accessibility polish) đã tăng lên **63 paths** và đã vượt ngưỡng 60 — xem mục "Huma feasibility spike" bên dưới.
 - **Tiến bộ giảm chi phí manual maintenance**:
   - `openapi-typescript` + `openapi-fetch` đã cover toàn bộ frontend helpers; type-safety ở frontend không còn phụ thuộc Huma.
   - CI `generated-code-check` (`pnpm api:types`, `pnpm api:sqlc`, `git diff --exit-code`) bắt drift giữa spec và generated code.
@@ -69,14 +69,32 @@ Sau khi hoàn thành các batch gần nhất (builder polish: duplicate section/
 
 ### Decision (updated)
 
-- **Huma runtime migration vẫn tạm hoãn.** OpenAPI skeleton được duy trì thủ công; `openapi-typescript` + `openapi-fetch` vẫn đáp ứng đủ nhu cầu type-safety ở frontend.
+- **Huma runtime migration vẫn tạm hoãn** cho đến khi có kết quả của Huma feasibility spike (xem "Huma feasibility spike" bên dưới). OpenAPI skeleton được duy trì thủ công; `openapi-typescript` + `openapi-fetch` vẫn đáp ứng đủ nhu cầu type-safety ở frontend.
 - **Ngưỡng tái xem xét tiếp theo** (điều chỉnh theo tốc độ tăng paths):
   1. Spec drift gây lỗi production hoặc lỗi type generation ≥ 2 lần trong một tháng.
-  2. Số paths vượt quá **60** (hiện tại **58**), tức là manual maintenance sắp bùng nổ.
+  2. Số paths vượt quá **60** — **đã đạt ngưỡng**: skeleton hiện định nghĩa **63 paths** (tính theo `paths:` trong `openapi-skeleton.yaml`, sau batch resources MVP + query state). Huma spike được lên lịch để xử lý.
   3. Cần tự động kiểm tra request/response schema ở runtime cho API contract phức tạp hơn (ví dụ: public/external API consumer).
   4. Một sprint dành riêng cho refactor được phê duyệt, và có thể viết test coverage ≥ 80% cho các handlers trước khi chuyển đổi.
 
 Nếu kích hoạt, migration vẫn theo feature slice, bắt đầu từ handler ít nhạy cảm nhất (academics hoặc gradebook) và để auth cuối cùng.
+
+### Huma feasibility spike (post-resources-MVP, post-accessibility-baseline)
+
+Sau khi thêm resources MVP (5 paths mới) và hoàn tất query state + accessibility polish, skeleton đã vượt ngưỡng 60 paths ban đầu. Đây là lần tái đánh giá tiếp theo theo trigger ở trên.
+
+**Quyết định (updated 2026-07-01)**: thực hiện một **bounded Huma feasibility spike** trước khi quyết định runtime migration toàn cục. **Không migrate runtime ngay**. Phạm vi spike:
+
+- Triển khai Huma trên **đúng một feature slice ít nhạy cảm** (đề xuất: `academics` hoặc `gradebook`) để đo DX, runtime validation, và regression risk.
+- **Ngoài phạm vi**: `auth`, `attempts`, các endpoint liên quan CSRF double-submit / refresh rotation / cookie. Đây là những điểm nhạy cảm nhất nên để cuối cùng hoặc loại khỏi migration.
+- Giữ nguyên `Repository` interfaces và response envelope `{data, error}`; chỉ thay lớp route registration và validation.
+- Thêm CI `generated-code-check` cho slice Huma để so sánh với `openapi-skeleton.yaml` thủ công.
+
+**Tiêu chí go/no-go cho migration toàn cục**:
+
+- *Go* nếu: (a) spike không phát sinh regression với test coverage hiện tại, (b) thời gian thêm endpoint mới giảm ≥ 30% so với skeleton thủ công, (c) runtime validation bắt được ≥ 1 lỗi spec/code thật trong spike, (d) handler test coverage đạt ≥ 80%.
+- *No-go* nếu: (a) regression xuất hiện ở auth/CSRF/middleware ordering, (b) DX tệ hơn hoặc chỉ tương đương, (c) team chưa thể cam kết test coverage ≥ 80%.
+
+Trong cả hai trường hợp, **OpenAPI skeleton thủ công tiếp tục là source of truth cho `openapi-typescript`** cho đến khi có quyết định cuối cùng, và Huma runtime (nếu go) sẽ sinh ra cùng spec từ Go operations.
 
 ## Consequences
 

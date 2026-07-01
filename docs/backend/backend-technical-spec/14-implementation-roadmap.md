@@ -102,7 +102,7 @@ Exit criteria:
 
 - **Current**: Hand-maintained OpenAPI skeleton covers the current API surface in `docs/backend/backend-technical-spec/openapi/openapi-skeleton.yaml`. TypeScript types are generated from it into `apps/web/src/shared/api/openapi-schema.d.ts` using `openapi-typescript` (type-only; no runtime client).
 - **Stage 1 — sqlc migration (completed)**: `assessments`, `admin`, `auth`, and `attempts` repositories migrated to sqlc generated queries while keeping `Repository` interfaces stable. No runtime handler/service rewrite.
-- **Stage 2 — Huma migration (deferred)**: Add Huma operation definitions behind existing handlers or incrementally replace handler wiring while preserving response envelopes. OpenAPI generation becomes automatic. As of the latest batch (builder polish / student / gradebook / bulk / hardening), the manual skeleton covers **58 paths** (up from ~44), very close to the 60-path threshold. `openapi-typescript` + `openapi-fetch` plus the `generated-code-check` CI job continue to keep manual maintenance manageable. Huma remains deferred because migration risk/cost still outweighs manual maintenance, especially for auth cookie/CSRF/refresh-sensitive handlers and middleware ordering. Revisit trigger: spec drift incidents ≥ 2/month, paths ≥ 60, need runtime contract validation, or a dedicated refactor sprint with ≥ 80% handler test coverage.
+- **Stage 2 — Huma migration (deferred)**: Add Huma operation definitions behind existing handlers or incrementally replace handler wiring while preserving response envelopes. OpenAPI generation becomes automatic. As of the latest batch (resources MVP + query state + accessibility polish), the manual skeleton covers **63 paths** (up from 58, crossing the original 60-path threshold). `openapi-typescript` + `openapi-fetch` plus the `generated-code-check` CI job continue to keep manual maintenance manageable. Huma remains deferred because migration risk/cost still outweighs manual maintenance, especially for auth cookie/CSRF/refresh-sensitive handlers and middleware ordering. A bounded Huma feasibility spike (no runtime migration) is queued in the next-backlog section to revisit the decision before the spec drifts further. Revisit trigger: spec drift incidents ≥ 2/month, paths ≥ 60 (already reached — see backlog), need runtime contract validation, or a dedicated refactor sprint with ≥ 80% handler test coverage.
 - **Stage 3 — Client generation**: Generate frontend API client/types from the Huma/OpenAPI contract once it stabilizes.
 - **Breached-password provider (deferred)**: HIBP/external corpus integration deferred pending a privacy/egress ADR; password history + lockout + blocklist implemented as interim controls.
 
@@ -116,10 +116,26 @@ Exit criteria:
 
 ## 2.7 Current next backlog (not started)
 
-- Resources/files signed download + processing job (multipart upload + local storage seam are in place).
-- Non-MCQ question types and manual review workflow.
-- Accessibility audit.
-- Generated OpenAPI client (Huma deferred; hand-maintained skeleton still sufficient).
+> **Thứ tự bắt buộc**: (1) hoàn tất cập nhật docs/ADRs còn stale, (2) chạy Huma feasibility spike và quyết định go/no-go, (3) mới triển khai feature mới. Mục tiêu là khóa "docs-completion before new feature work".
+
+**A. Docs & ADR completion (ưu tiên cao nhất, chạy trước feature mới)**
+
+- Cập nhật các roadmap/backend/frontend/ADR còn stale (path count, resources MVP, accessibility baseline, error pages `request_id`).
+- Viết ADR mới hoặc cập nhật ADR-0010 với quyết định Huma sau spike.
+
+**B. Huma feasibility spike (sau khi docs xong, trước feature mới)**
+
+- Bounded spike: triển khai Huma trên **một feature ít nhạy cảm** (academics hoặc gradebook), giữ auth/CSRF/refresh ngoài phạm vi, so sánh DX và regression risk với skeleton thủ công. Không migrate runtime toàn cục.
+- Quyết định: go (migrate theo slice) hoặc no-go (tiếp tục skeleton thủ công + tăng cường `generated-code-check`).
+
+**C. Feature work (chỉ bắt đầu sau khi A & B xong)**
+
+- Resources/files: signed download (URL hết hạn ngắn) + production storage adapter (Supabase/S3-compatible, thay thế `LocalProvider` trong môi trường prod); upload progress + resume; inline preview; class-scoped resources.
+- Non-MCQ question types và manual review workflow (rubric, file submission, teacher feedback).
+- Accessibility full audit (WCAG 2.1 AA, axe-core CI, focus management cho builder/exam/admin, keyboard regression suite).
+- Performance, cross-browser (Firefox/WebKit), notifications, installable PWA.
+- Generated OpenAPI client vẫn là `openapi-typescript` + `openapi-fetch` cho đến khi có quyết định Huma ở mục B.
+- `apiClient` legacy cleanup sau khi tất cả helper đã migrate sang `openapi-fetch`.
 
 ## 3. Effort estimate
 

@@ -54,7 +54,7 @@ Exit:
 
 - Token không persistent.
 - 401 refresh single-flight test.
-- 403/404 states — basic UI exists; `request_id` display pending.
+- 403/404 states ✅ (UI surfaces `request_id` qua `ErrorState` + `formatFriendlyError`).
 - Mobile shell usable.
 - Forced password change redirect works.
 
@@ -155,10 +155,10 @@ Exit:
 ## 10. Phase 8 — Hardening & pilot (Tuần 26–28) 🟡 Partial
 
 - Cross-browser E2E — Chromium only; Firefox/WebKit deferred.
-- A11y audit — pending.
+- A11y audit — baseline implemented (focus-visible, ARIA labels, error/request_id on states, keyboard accessible critical flows); full manual WCAG 2.1 AA audit pending.
 - Bundle/performance audit — pending.
 - Error telemetry — pending.
-- Error pages with `request_id` — pending.
+- Error pages with `request_id` ✅ (toàn bộ `ErrorState` + error pages show `request_id`; copy-to-clipboard included).
 - PWA manifest; service worker only if update policy tested — pending.
 - Pilot bug fixes — pending.
 
@@ -176,10 +176,25 @@ Exit:
 
 ## 12. Current next backlog (pre-pilot)
 
-- Generated OpenAPI client/types from skeleton.
-- Resources/files UI MVP shipped at `/app/resources` (org-scoped create/list/publish/archive/upload/download). Class scoping, signed URLs, progress bar, and inline preview still pending.
-- Accessibility audit (focus management, ARIA, reduced motion, responsive smoke).
-- Huma/River remain backend-deferred; frontend stays on hand-maintained skeleton + `openapi-fetch`.
+> **Thứ tự bắt buộc**: (1) hoàn tất cập nhật docs/ADRs còn stale, (2) backend chạy Huma feasibility spike và quyết định go/no-go, (3) mới triển khai feature frontend mới. Mục tiêu là khóa "docs-completion before new feature work".
+
+**A. Docs & ADR completion (ưu tiên cao nhất)**
+
+- Cập nhật roadmap/ADR còn stale (`request_id` display, accessibility baseline, resources MVP UI, path count).
+- Theo dõi quyết định Huma từ backend spike trước khi cam kết client generation tự động.
+
+**B. Phụ thuộc backend (Huma feasibility spike)**
+
+- Huma runtime migration hiện vẫn tạm hoãn. Frontend tiếp tục dùng `openapi-typescript` + `openapi-fetch` từ skeleton thủ công cho đến khi có quyết định go/no-go.
+
+**C. Feature work (chỉ bắt đầu sau khi A & B xong)**
+
+- Resources/files UI: progress bar, resumable upload, inline preview (PDF/image), class-scope, multi-file upload.
+- Question bank: editor TipTap/KaTeX, non-MCQ types, version history.
+- Manual grading UI: rubric editor, teacher feedback, file submission review.
+- Performance, cross-browser (Firefox/WebKit), notifications, installable PWA, dark mode.
+- Full WCAG 2.1 AA audit, axe-core CI gate, focus management regression suite cho builder/exam/admin.
+- `apiClient` legacy cleanup sau khi tất cả helper đã migrate sang `openapi-fetch`.
 
 ## 12. Milestone risk gates
 

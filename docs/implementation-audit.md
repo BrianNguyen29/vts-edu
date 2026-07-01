@@ -697,6 +697,29 @@ Repo-wide implementation tracking. Append-only; do not delete historical entries
 - The 60-path threshold is likely to be crossed soon, but the cost crossover depends on actual spec-drift incidents, not just path count.
 - If Huma is revisited, migration will start with lower-risk slices (academics/gradebook) and leave auth for last.
 
+## 2026-07-01 — Docs backlog refresh (post-resources-MVP)
+
+### Done
+
+- [x] Re-measured OpenAPI skeleton size: **63 paths** (đã vượt ngưỡng 60 lần revisit trước). Resources MVP đóng góp 5 paths mới.
+- [x] Cập nhật `14-implementation-roadmap.md` Stage 2: ghi rõ 63 paths, cross 60-path threshold, và lên lịch Huma feasibility spike.
+- [x] Cập nhật ADR-0010: thêm mục "Huma feasibility spike" với phạm vi bounded (một feature slice ít nhạy cảm, ngoài auth/CSRF/refresh) và tiêu chí go/no-go rõ ràng. Huma runtime migration vẫn tạm hoãn cho đến khi spike hoàn tất.
+- [x] Cập nhật Phase 1 exit criteria (`17-implementation-roadmap.md`): đánh dấu `request_id` display đã implemented (qua `ErrorState` + `formatFriendlyError`).
+- [x] Cập nhật Phase 8: tách accessibility baseline (✅) khỏi full manual WCAG audit (pending); error pages `request_id` chuyển sang ✅.
+- [x] Cập nhật cả hai roadmap section "Current next backlog": thêm **A. Docs & ADR completion**, **B. Huma feasibility spike (phụ thuộc backend)**, **C. Feature work (chỉ bắt đầu sau A & B)** để khóa "docs-completion before new feature work".
+- [x] Bổ sung ADR-0010 với tiêu chí go/no-go cho migration toàn cục (DX, regression risk, runtime validation, handler coverage ≥ 80%).
+
+### Deferred / not in scope
+
+- Không thay đổi code/runtime.
+- Không cài Huma, không viết Huma operations.
+- Không tái cấu trúc skeleton OpenAPI tự động.
+
+### Decisions / notes
+
+- 60-path threshold đã chính thức bị vượt; Huma revisit là việc cần xảy ra trong chu kỳ kế tiếp, nhưng bounded trước khi migrate toàn cục.
+- Feature work (resources UX nâng cao, non-MCQ, manual grading, full a11y, perf, PWA, ...) bị khoá lại sau khi A & B xong để tránh "docs lạc hậu → maintenance cost tăng".
+
 ## 2026-07-01 — Playwright browser E2E setup + UI typo fix
 
 ### Done
@@ -873,6 +896,7 @@ Repo-wide implementation tracking. Append-only; do not delete historical entries
 | 2026-07-01 | Docs & roadmap cleanup | `README.md`, `docs/backend/backend-technical-spec/14-implementation-roadmap.md`, `docs/frontend/frontend-technical-spec/17-implementation-roadmap.md`, `AGENTS.md`, `docs/implementation-audit.md` | Docs reviewed; no code changes; stale pending/deferred items cleaned. |
 | 2026-07-01 | Frontend error pages with request_id | `apps/web/src/shared/api/api-error.ts`, `apps/web/src/shared/api/attempts.ts`, `apps/web/src/shared/api/gradebook.ts`, `apps/web/src/shared/components/error-state.tsx`, `apps/web/src/pages/error/error-page.tsx`, `apps/web/src/pages/not-found/not-found-page.tsx`, `apps/web/src/app/router.tsx`, `apps/web/src/index.css`, `apps/web/src/pages/dashboard/dashboard-page.tsx`, `apps/web/src/pages/dashboard/teacher-dashboard-page.tsx`, `apps/web/src/pages/attempt-review/attempt-review-page.tsx`, `apps/web/src/pages/gradebook/gradebook-page.tsx`, `apps/web/e2e/error-pages.spec.ts`, `apps/api/cmd/server/main.go`, `README.md`, `docs/frontend/frontend-technical-spec/17-implementation-roadmap.md`, `docs/backend/backend-technical-spec/14-implementation-roadmap.md`, `docs/implementation-audit.md` | `pnpm check` xanh; `pnpm e2e:browser` xanh với 10/10 tests passed (3 error-pages tests mới + 7 tests hiện có). |
 | 2026-07-01 | Frontend unit/component tests (Vitest) | `apps/web/package.json`, `package.json`, `apps/web/vitest.config.ts`, `apps/web/src/test/setup.ts`, `apps/web/src/shared/api/join-api-url.test.ts`, `apps/web/src/shared/api/api-error.test.ts`, `apps/web/src/shared/lib/password-policy.test.ts`, `apps/web/src/shared/auth/auth-session-store.test.ts`, `apps/web/src/shared/config/runtime-config.test.ts`, `apps/web/src/shared/components/error-state.test.tsx`, `README.md`, `docs/frontend/frontend-technical-spec/17-implementation-roadmap.md`, `docs/backend/backend-technical-spec/14-implementation-roadmap.md`, `docs/implementation-audit.md` | `pnpm web:test` xanh với 41 tests passed (6 files); `pnpm web:typecheck` + `pnpm web:build` + `pnpm check` xanh. |
+| 2026-07-01 | Docs backlog refresh (post-resources-MVP) | `docs/backend/backend-technical-spec/14-implementation-roadmap.md`, `docs/backend/backend-technical-spec/adr/0010-huma-sqlc-staged-groundwork.md`, `docs/frontend/frontend-technical-spec/17-implementation-roadmap.md`, `docs/implementation-audit.md` | Docs-only; OpenAPI path count đo lại 63 paths (vượt ngưỡng 60); Huma feasibility spike + tiêu chí go/no-go được thêm vào ADR-0010; `request_id` error pages và accessibility baseline được đánh dấu ✅ trong roadmap; "docs-completion before new feature work" được enforce qua thứ tự A/B/C trong current next backlog. |
 
 ## 2026-07-01 — Attempt history pagination
 
