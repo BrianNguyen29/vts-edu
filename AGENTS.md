@@ -53,6 +53,7 @@ Local E2E / smoke (Postgres 15 Docker required):
 pnpm e2e:db:start   # start vts-e2e-postgres on port 5434
 pnpm e2e:db:migrate # apply supabase/migrations/*.sql
 pnpm e2e:smoke      # full API smoke against local API/DB
+pnpm e2e:browser    # browser E2E via Playwright (starts/stops DB, API, and Vite automatically)
 pnpm e2e:db:stop    # tear down the container
 ```
 
@@ -101,6 +102,8 @@ docker build -t vts-edu-api -f apps/api/Dockerfile apps/api
 - Teacher assessment list slice (`internal/features/assessments`): `GET /assessments` role-gated to teacher/admin and tenant scoped.
 - Admin slice (`internal/features/admin`): `GET/POST /users`, `PUT /users/{user_id}/roles`, `POST /users/{user_id}/reset-password`, `GET/PATCH /organizations/current`, all admin-only and tenant scoped.
 - E2E smoke coverage for student attempt grading, teacher role + assessment list, forced password change, and admin user/org management.
+- Playwright browser E2E setup (`pnpm e2e:browser`) covering login redirects, teacher builder publish, student attempt/submit, teacher gradebook export, and admin bulk import.
+- In-process scheduler groundwork (`internal/platform/scheduler`) with assessment open/close transition job; River deferred.
 - Frontend demo wiring: dashboard demo link, exam runner page, and fixed demo attempt UUID `00000000-0000-4000-8000-000000000001`.
 
 > **Note on Koyeb artifacts:** files such as `apps/api/koyeb.yaml` are legacy. Render is the current backend deployment target.

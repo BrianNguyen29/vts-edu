@@ -93,7 +93,7 @@ export function ChangePasswordPage() {
         </p>
       )}
 
-      <form onSubmit={handleSubmit} className="change-password-form" noValidate>
+      <form onSubmit={handleSubmit} className="change-password-form" noValidate data-testid="change-password-form">
         <div className="field">
           <label htmlFor="currentPassword">Mật khẩu hiện tại</label>
           <input
@@ -104,6 +104,7 @@ export function ChangePasswordPage() {
             required
             value={currentPassword}
             onChange={(e) => setCurrentPassword(e.target.value)}
+            data-testid="current-password-input"
           />
         </div>
 
@@ -118,6 +119,7 @@ export function ChangePasswordPage() {
             minLength={8}
             value={newPassword}
             onChange={(e) => setNewPassword(e.target.value)}
+            data-testid="new-password-input"
           />
           <PasswordPolicyHints password={newPassword} />
         </div>
@@ -132,6 +134,7 @@ export function ChangePasswordPage() {
             required
             value={confirmPassword}
             onChange={(e) => setConfirmPassword(e.target.value)}
+            data-testid="confirm-password-input"
           />
         </div>
 
@@ -139,6 +142,7 @@ export function ChangePasswordPage() {
           type="submit"
           className="primary"
           disabled={isSubmitting || success}
+          data-testid="change-password-submit"
         >
           {isSubmitting ? 'Đang cập nhật…' : 'Đổi mật khẩu'}
         </button>

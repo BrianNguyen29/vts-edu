@@ -28,7 +28,7 @@ function formatFriendlyError(err: unknown): string {
       case 409:
         return err.body.error.code === 'attempt_limit_reached'
           ? 'Bạn đã hết số lần làm bài này.'
-          : 'Bài kiểm tra chưa mở hoặc đã hết thởi gian.';
+          : 'Bài kiểm tra chưa mở hoặc đã hết thời gian.';
       default:
         return err.body.error.message || 'Không thể tải danh sách bài kiểm tra.';
     }
@@ -143,7 +143,7 @@ export function DashboardPage() {
         </div>
       )}
 
-      <section className="dashboard-section" aria-labelledby="assigned-heading">
+      <section className="dashboard-section" aria-labelledby="assigned-heading" data-testid="assigned-assessments-section">
         <h2 id="assigned-heading">Bài kiểm tra được giao</h2>
 
         {status.type === 'loading' && (
@@ -319,6 +319,7 @@ function AssessmentGroup({
                   assessment.status !== 'OPEN'
                 }
                 aria-busy={startingId === assessment.id}
+                data-testid="start-assessment-button"
               >
                 {startingId === assessment.id
                   ? 'Đang bắt đầu…'

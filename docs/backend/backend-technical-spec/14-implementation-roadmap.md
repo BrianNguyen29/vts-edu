@@ -103,6 +103,14 @@ Exit criteria:
 - **Stage 3 — Client generation**: Generate frontend API client/types from the Huma/OpenAPI contract once it stabilizes.
 - **Breached-password provider (deferred)**: HIBP/external corpus integration deferred pending a privacy/egress ADR; password history + lockout + blocklist implemented as interim controls.
 
+## 2.6 Background jobs / scheduler plan
+
+- **Current**: In-process scheduler in `apps/api/internal/platform/scheduler` runs lightweight `Job` implementations on a fixed interval. First job: `assessment-transition` opens/closes assessments based on `opens_at`/`closes_at`. Controlled by `SCHEDULER_ENABLED` and `SCHEDULER_INTERVAL_SECONDS` (default disabled; enable on Render).
+- **River (deferred)**: River/pgvector-style durable queue is not adopted yet. The in-process scheduler is sufficient for scheduled assessment transitions and avoids extra migrations, worker processes, and operational complexity.
+- **Large CSV import**: Remains synchronous with a 100-row cap until a durable queue is justified.
+- **Async grading**: MCQ grading stays synchronous. Non-MCQ / manual-review async grading is deferred until those question types are implemented.
+- **Triggers for River adoption**: need durability/retry (e.g., large CSV, async grading), multi-instance scale-out requiring duplicate-job prevention, cron-like scheduling, or an approved infrastructure sprint covering migration, worker process, monitoring, and dead-letter handling.
+
 ## 3. Effort estimate
 
 | Mức | Thời gian tham khảo |

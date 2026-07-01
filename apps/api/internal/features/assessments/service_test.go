@@ -321,6 +321,14 @@ func (f *fakeRepo) IsAssessmentManager(ctx context.Context, orgID, userID, asses
 	return false, nil
 }
 
+func (f *fakeRepo) TransitionAssessmentsToOpen(ctx context.Context) (int64, error) {
+	return 0, nil
+}
+
+func (f *fakeRepo) TransitionAssessmentsToClosed(ctx context.Context) (int64, error) {
+	return 0, nil
+}
+
 type stubTxManager struct{}
 
 func (stubTxManager) WithinTx(ctx context.Context, fn func(ctx context.Context, tx pgx.Tx) error) error {

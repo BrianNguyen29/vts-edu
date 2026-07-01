@@ -356,6 +356,7 @@ export function AdminDashboardPage() {
           className={activeTab === 'users' ? 'active' : ''}
           onClick={() => setActiveTab('users')}
           aria-current={activeTab === 'users' ? 'page' : undefined}
+          data-testid="users-tab"
         >
           Người dùng
         </button>
@@ -432,7 +433,7 @@ export function AdminDashboardPage() {
       {activeTab === 'users' && (
       <section className="admin-section">
         <div className="section-header">
-          <h2>Ngườii dùng</h2>
+          <h2>Người dùng</h2>
           {mode === 'list' && (
             <div className="section-actions">
               <button
@@ -443,6 +444,7 @@ export function AdminDashboardPage() {
                   setImportCsv('');
                   setImportPreview(null);
                 }}
+                data-testid="import-csv-button"
               >
                 Nhập CSV
               </button>
@@ -611,6 +613,7 @@ export function AdminDashboardPage() {
                   setImportPreview(null);
                 }}
                 placeholder="login_name,display_name,email,temporary_password,roles"
+                data-testid="import-csv-textarea"
               />
             </div>
             <div className="form-actions">
@@ -619,6 +622,7 @@ export function AdminDashboardPage() {
                 className="primary"
                 onClick={() => handleImportUsers(true)}
                 disabled={importLoading || !importCsv.trim()}
+                data-testid="dry-run-import-button"
               >
                 {importLoading && importPreview === null
                   ? 'Đang kiểm tra…'
@@ -633,6 +637,7 @@ export function AdminDashboardPage() {
                   !importCsv.trim() ||
                   (importPreview?.failed ?? 0) === importPreview?.total
                 }
+                data-testid="confirm-import-button"
               >
                 {importLoading && importPreview !== null
                   ? 'Đang nhập…'
@@ -651,7 +656,7 @@ export function AdminDashboardPage() {
             </div>
 
             {importPreview && (
-              <div className="bulk-preview">
+              <div className="bulk-preview" data-testid="import-preview">
                 <p>
                   Tổng: <strong>{importPreview.total}</strong> · Đã tạo/ hợp lệ:{' '}
                   <strong>{importPreview.created}</strong> · Lỗi:{' '}

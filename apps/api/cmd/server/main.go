@@ -18,6 +18,7 @@ import (
 	"github.com/BrianNguyen29/vts-edu/apps/api/internal/platform/db"
 	vtsmiddleware "github.com/BrianNguyen29/vts-edu/apps/api/internal/platform/middleware"
 	"github.com/BrianNguyen29/vts-edu/apps/api/internal/platform/ratelimit"
+	"github.com/BrianNguyen29/vts-edu/apps/api/internal/platform/scheduler"
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 )
@@ -67,6 +68,7 @@ func main() {
 	var adminHandler *admin.Handler
 	var academicsHandler *academics.Handler
 	var gradebookHandler *gradebook.Handler
+	var sched *scheduler.Scheduler
 	if !cfg.DatabaseSkip {
 		authIssuer := auth.NewTokenIssuer(cfg.JWTSigningKey, "vts-edu-api", "vts-edu-web", cfg.AccessTokenTTL)
 		authRepo := auth.NewRepository(pool.Pool)
@@ -81,6 +83,12 @@ func main() {
 		assessmentsSvc := assessments.NewService(assessmentsRepo, srv.txManager)
 		assessmentsHandler = assessments.NewHandler(assessmentsSvc, authIssuer)
 
+		if cfg.SchedulerEnabled {
+			sched = scheduler.New(cfg.SchedulerInterval)
+			sched.Register(assessments.NewTransitionJob(assessmentsRepo))
+			sched.Start()
+		}
+
 		adminRepo := admin.NewRepository(pool.Pool)
 		adminSvc := admin.NewService(adminRepo, srv.txManager)
 		adminHandler = admin.NewHandler(adminSvc, authIssuer)
@@ -92,6 +100,10 @@ func main() {
 		gradebookRepo := gradebook.NewRepository(pool.Pool)
 		gradebookSvc := gradebook.NewService(gradebookRepo, &gradebook.AcademicAccessAdapter{Repo: academicsRepo})
 		gradebookHandler = gradebook.NewHandler(gradebookSvc, authIssuer)
+	}
+
+	if sched != nil {
+		defer sched.Stop()
 	}
 
 	r := chi.NewRouter()

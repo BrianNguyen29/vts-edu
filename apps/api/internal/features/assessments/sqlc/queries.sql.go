@@ -1280,6 +1280,42 @@ func (q *Queries) QuestionVersionExists(ctx context.Context, arg QuestionVersion
 	return exists, err
 }
 
+const transitionAssessmentsToClosed = `-- name: TransitionAssessmentsToClosed :execrows
+UPDATE assessments
+SET status = 'CLOSED',
+    updated_at = now()
+WHERE status = 'OPEN'
+  AND closes_at IS NOT NULL
+  AND closes_at <= now()
+`
+
+// Scheduler: transition open assessments to closed when closes_at passes.
+func (q *Queries) TransitionAssessmentsToClosed(ctx context.Context) (int64, error) {
+	result, err := q.db.Exec(ctx, transitionAssessmentsToClosed)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const transitionAssessmentsToOpen = `-- name: TransitionAssessmentsToOpen :execrows
+UPDATE assessments
+SET status = 'OPEN',
+    updated_at = now()
+WHERE status IN ('SCHEDULED', 'PUBLISHED')
+  AND opens_at IS NOT NULL
+  AND opens_at <= now()
+`
+
+// Scheduler: transition published/scheduled assessments to open when opens_at passes.
+func (q *Queries) TransitionAssessmentsToOpen(ctx context.Context) (int64, error) {
+	result, err := q.db.Exec(ctx, transitionAssessmentsToOpen)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const updateAssessmentItem = `-- name: UpdateAssessmentItem :one
 UPDATE assessment_items
 SET question_version_id = COALESCE(NULLIF($1::uuid, '00000000-0000-0000-0000-000000000000'::uuid), question_version_id),

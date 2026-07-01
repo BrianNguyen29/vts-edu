@@ -604,12 +604,12 @@ export function AssessmentBuilderPage() {
       </p>
 
       {error && (
-        <div className="error-banner" role="alert">
+        <div className="error-banner" role="alert" data-testid="builder-error">
           {error}
         </div>
       )}
       {success && (
-        <div className="success-banner" role="status">
+        <div className="success-banner" role="status" data-testid="builder-success">
           {success}
         </div>
       )}
@@ -637,6 +637,7 @@ export function AssessmentBuilderPage() {
               onChange={(e) => setTitle(e.target.value)}
               required
               disabled={isPublished}
+              data-testid="builder-title"
             />
           </div>
           <div className="field">
@@ -649,6 +650,7 @@ export function AssessmentBuilderPage() {
               onChange={(e) => setDuration(e.target.value)}
               required
               disabled={isPublished}
+              data-testid="builder-duration"
             />
           </div>
           <div className="field">
@@ -671,8 +673,8 @@ export function AssessmentBuilderPage() {
           <p className="dashboard-status">Chưa có phần nào.</p>
         )}
 
-        {assessment.sections.map((section, sectionIndex) => (
-          <div key={section.id} className="builder-section">
+          {assessment.sections.map((section, sectionIndex) => (
+          <div key={section.id} className="builder-section" data-testid="builder-section">
             <div className="section-header">
               {editingSectionId === section.id ? (
                 <form
@@ -884,6 +886,7 @@ export function AssessmentBuilderPage() {
                     onChange={(e) => setPickerQuestionId(e.target.value)}
                     required
                     size={Math.min(5, filteredQuestions.length || 1)}
+                    data-testid="picker-question-select"
                   >
                     <option value="">Chọn…</option>
                     {filteredQuestions.map((q) => (
@@ -908,6 +911,7 @@ export function AssessmentBuilderPage() {
                     className="primary"
                     onClick={() => handleAddItem(section.id)}
                     disabled={!pickerQuestionId}
+                    data-testid="picker-add-button"
                   >
                     Thêm câu hỏi
                   </button>
@@ -935,6 +939,7 @@ export function AssessmentBuilderPage() {
                   setQuestionSearch('');
                 }}
                 className="secondary"
+                data-testid="add-question-button"
               >
                 + Thêm câu hỏi
               </button>
@@ -943,7 +948,7 @@ export function AssessmentBuilderPage() {
         ))}
 
         {!isPublished && (
-          <form onSubmit={handleAddSection} className="admin-form">
+          <form onSubmit={handleAddSection} className="admin-form" data-testid="add-section-form">
             <h3>Thêm phần mới</h3>
             <div className="field">
               <label htmlFor="section-title">Tên phần</label>
@@ -954,6 +959,7 @@ export function AssessmentBuilderPage() {
                 onChange={(e) => setSectionTitle(e.target.value)}
                 placeholder="Ví dụ: Phần trắc nghiệm"
                 required
+                data-testid="section-title-input"
               />
             </div>
             <div className="form-actions">
@@ -961,6 +967,7 @@ export function AssessmentBuilderPage() {
                 type="submit"
                 className="primary"
                 disabled={addingSection}
+                data-testid="add-section-button"
               >
                 {addingSection ? 'Đang thêm…' : 'Thêm phần'}
               </button>
@@ -1007,6 +1014,7 @@ export function AssessmentBuilderPage() {
               value={targetClassId}
               onChange={(e) => setTargetClassId(e.target.value)}
               required
+              data-testid="target-class-select"
             >
               <option value="">Chọn lớp…</option>
               {classes.map((cls) => (
@@ -1015,7 +1023,7 @@ export function AssessmentBuilderPage() {
                 </option>
               ))}
             </select>
-            <button type="submit" className="primary" disabled={addingTarget}>
+            <button type="submit" className="primary" disabled={addingTarget} data-testid="add-target-button">
               {addingTarget ? 'Đang thêm…' : 'Thêm lớp'}
             </button>
           </form>
@@ -1026,13 +1034,14 @@ export function AssessmentBuilderPage() {
         <h2>Kiểm tra và xuất bản</h2>
 
         <div className="form-actions">
-          <button type="button" onClick={handleOpenPreview}>
+          <button type="button" onClick={handleOpenPreview} data-testid="preview-button">
             Xem trước
           </button>
           <button
             type="button"
             onClick={handleValidate}
             disabled={validating || isPublished}
+            data-testid="validate-button"
           >
             {validating ? 'Đang kiểm tra…' : 'Kiểm tra'}
           </button>
@@ -1041,6 +1050,7 @@ export function AssessmentBuilderPage() {
             className="primary"
             onClick={handlePublish}
             disabled={publishing || isPublished}
+            data-testid="publish-button"
           >
             {publishing
               ? 'Đang xuất bản…'
@@ -1051,7 +1061,7 @@ export function AssessmentBuilderPage() {
         </div>
 
         {validation && !validation.valid && (
-          <div className="error-banner" role="alert">
+          <div className="error-banner" role="alert" data-testid="validation-errors">
             <strong>Đề thi chưa hợp lệ:</strong>
             <ul className="validation-errors">
               {validation.errors?.map((err, idx) => (
@@ -1068,7 +1078,7 @@ export function AssessmentBuilderPage() {
         <section className="admin-section">
           <h2>Lịch sử xuất bản</h2>
           <div className="publication-table-wrapper">
-            <table className="publication-table">
+            <table className="publication-table" data-testid="publication-table">
               <thead>
                 <tr>
                   <th>Phiên bản</th>

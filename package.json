@@ -8,6 +8,9 @@
     "web:dev": "pnpm --filter @vts-edu/web dev",
     "web:build": "pnpm --filter @vts-edu/web build",
     "web:typecheck": "pnpm --filter @vts-edu/web typecheck",
+    "web:e2e": "pnpm --filter @vts-edu/web e2e",
+    "web:e2e:install": "pnpm --filter @vts-edu/web e2e:install",
+    "e2e:browser": "./scripts/e2e_browser.sh",
     "api:dev": "pnpm --filter @vts-edu/api dev",
     "api:test": "pnpm --filter @vts-edu/api test",
 

@@ -34,6 +34,9 @@ type Config struct {
 	RateLimitBurst   int
 	RateLimitTTL     time.Duration
 	RateLimitCleanup time.Duration
+
+	SchedulerEnabled  bool
+	SchedulerInterval time.Duration
 }
 
 // LoadConfig reads environment variables with safe defaults for local dev.
@@ -62,6 +65,9 @@ func LoadConfig() (*Config, error) {
 		RateLimitBurst:   parseInt(getEnv("RATE_LIMIT_BURST", "20")),
 		RateLimitTTL:     parseDuration(getEnv("RATE_LIMIT_TTL", "5m")),
 		RateLimitCleanup: parseDuration(getEnv("RATE_LIMIT_CLEANUP", "1m")),
+
+		SchedulerEnabled:  getEnv("SCHEDULER_ENABLED", "false") == "true",
+		SchedulerInterval: time.Duration(parseInt(getEnv("SCHEDULER_INTERVAL_SECONDS", "60"))) * time.Second,
 	}
 
 	var missing []string

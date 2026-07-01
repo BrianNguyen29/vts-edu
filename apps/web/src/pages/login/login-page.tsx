@@ -38,9 +38,9 @@ export function LoginPage() {
   };
 
   return (
-    <form onSubmit={handleSubmit} className="login-form" noValidate>
+    <form onSubmit={handleSubmit} className="login-form" noValidate data-testid="login-form">
       {error && (
-        <div className="error-banner" role="alert">
+        <div className="error-banner" role="alert" data-testid="login-error">
           {error}
         </div>
       )}
@@ -55,6 +55,7 @@ export function LoginPage() {
           required
           value={organizationCode}
           onChange={(e) => setOrganizationCode(e.target.value)}
+          data-testid="organization-code-input"
         />
       </div>
 
@@ -68,6 +69,7 @@ export function LoginPage() {
           required
           value={username}
           onChange={(e) => setUsername(e.target.value)}
+          data-testid="username-input"
         />
       </div>
 
@@ -81,10 +83,11 @@ export function LoginPage() {
           required
           value={password}
           onChange={(e) => setPassword(e.target.value)}
+          data-testid="password-input"
         />
       </div>
 
-      <button type="submit" disabled={isSubmitting} className="primary">
+      <button type="submit" disabled={isSubmitting} className="primary" data-testid="login-submit">
         {isSubmitting ? 'Đang đăng nhập…' : 'Đăng nhập'}
       </button>
 

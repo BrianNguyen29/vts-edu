@@ -178,7 +178,7 @@ sequenceDiagram
 Điều kiện đồng bộ:
 
 - Tất cả item là MCQ/simple auto-grade.
-- Tổng thởi gian grading < timeout request (ví dụ < 2 giây).
+- Tổng thời gian grading < timeout request (ví dụ < 2 giây).
 - Không có essay cần manual review.
 
 Nếu không đủ điều kiện, enqueue River job và trả `grading_status=QUEUED`.

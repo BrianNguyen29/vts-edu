@@ -352,7 +352,7 @@ export function ExamPage() {
           const hasContent = promptText.length > 0 && choices.length > 0;
 
           return (
-            <fieldset key={item.id} className="exam-question">
+            <fieldset key={item.id} className="exam-question" data-testid="exam-question">
               <legend>Câu {item.position}</legend>
               {hasContent ? (
                 <>
@@ -394,6 +394,7 @@ export function ExamPage() {
             className="primary"
             onClick={handleSubmit}
             disabled={isExpired || submitting || snapshot.items.length === 0}
+            data-testid="submit-exam-button"
           >
             {submitting ? 'Đang nộp bài…' : isExpired ? 'Đã hết thời gian' : 'Nộp bài'}
           </button>

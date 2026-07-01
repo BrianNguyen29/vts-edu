@@ -64,6 +64,9 @@ type Repository interface {
 	CountQuestions(ctx context.Context, orgID string, opts ListQuestionsOptions) (int64, error)
 	IsClassManager(ctx context.Context, orgID, userID, classSectionID string) (bool, error)
 	IsAssessmentManager(ctx context.Context, orgID, userID, assessmentID string) (bool, error)
+
+	TransitionAssessmentsToOpen(ctx context.Context) (int64, error)
+	TransitionAssessmentsToClosed(ctx context.Context) (int64, error)
 }
 
 type sqlcRepository struct {
@@ -1447,4 +1450,20 @@ func (r *sqlcRepository) IsAssessmentManager(ctx context.Context, orgID, userID,
 		return false, fmt.Errorf("check assessment manager: %w", err)
 	}
 	return ok.Bool, nil
+}
+
+func (r *sqlcRepository) TransitionAssessmentsToOpen(ctx context.Context) (int64, error) {
+	n, err := r.queries.TransitionAssessmentsToOpen(ctx)
+	if err != nil {
+		return 0, fmt.Errorf("transition assessments to open: %w", err)
+	}
+	return n, nil
+}
+
+func (r *sqlcRepository) TransitionAssessmentsToClosed(ctx context.Context) (int64, error) {
+	n, err := r.queries.TransitionAssessmentsToClosed(ctx)
+	if err != nil {
+		return 0, fmt.Errorf("transition assessments to closed: %w", err)
+	}
+	return n, nil
 }

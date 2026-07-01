@@ -179,13 +179,14 @@ export function TeacherDashboardPage() {
             className="primary"
             onClick={() => setShowCreateForm(true)}
             style={{ marginBottom: '1rem' }}
+            data-testid="create-assessment-button"
           >
             + Tạo đề thi
           </button>
         )}
 
         {showCreateForm && (
-          <form onSubmit={handleCreateAssessment} className="admin-form">
+          <form onSubmit={handleCreateAssessment} className="admin-form" data-testid="create-assessment-form">
             <h3>Tạo đề thi mới</h3>
             {createError && (
               <div className="error-banner" role="alert">
@@ -201,6 +202,7 @@ export function TeacherDashboardPage() {
                 onChange={(e) => setCreateTitle(e.target.value)}
                 placeholder="Ví dụ: Kiểm tra 15 phút"
                 required
+                data-testid="create-assessment-title"
               />
             </div>
             <div className="field">
@@ -211,6 +213,7 @@ export function TeacherDashboardPage() {
                 onChange={(e) => setCreateClassId(e.target.value)}
                 required
                 disabled={classesLoading || classes.length === 0}
+                data-testid="create-assessment-class"
               >
                 <option value="">
                   {classesLoading
@@ -227,7 +230,7 @@ export function TeacherDashboardPage() {
               </select>
             </div>
             <div className="form-actions">
-              <button type="submit" className="primary" disabled={creating}>
+              <button type="submit" className="primary" disabled={creating} data-testid="create-assessment-submit">
                 {creating ? 'Đang tạo…' : 'Tạo đề thi'}
               </button>
               <button

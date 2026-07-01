@@ -696,9 +696,62 @@ Repo-wide implementation tracking. Append-only; do not delete historical entries
 - The 60-path threshold is likely to be crossed soon, but the cost crossover depends on actual spec-drift incidents, not just path count.
 - If Huma is revisited, migration will start with lower-risk slices (academics/gradebook) and leave auth for last.
 
+## 2026-07-01 — Playwright browser E2E setup + UI typo fix
+
+### Done
+
+- [x] Added `@playwright/test` to `apps/web` and created `apps/web/playwright.config.ts` (Chromium, workers=1, serial, Vite webServer).
+- [x] Added `scripts/e2e_browser.sh` to orchestrate Postgres container, migrations, API build/run, and Playwright.
+- [x] Added root/app scripts: `web:e2e`, `web:e2e:install`, `e2e:browser`.
+- [x] Added `apps/web/e2e/helpers.ts` with role-based login that tolerates forced password-change state across test runs.
+- [x] Added `apps/web/e2e/auth.spec.ts` covering login/role redirects and `apps/web/e2e/critical-flow.spec.ts` covering teacher builder publish, student attempt/submit, teacher gradebook export, and admin bulk import dry-run/confirm.
+- [x] Added `data-testid` attributes to login, change-password, dashboard, teacher-dashboard, assessment-builder, exam, gradebook, and admin-dashboard pages for resilient selectors.
+- [x] Fixed Vietnamese typos across the UI (duplicate final-i in a user-facing word; misplaced tone mark in a time-period label).
+- [x] Added optional manual `browser-e2e` job to `.github/workflows/ci.yml` triggered by `workflow_dispatch`.
+
+### Deferred / not in scope
+
+- Multi-browser matrix (Firefox/WebKit) and parallel workers.
+- Full coverage of every UI path; initial suite focuses on critical role-based flows.
+- Automatic CI runs on every PR (kept manual to control cost and Docker/Playwright dependency time).
+
+### Decisions / notes
+
+- Browser tests share a single DB/API process and run serially because seeded demo users mutate shared state (e.g., forced password change). Helpers handle already-changed passwords.
+- Playwright `--with-deps` installation requires `sudo` and a password in this local environment, so the cached Chromium binary is used; the CI job installs with `--with-deps` because the GitHub runner has passwordless `sudo`.
+- `pnpm e2e:browser` passed all 7 tests locally after the login-helper stabilization.
+
+## 2026-07-01 — Queue scheduler groundwork
+
+### Done
+
+- [x] Added `internal/platform/scheduler` package with `Job` interface, ticker-based `Scheduler`, `Start`/`Stop` lifecycle, and `JobFunc` helper.
+- [x] Added assessment transition job (`assessments.TransitionJob`) that moves `SCHEDULED`/`PUBLISHED` assessments with `opens_at <= now()` → `OPEN`, and `OPEN` assessments with `closes_at <= now()` → `CLOSED`.
+- [x] Added sqlc queries `TransitionAssessmentsToOpen` and `TransitionAssessmentsToClosed` and wired them through the `assessments.Repository` interface.
+- [x] Added env config `SCHEDULER_ENABLED` (default `false`) and `SCHEDULER_INTERVAL_SECONDS` (default `60`) in `apps/api/internal/app/config.go`.
+- [x] Wired scheduler into `cmd/server/main.go` when DB is available and scheduler is enabled.
+- [x] Added tests for the scheduler (run job, error tolerance, stop without start) and the transition job (both transitions called, error propagation).
+- [x] Added ADR-0012 documenting in-process scheduler decision and River defer triggers.
+- [x] Updated `14-implementation-roadmap.md` with background jobs / scheduler plan.
+- [x] Updated `config/render.env.example` with scheduler variables.
+
+### Deferred / not in scope
+
+- River dependency, migrations, or worker process.
+- Async CSV import beyond the current 100-row synchronous limit.
+- Async grading beyond synchronous MCQ.
+
+### Decisions / notes
+
+- Scheduler is disabled by default for local dev/tests; production Render config enables it with a 60-second interval.
+- Transition queries are idempotent, so overlapping runs on multiple instances (if any) will not corrupt assessment state.
+- No OpenAPI changes were needed because the scheduler has no HTTP surface.
+
 ## Change log
 
 | Date | Task | Files changed | Verification |
 |---|---|---|---|
 | 2026-07-01 | Production hardening backend | `apps/api/internal/platform/ratelimit/*`, `apps/api/internal/platform/middleware/requestlogger.go`, `apps/api/internal/app/config.go`, `apps/api/cmd/server/main.go`, `apps/api/internal/features/admin/*`, `apps/api/internal/features/{academics,auth,attempts,assessments}/{response.go,models.go,handler.go}`, `docs/backend/backend-technical-spec/openapi/openapi-skeleton.yaml`, `apps/web/src/shared/api/openapi-schema.d.ts`, `scripts/e2e_smoke_api.mjs`, `scripts/render_smoke.sh`, `docs/deployment-cli.md`, `config/render.env.example`, `docs/implementation-audit.md` | `pnpm api:sqlc`, `pnpm api:types`, `pnpm check`, `pnpm e2e:smoke` xanh; rate limit, request logging, request ID errors, audit CSV export, và Render smoke hoạt động. |
 | 2026-07-01 | Huma revisit docs | `docs/backend/backend-technical-spec/adr/0010-huma-sqlc-staged-groundwork.md`, `docs/backend/backend-technical-spec/14-implementation-roadmap.md`, `docs/implementation-audit.md` | Docs reviewed; `pnpm check` xanh; ADR ghi rõ 58 paths, Huma vẫn deferred, và các trigger tái xem xét. |
+| 2026-07-01 | Playwright browser E2E setup + UI typo fix | `apps/web/playwright.config.ts`, `apps/web/e2e/*`, `scripts/e2e_browser.sh`, `package.json`, `apps/web/package.json`, `.github/workflows/ci.yml`, `apps/web/src/pages/login/login-page.tsx`, `apps/web/src/pages/change-password/change-password-page.tsx`, `apps/web/src/pages/dashboard/*.tsx`, `apps/web/src/pages/assessment-builder/assessment-builder-page.tsx`, `apps/web/src/pages/exam/exam-page.tsx`, `apps/web/src/pages/gradebook/gradebook-page.tsx` | `pnpm check` xanh; `pnpm e2e:smoke` xanh; `pnpm e2e:browser` xanh với 7/7 tests passed. |
+| 2026-07-01 | Queue scheduler groundwork | `apps/api/internal/platform/scheduler/*`, `apps/api/internal/features/assessments/scheduler_job.go`, `apps/api/internal/features/assessments/scheduler_job_test.go`, `apps/api/internal/features/assessments/queries.sql`, `apps/api/internal/features/assessments/repository.go`, `apps/api/internal/features/assessments/service_test.go`, `apps/api/internal/app/config.go`, `apps/api/cmd/server/main.go`, `docs/backend/backend-technical-spec/adr/0012-background-jobs-river-defer.md`, `docs/backend/backend-technical-spec/14-implementation-roadmap.md`, `config/render.env.example`, `docs/implementation-audit.md` | `pnpm api:sqlc`, `pnpm check`, `pnpm e2e:smoke` xanh; scheduler và transition job tests pass. |

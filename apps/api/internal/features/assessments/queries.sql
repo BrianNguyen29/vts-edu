@@ -363,3 +363,21 @@ SELECT EXISTS (
       AND organization_id = sqlc.arg(organization_id)
       AND status = 'ACTIVE'
 );
+
+-- Scheduler: transition published/scheduled assessments to open when opens_at passes.
+-- name: TransitionAssessmentsToOpen :execrows
+UPDATE assessments
+SET status = 'OPEN',
+    updated_at = now()
+WHERE status IN ('SCHEDULED', 'PUBLISHED')
+  AND opens_at IS NOT NULL
+  AND opens_at <= now();
+
+-- Scheduler: transition open assessments to closed when closes_at passes.
+-- name: TransitionAssessmentsToClosed :execrows
+UPDATE assessments
+SET status = 'CLOSED',
+    updated_at = now()
+WHERE status = 'OPEN'
+  AND closes_at IS NOT NULL
+  AND closes_at <= now();

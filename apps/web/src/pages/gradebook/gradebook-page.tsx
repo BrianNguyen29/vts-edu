@@ -274,6 +274,7 @@ export function GradebookPage() {
               id="gradebook-assessment"
               value={assessmentId}
               onChange={(e) => selectAssessment(e.target.value)}
+              data-testid="gradebook-assessment-select"
             >
               <option value="">Chọn đề thi…</option>
               {assessments.map((a) => (
@@ -324,6 +325,7 @@ export function GradebookPage() {
                   className="primary"
                   onClick={handleExportAssessment}
                   disabled={exporting || attempts.length === 0}
+                  data-testid="export-assessment-csv"
                 >
                   {exporting ? 'Đang xuất…' : 'Xuất CSV'}
                 </button>
@@ -346,7 +348,7 @@ export function GradebookPage() {
 
               {!detailLoading && !detailError && (
                 <div className="table-wrap">
-                  <table className="gradebook-table">
+                  <table className="gradebook-table" data-testid="gradebook-table">
                     <thead>
                       <tr>
                         <th>Học sinh</th>
