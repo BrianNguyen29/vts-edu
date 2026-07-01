@@ -1036,3 +1036,23 @@ Repo-wide implementation tracking. Append-only; do not delete historical entries
 - Inline `min-height` on autoload/save indicator is preserved so sighted users still see the live text change.
 - All changes are surgical (no visual redesign, no new components beyond `useDocumentTitle` and the `.visually-hidden`/`.skip-link`/`.table-caption` utility classes).
 
+## 2026-07-01 — Huma v2 feasibility spike result (docs-only recording)
+
+### Done
+
+- [x] Recorded the `spike/huma-academics` outcome into main docs only (no runtime code or dependency merged). The spike branch and its commit (`5eb2fd4 Spike Huma academics feasibility`) remain on the spike branch for reference; this entry is the only on-main artifact.
+- [x] Added `docs/backend/backend-technical-spec/spikes/huma-academics-spike.md` (190 lines) with full spike report: scope, implementation, tests, evidence (what worked, non-obvious knobs, caveats for a full migration), DX observations, and the **GO-with-conditions** recommendation.
+- [x] Updated ADR-0010 with the post-spike "Kết quả spike (2026-07-01)" section: 4/4 unit tests passed, no regression in `pnpm check` / `pnpm e2e:smoke` / `pnpm e2e:browser`, 3 open issues (problem+json content type, X-Request-Id response header echo, OpenAPI spec divergence), and the next-recommendation: one bounded streaming spike on resources download before full Huma adoption.
+
+### Out of scope (deliberately not merged to main)
+
+- `apps/api/go.mod` / `apps/api/go.sum` — Huma v2.38.0 dependency stays on the spike branch only.
+- `apps/api/internal/features/academics/spike_huma.go` and `spike_huma_test.go` — spike source stays on the spike branch.
+- `apps/api/cmd/server/main.go` — Huma mount wiring stays on the spike branch.
+
+### Decisions / notes
+
+- Recording the result docs-only keeps main's dependency graph, build, and test surface unchanged. The spike branch is the source of truth for the running code; the spike report and ADR update are the source of truth for the decision on main.
+- The three open issues each need their own bounded spike before runtime migration can be approved. The next recommended spike is on a streaming candidate (resources download) to test Huma's `http.Flusher`/SSE handling — the second risk axis the roadmap calls out.
+- Hand-maintained `openapi-skeleton.yaml` remains the source of truth for `openapi-typescript` on main until the runtime migration is approved.
+
