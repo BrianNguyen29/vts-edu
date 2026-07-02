@@ -144,11 +144,18 @@ type SaveAnswerRequest struct {
 }
 
 // AnswerSaved is the data envelope for a successful answer save.
+//
+// ServerTime and ExpiresAt are the authoritative server clock and the
+// attempt's current expiration; the front-end uses them to recalibrate
+// its countdown offset and to refresh its snapshot without an extra
+// round trip.
 type AnswerSaved struct {
 	AttemptItemID string          `json:"attempt_item_id"`
 	Revision      int64           `json:"revision"`
 	AnswerPayload json.RawMessage `json:"answer_payload"`
 	AnsweredAt    time.Time       `json:"answered_at"`
+	ServerTime    time.Time       `json:"server_time"`
+	ExpiresAt     *time.Time      `json:"expires_at,omitempty"`
 }
 
 // AttemptSubmitted is the data envelope for a successful submit.

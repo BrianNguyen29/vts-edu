@@ -106,13 +106,15 @@ Exit:
 - Version conflict handled.
 - Publish không optimistic.
 
-## 7. Phase 5 — Exam runtime (Tuần 15–19) 🟡 Core implemented
+## 7. Phase 5 — Exam runtime (Tuần 15–19) 🟡 Core + heartbeat/deadline shipped
 
 - Attempt start ✅
 - Exam layout/question renderers ✅
 - IndexedDB schema/repository ✅ (MVP: per attempt/item drafts)
 - Durable autosave queue ✅ (MVP: local draft before API, retry on online/load)
 - Server clock/timer ✅
+- Heartbeat / deadline calibration ✅ (`AnswerSaved` returns `server_time` + `expires_at`; existing `GET /attempts/{id}` reused as 60s heartbeat; `serverTimeOffsetRef` keeps countdown in sync with the authoritative server clock; status refresh visible without reload).
+- Deadline warning UX ✅ (≤5 min warning banner, ≤1 min critical banner + recolored timer chip; threshold transitions only, no every-tick `aria-live`).
 - Offline/reload/resume ✅ (MVP: overlay local pending drafts, survive reload)
 - Submit intent/idempotency ✅
 - Terminal result/status ✅
@@ -121,7 +123,7 @@ Exit:
 
 - Full test matrix critical scenarios — Playwright critical flow covers basic path + reload persistence.
 - No answer loss in forced reload/offline tests — MVP covered; advanced conflict resolution deferred.
-- Active exam not force-reloaded on app update — not started (service worker deferred).
+- Active exam not force-reloaded on app update — not started (service worker deferred; still gated on milestone risk gate `PWA service worker` requiring active-exam update safety proof).
 
 ## 8. Phase 6 — Grading, assignments, gradebook (Tuần 20–23) 🟡 Gradebook + manual review implemented
 

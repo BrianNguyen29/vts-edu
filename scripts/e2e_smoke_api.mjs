@@ -961,6 +961,15 @@ async function saveAnswerForAttempt(token, attemptId, itemId, selectedOption, pa
   if (!r.ok) throw new Error(`save answer failed: ${r.status}`);
   const json = await r.json();
   console.log('  answer revision:', json.data.revision);
+  // Heartbeat support: server must surface its authoritative clock +
+  // attempt expires_at so the client can recalibrate its countdown.
+  if (!json.data.server_time) {
+    throw new Error('saveAnswer response missing server_time');
+  }
+  if (!json.data.expires_at) {
+    throw new Error('saveAnswer response missing expires_at');
+  }
+  return json.data;
 }
 
 async function submitAttemptById(token, attemptId) {

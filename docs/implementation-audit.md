@@ -1197,6 +1197,27 @@ Repo-wide implementation tracking. Append-only; do not delete historical entries
 - **CSRF**: the grade PUT lives behind the existing `csrf.Validate(r)` middleware just like the answer-save and submit endpoints. The unsafe-method list in the openapi client automatically attaches `X-CSRF-Token` to the PUT.
 - **Did not** add: per-item grading_status column, rubric editor, file-submission attachments, bulk-grade, partial-essay auto-grade, teacher review-draft state, real-time push, AI/ML scoring, performance hardening (N+1 on detail page, large attempts). All explicitly deferred to P2/P3.
 
+## 2026-07-02 — Exam heartbeat / deadline hardening (slice-18)
+
+### Done
+
+- **Backend** (`apps/api/internal/features/attempts/{models,service}.go` + `attempts_test.go`):
+  - `AnswerSaved` gains `ServerTime time.Time` (required) + `ExpiresAt *time.Time` (optional, mirrors loaded attempt).
+  - `SaveAnswer` captures the loaded `*Attempt` in the tx closure; on success it sets `saved.ServerTime = time.Now().UTC()` and `saved.ExpiresAt = attempt.ExpiresAt` outside the tx. No new query, no new endpoint.
+  - `TestService_SaveAnswer_OK` extended to assert `ServerTime` is in `[now-1s, now+1s]` and `ExpiresAt` equals the loaded attempt's `ExpiresAt`. Pre-existing tests untouched.
+- **OpenAPI** (`docs/backend/backend-technical-spec/openapi/openapi-skeleton.yaml`): `SaveAnswerResponse.data` now requires `server_time` and adds optional `expires_at`. Regenerated `apps/web/src/shared/api/openapi-schema.d.ts` via `pnpm api:types` (clean).
+- **Frontend** (`apps/web/src/pages/exam/exam-page.tsx` + `index.css`):
+  - New `serverTimeOffsetRef` (ms) calibrated from initial `GET /attempts/{id}` `server_time` and re-calibrated on every `saveAnswer` response (both inline and via the `syncPendingDrafts` `onSaved` callback).
+  - Countdown `useEffect` now uses `Date.now() + serverTimeOffsetRef.current` so a drifted client clock or stale background tab does not give extra or steal time.
+  - **60s heartbeat**: new `useEffect` runs `setInterval(60_000)` while `attempt.status === 'IN_PROGRESS'`. Each tick calls `getAttempt(id)` (existing endpoint, not a new one), updates the offset, and refreshes `status` / `expires_at` / `server_time` in the snapshot. The pre-existing `if (snapshot.status === 'SUBMITTED' | 'EXPIRED')` branches then re-render the submitted/expired UI automatically. Failures are swallowed silently — no user-facing errors mid-exam; the existing offline banner handles the no-network case (`getAttempt` skipped when `!navigator.onLine`).
+  - **Deadline warning UX** (per spec — no every-tick announcement): new `deadlineLevel: 'ok' | 'warning' | 'critical'` state. A separate `useEffect` transitions the level only on threshold crossings (≤5 min → warning, ≤1 min → critical, otherwise ok). Visually: a warning banner (`role="status"`, amber) and a critical banner (`role="alert"`, red, gentle pulse). The timer chip itself recolors but the timer element no longer has `aria-live="polite"` so screen readers are not spammed on every second.
+  - **Auto-submit at timeLeft=0 explicitly NOT added** (per spec): inputs + submit button already `disabled={isExpired}`; status refresh via heartbeat means a server-side transition to `EXPIRED` becomes visible without polling the page.
+- **Offline resilience preserved**: heartbeat failures do not touch the local IndexedDB draft; the existing `syncPendingDrafts` retry-on-online / retry-on-load path is unchanged. The smoke covers the same flow.
+- **CSS** (`apps/web/src/index.css`): new `.exam-deadline-banner` (`warning` / `critical` modifiers), `.exam-timer.warning` / `.exam-timer.critical` chip color, `@keyframes exam-deadline-pulse` for the critical banner. No layout-shift; new rules live next to the existing `.exam-timer` block.
+- **Smoke** (`scripts/e2e_smoke_api.mjs::saveAnswerForAttempt`): now asserts `json.data.server_time` and `json.data.expires_at` are present on every save-answer round trip (covers the `non-MCQ` flow and the `generated attempt` flow).
+- **Verification**: `pnpm api:types` ✓, `pnpm web:typecheck` ✓, `pnpm web:build` ✓ (bundle 360.77 kB / 114.49 kB gz, +0.01 kB gz vs pre-change — the heartbeat is ~10 lines), `pnpm web:test` ✓ (57/57), `pnpm e2e:smoke` ✓ (server_time + expires_at assertions on `saveAnswerForAttempt` green), `pnpm e2e:browser` ✓ 23/23, `pnpm check` ✓.
+- **Did not** add: new `POST /heartbeat` endpoint, WebSocket/SSE channel, service worker, auto-submit, proctoring, exam heartbeat-decorator on the backend, separate heartbeat table.
+
 ## 2026-07-02 — apiClient cleanup v1 (slice-17)
 
 ### Done

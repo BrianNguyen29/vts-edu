@@ -91,12 +91,14 @@ func (s *service) SaveAnswer(ctx context.Context, actor auth.Actor, attemptID, i
 		payload = json.RawMessage("{}")
 	}
 
+	var attempt *Attempt
 	var saved *AnswerSaved
 	err := s.tm.WithinTx(ctx, func(ctx context.Context, tx pgx.Tx) error {
-		attempt, err := s.repo.GetAttemptForUpdate(ctx, tx, attemptID, actor.OrgID, actor.UserID)
+		a, err := s.repo.GetAttemptForUpdate(ctx, tx, attemptID, actor.OrgID, actor.UserID)
 		if err != nil {
 			return err
 		}
+		attempt = a
 
 		if attempt.Status != "IN_PROGRESS" {
 			return ErrAttemptNotInProgress
@@ -122,6 +124,14 @@ func (s *service) SaveAnswer(ctx context.Context, actor auth.Actor, attemptID, i
 	})
 	if err != nil {
 		return nil, err
+	}
+
+	// Surface the authoritative server clock + the attempt's current
+	// expires_at so the client can recalibrate its countdown offset
+	// and refresh its snapshot in a single round trip.
+	saved.ServerTime = time.Now().UTC()
+	if attempt != nil {
+		saved.ExpiresAt = attempt.ExpiresAt
 	}
 	return saved, nil
 }

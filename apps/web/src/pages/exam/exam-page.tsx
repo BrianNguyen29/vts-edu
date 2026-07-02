@@ -129,7 +129,8 @@ async function syncPendingDrafts(
   items: AttemptItem[],
   storage: ExamDraftStorage,
   setSaveStatuses: Dispatch<SetStateAction<Record<string, SaveStatus>>>,
-  isCancelled: () => boolean
+  isCancelled: () => boolean,
+  onSaved?: (saved: Awaited<ReturnType<typeof saveAnswer>>) => void
 ) {
   const pending = await storage.getPendingByAttempt(attemptId);
   for (const draft of pending) {
@@ -146,6 +147,8 @@ async function syncPendingDrafts(
     try {
       const saved = await saveAnswer(attemptId, draft.item_id, draft.payload);
       if (isCancelled()) return;
+
+      onSaved?.(saved);
 
       await storage.setDraft({
         ...draft,
@@ -181,6 +184,7 @@ export function ExamPage() {
   const [submitting, setSubmitting] = useState(false);
   const [submitResult, setSubmitResult] = useState<AttemptSubmitted | null>(null);
   const [timeLeft, setTimeLeft] = useState<number | null>(null);
+  const [deadlineLevel, setDeadlineLevel] = useState<'ok' | 'warning' | 'critical'>('ok');
   const [isOnline, setIsOnline] = useState<boolean>(() => {
     if (typeof navigator === 'undefined') return true;
     return navigator.onLine;
@@ -189,6 +193,12 @@ export function ExamPage() {
   const storageRef = useRef<ExamDraftStorage | null>(null);
   const attemptIdRef = useRef(attemptId);
   const snapshotRef = useRef(snapshot);
+  // serverTimeOffsetMs calibrates the client clock to the server clock
+  // (server_time - Date.now() at the moment we last received an
+  // authoritative timestamp). Countdown reads use this offset so a
+  // drifted system clock or stale tab does not give the student extra
+  // time or steal time.
+  const serverTimeOffsetRef = useRef<number>(0);
 
   useEffect(() => {
     attemptIdRef.current = attemptId;
@@ -205,7 +215,12 @@ export function ExamPage() {
       const snap = snapshotRef.current;
       const storage = storageRef.current;
       if (id && snap?.status === 'IN_PROGRESS' && storage) {
-        void syncPendingDrafts(id, snap.items, storage, setSaveStatuses, () => false);
+        void syncPendingDrafts(id, snap.items, storage, setSaveStatuses, () => false, (saved) => {
+          if (saved.server_time) {
+            serverTimeOffsetRef.current =
+              new Date(saved.server_time).getTime() - Date.now();
+          }
+        });
       }
     }
 
@@ -243,6 +258,10 @@ export function ExamPage() {
         ]);
         if (cancelled) return;
 
+        if (data.server_time) {
+          serverTimeOffsetRef.current =
+            new Date(data.server_time).getTime() - Date.now();
+        }
         setSnapshot(data);
 
         const initialAnswers: Record<string, string> = {};
@@ -296,7 +315,12 @@ export function ExamPage() {
         if (data.status !== 'IN_PROGRESS') {
           storage.deleteAllForAttempt(id).catch(() => {});
         } else {
-          await syncPendingDrafts(id, data.items, storage, setSaveStatuses, () => cancelled);
+          await syncPendingDrafts(id, data.items, storage, setSaveStatuses, () => cancelled, (saved) => {
+            if (saved.server_time) {
+              serverTimeOffsetRef.current =
+                new Date(saved.server_time).getTime() - Date.now();
+            }
+          });
         }
       } catch (err) {
         if (cancelled) return;
@@ -322,7 +346,10 @@ export function ExamPage() {
     const expiresAt = new Date(snapshot.expires_at).getTime();
 
     function updateTime() {
-      const remaining = Math.max(0, expiresAt - Date.now());
+      // Use the server-calibrated clock so a drifted system clock
+      // cannot extend or shorten the visible countdown.
+      const now = Date.now() + serverTimeOffsetRef.current;
+      const remaining = Math.max(0, expiresAt - now);
       setTimeLeft(remaining);
     }
 
@@ -331,11 +358,72 @@ export function ExamPage() {
     return () => clearInterval(interval);
   }, [snapshot?.expires_at]);
 
+  // Deadline threshold transitions. We deliberately do NOT announce
+  // every tick — only when the level changes do we update the
+  // visible status (which carries role="status" / role="alert"
+  // semantics in the JSX).
+  useEffect(() => {
+    if (timeLeft === null) {
+      setDeadlineLevel((prev) => (prev === 'ok' ? prev : 'ok'));
+      return;
+    }
+    let next: 'ok' | 'warning' | 'critical';
+    if (timeLeft <= 60_000) next = 'critical';
+    else if (timeLeft <= 5 * 60_000) next = 'warning';
+    else next = 'ok';
+    setDeadlineLevel((prev) => (prev === next ? prev : next));
+  }, [timeLeft]);
+
   useEffect(() => {
     if (!attemptId || !storageRef.current || !snapshot) return;
     if (snapshot.status !== 'IN_PROGRESS') {
       storageRef.current.deleteAllForAttempt(attemptId).catch(() => {});
     }
+  }, [attemptId, snapshot?.status]);
+
+  // 60s heartbeat while the attempt is IN_PROGRESS. We reuse the
+  // existing GET /attempts/{id} endpoint so the heartbeat also
+  // refreshes status (so a server-side expiration transition becomes
+  // visible) and the offset (so a stale tab that has been backgrounded
+  // re-syncs). Failures are swallowed silently — the local draft +
+  // existing offline banner handle the no-network case.
+  useEffect(() => {
+    if (!attemptId || !snapshot) return;
+    if (snapshot.status !== 'IN_PROGRESS') return;
+
+    const id = attemptId;
+    const interval = setInterval(() => {
+      if (!navigator.onLine) return;
+      getAttempt(id)
+        .then((data) => {
+          if (data.server_time) {
+            serverTimeOffsetRef.current =
+              new Date(data.server_time).getTime() - Date.now();
+          }
+          setSnapshot((prev) => {
+            if (!prev) return prev;
+            // Avoid forcing a re-render when nothing meaningful changed.
+            if (
+              prev.status === data.status &&
+              prev.expires_at === data.expires_at &&
+              prev.server_time === data.server_time
+            ) {
+              return prev;
+            }
+            return {
+              ...prev,
+              status: data.status,
+              expires_at: data.expires_at,
+              server_time: data.server_time,
+            };
+          });
+        })
+        .catch(() => {
+          // Best-effort: keep the existing offset / status so the
+          // student isn't spammed with errors mid-exam.
+        });
+    }, 60_000);
+    return () => clearInterval(interval);
   }, [attemptId, snapshot?.status]);
 
   const isExpired = timeLeft === 0;
@@ -363,6 +451,17 @@ export function ExamPage() {
     try {
       await storage?.setDraft(draft);
       const saved = await saveAnswer(currentAttemptId, item.id, payload);
+      if (saved.server_time) {
+        serverTimeOffsetRef.current =
+          new Date(saved.server_time).getTime() - Date.now();
+        if (saved.expires_at) {
+          setSnapshot((prev) =>
+            prev
+              ? { ...prev, expires_at: saved.expires_at as string | null }
+              : prev
+          );
+        }
+      }
       await storage?.setDraft({
         ...draft,
         pending: false,
@@ -515,15 +614,27 @@ export function ExamPage() {
         </div>
       )}
 
+      {deadlineLevel === 'critical' && !isExpired && (
+        <div className="exam-deadline-banner critical" role="alert">
+          Sắp hết giờ! Còn dưới 1 phút. Vui lòng nộp bài hoặc hoàn tất câu trả lời.
+        </div>
+      )}
+      {deadlineLevel === 'warning' && !isExpired && (
+        <div className="exam-deadline-banner warning" role="status">
+          Còn dưới 5 phút. Chuẩn bị nộp bài.
+        </div>
+      )}
+
       <div className="exam-meta-bar">
         <span className={`exam-status-badge ${!isOnline ? 'offline' : ''}`}>
           {isExpired ? 'Đã hết thời gian' : isOnline ? 'Đang làm bài' : 'Ngoại tuyến'}
         </span>
         {timeLeft !== null && (
           <span
-            className={`exam-timer ${isExpired ? 'expired' : ''}`}
+            className={`exam-timer ${deadlineLevel} ${
+              isExpired ? 'expired' : ''
+            }`}
             role="timer"
-            aria-live="polite"
           >
             {isExpired ? '00:00' : `Còn lại: ${formatTimeRemaining(timeLeft)}`}
           </span>

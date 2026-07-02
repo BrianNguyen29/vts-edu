@@ -774,6 +774,51 @@ label {
   color: #991b1b;
 }
 
+/* Deadline warning / critical banner. Visible status only — screen
+   readers get a single announcement when the level transitions. */
+.exam-deadline-banner {
+  margin-bottom: 1rem;
+  padding: 0.75rem 1rem;
+  border-radius: 0.5rem;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.exam-deadline-banner.warning {
+  background-color: #fffbeb;
+  border: 1px solid #fcd34d;
+  color: #92400e;
+}
+
+.exam-deadline-banner.critical {
+  background-color: #fef2f2;
+  border: 1px solid #fca5a5;
+  color: #7f1d1d;
+  animation: exam-deadline-pulse 1.5s ease-in-out infinite;
+}
+
+@keyframes exam-deadline-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.78; }
+}
+
+/* Timer chip color mirrors the deadline level so the visual signal is
+   consistent with the banner above. */
+.exam-timer.warning {
+  background-color: #fffbeb;
+  border: 1px solid #fcd34d;
+  color: #92400e;
+}
+
+.exam-timer.critical {
+  background-color: #fef2f2;
+  border: 1px solid #fca5a5;
+  color: #7f1d1d;
+  font-weight: 700;
+}
+
 .exam-status-badge.offline {
   color: var(--color-error-text);
 }

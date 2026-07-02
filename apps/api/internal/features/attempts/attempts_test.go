@@ -200,9 +200,9 @@ func TestService_GetAttempt_NotFound(t *testing.T) {
 }
 
 func TestService_SaveAnswer_OK(t *testing.T) {
+	expires := time.Now().Add(time.Hour).UTC()
 	repo := &fakeRepo{
 		getForUpdate: func(ctx context.Context, tx pgx.Tx, id, orgID, userID string) (*attempts.Attempt, error) {
-			expires := time.Now().Add(time.Hour)
 			return &attempts.Attempt{ID: id, Status: "IN_PROGRESS", ExpiresAt: &expires}, nil
 		},
 		itemExists: func(ctx context.Context, tx pgx.Tx, itemID, attemptID, orgID string) (bool, error) {
@@ -214,12 +214,25 @@ func TestService_SaveAnswer_OK(t *testing.T) {
 	}
 
 	svc := attempts.NewService(repo, stubTxManager{})
+	before := time.Now().UTC().Add(-time.Second)
 	saved, err := svc.SaveAnswer(context.Background(), auth.Actor{UserID: "user-id", OrgID: "org-id"}, "attempt-id", "item-id", json.RawMessage(`{"choice":"B"}`))
+	after := time.Now().UTC().Add(time.Second)
 	if err != nil {
 		t.Fatalf("SaveAnswer failed: %v", err)
 	}
 	if saved.Revision != 2 {
 		t.Errorf("revision = %d, want 2", saved.Revision)
+	}
+	// server_time must be populated with a recent authoritative clock value
+	if saved.ServerTime.Before(before) || saved.ServerTime.After(after) {
+		t.Errorf("server_time = %v, want between %v and %v", saved.ServerTime, before, after)
+	}
+	// expires_at must mirror the loaded attempt so the client can recalibrate
+	if saved.ExpiresAt == nil {
+		t.Fatal("expires_at = nil, want populated")
+	}
+	if !saved.ExpiresAt.Equal(expires) {
+		t.Errorf("expires_at = %v, want %v", *saved.ExpiresAt, expires)
 	}
 }
 

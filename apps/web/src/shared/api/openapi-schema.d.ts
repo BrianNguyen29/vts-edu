@@ -1434,6 +1434,10 @@ export interface components {
                 };
                 /** Format: date-time */
                 answered_at: string;
+                /** Format: date-time */
+                server_time: string;
+                /** Format: date-time */
+                expires_at?: string | null;
             };
         };
         AttemptSubmitted: {

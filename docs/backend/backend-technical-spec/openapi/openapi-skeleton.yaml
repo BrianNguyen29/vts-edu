@@ -2594,12 +2594,14 @@ components:
       properties:
         data:
           type: object
-          required: [attempt_item_id, revision, answer_payload, answered_at]
+          required: [attempt_item_id, revision, answer_payload, answered_at, server_time]
           properties:
             attempt_item_id: { type: string, format: uuid }
             revision: { type: integer, minimum: 1 }
             answer_payload: { type: object, additionalProperties: true, properties: { selected_option: { type: string } } }
             answered_at: { type: string, format: date-time }
+            server_time: { type: string, format: date-time }
+            expires_at: { type: string, format: date-time, nullable: true }
     AttemptSubmitted:
       type: object
       required: [data]
