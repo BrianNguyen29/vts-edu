@@ -61,6 +61,13 @@ WHERE resource_id = $1 AND organization_id = $2 AND status = 'ACTIVE'
 ORDER BY created_at DESC
 LIMIT 1;
 
+-- name: GetResourceFile :one
+SELECT
+  id, resource_id, organization_id, original_name, storage_key, content_type, size_bytes,
+  status::text, created_by, created_at
+FROM resource_files
+WHERE id = $1 AND organization_id = $2;
+
 -- name: ArchiveResourceFile :exec
 UPDATE resource_files
 SET status = 'ARCHIVED'

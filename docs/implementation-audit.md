@@ -1196,3 +1196,57 @@ Repo-wide implementation tracking. Append-only; do not delete historical entries
 - **COALESCE pattern**: `GetAttemptItems` and `GetAttemptItemsForGrading` use `COALESCE(ig.awarded_score, '0')::text` + `COALESCE(ig.feedback, '')` to keep the sqlc `*string` / `string` scan stable. Without it, rows without a manual grade crash sqlc on `cannot scan NULL into *string`. The repository converts the empty/zero values back to `nil` for the response.
 - **CSRF**: the grade PUT lives behind the existing `csrf.Validate(r)` middleware just like the answer-save and submit endpoints. The unsafe-method list in the openapi client automatically attaches `X-CSRF-Token` to the PUT.
 - **Did not** add: per-item grading_status column, rubric editor, file-submission attachments, bulk-grade, partial-essay auto-grade, teacher review-draft state, real-time push, AI/ML scoring, performance hardening (N+1 on detail page, large attempts). All explicitly deferred to P2/P3.
+
+## 2026-07-02 — Resources UX (class scope, multi-file, inline preview)
+
+### Done
+
+- **Class-scoped authz** (`apps/api/internal/features/resources/{access,access_adapter,service,handler}.go`):
+  - New `ClassAccessChecker` interface in the resources package; default `stubChecker` denies class access (used by unit tests that do not exercise class scope).
+  - `AcademicAccessAdapter` in resources wraps the academics repository: `ClassExists` / `CanViewClass` (admin or class teacher or enrolled student) / `CanManageClass` (admin or class teacher). Membership id is resolved via `academics.GetMembershipByUserID`.
+  - `academics.Repository.IsStudentEnrolled(orgID, classID, userID)` query added and wired in `academics/repository.go` + `academics/queries.sql` (regenerated sqlc).
+  - `ListResources(actor, ListFilter{ContextType, ContextID})` filters by class enrolment for students; teachers/admins see all matching class resources.
+  - `CreateResource` / `PublishResource` / `ArchiveResource` / `UploadFiles` / `ListFiles` / `DownloadFile` all enforce class access; class-scope uploads / publishes by a non-managing teacher return 403.
+  - Optional `?context_type=class&context_id=<uuid>` query parameters on `GET /resources` (returns 404 when the class does not exist in the org).
+- **Multi-file uploads** (`resources/{queries,repository,service,handler}.go`):
+  - `POST /resources/{id}/files` accepts the existing `file` field, plus `files[]` and `files` (multi-part). All files become ACTIVE — the previous auto-archive-on-upload behaviour is removed (no migration needed; existing ACTIVE files remain ACTIVE).
+  - `UploadFile` is kept as a single-file facade (backward compatible) backed by `UploadFiles`.
+  - `GET /resources/{id}/files` lists ACTIVE files for the resource.
+  - Handler responses for upload + list use a flat `[{data: file}, …]` envelope (the legacy single-resource `data` envelope per item is preserved for OpenAPI clients).
+- **File-specific download with inline preview** (`resources/handler.go`):
+  - `GET /resources/{id}/download?file_id=<uuid>&disposition=inline` returns a specific file. When `file_id` is omitted the latest ACTIVE file is returned (existing behaviour).
+  - `disposition=inline` switches the response to `Content-Disposition: inline` for safe preview MIME types (image/png, image/jpeg, image/gif, image/webp, image/svg+xml, application/pdf, text/plain, text/csv, text/markdown). All other types fall back to `attachment`. `X-Content-Type-Options: nosniff` is always set.
+  - `storage.SanitizeContentType` continues to enforce the response content type allowlist.
+- **Frontend** (`apps/web/src/pages/resources/resources-page.tsx`, `shared/api/{resources,resources-queries,query-keys}.ts`, `index.css`):
+  - Resource list is now a grouped list of cards; each card shows status, actions, attached files, and a multi-file input.
+  - Multi-file upload uses `XMLHttpRequest` with concurrency 3 and per-file progress events. Progress is rendered as a list of `<progress>` bars with live status (`Đang tải…` / `Xong` / `Lỗi: …`) and a hidden live region for screen readers.
+  - Class filter radio (all / organization / class) + class selector for teachers and admins. The create-resource form gains a class scope selector and a class picker that uses `useClasses()`.
+  - Inline preview modal fetches the file via `disposition=inline` and renders it via `<img>`, `<iframe>` (PDF / text), or falls back to a download button for unsupported types. Modal is keyboard accessible (Escape to close, `role="dialog"`, `aria-modal="true"`).
+  - Per-file download button uses the file-specific `file_id` parameter; upload inputs are keyboard accessible (file picker).
+- **OpenAPI** (`docs/backend/backend-technical-spec/openapi/openapi-skeleton.yaml` + regenerated `apps/web/src/shared/api/openapi-schema.d.ts`): `context_type` / `context_id` query parameters on list, new `resources.listFiles` and updated `resources.uploadFile` / `resources.downloadFile` paths, `disposition` and `file_id` parameters on download.
+- **Smoke** (`scripts/e2e_smoke_api.mjs`):
+  - `assertResourcesFlow` extended with multi-file upload, file-specific download, and inline preview disposition assertion.
+  - New `assertResourceClassScopeFlow` creates a class-scoped resource and verifies teacher + enrolled student see it while a second non-enrolled student is denied (list returns 0 and direct download returns 403).
+  - Adds an `outsider` student (admin-created, must change password then login) to drive the negative path.
+- **Unit tests** (`resources/{service,handler}_test.go`):
+  - `TestService_UploadFiles_AllowsMultipleActive`, `TestService_DownloadFile_SpecificFileID`, `TestService_CreateResource_ClassScope_RequiresManage`, `TestService_ListResources_FilterByClass`, `TestService_DownloadFile_ClassScope_RequiresView`, `TestDownloadHandler_InlineDispositionForImage`, `TestDownloadHandler_InlineFallsBackToAttachmentForBinary`.
+  - Fixes to the existing fake repo: distinct `file-{n}` and `res-{n}` IDs and a working `ListResources` that returns all matches.
+
+### Verification
+
+- `pnpm api:sqlc` + `pnpm api:types` clean.
+- `pnpm check` clean (web typecheck + web build + go test + go vet + gofmt). 8 new resources tests pass; no other test touched.
+- `pnpm e2e:smoke` passes end-to-end. New logs: `resources: create, upload, publish, student list, download, multi-file, inline preview — ok` and `resources class scope: teacher + enrolled student + non-enrolled denied — ok`.
+- `pnpm e2e:browser` passes 20/20. The single resources a11y test was updated to look for the new `resources-list` testid (the legacy `resources-table` is gone) and to handle the empty list case.
+- `apps/web/test-results` and `apps/web/playwright-report` cleaned by `scripts/e2e_browser.sh` trap.
+
+### Decisions / notes
+
+- **No DB migration** — the schema already supports multiple ACTIVE files per resource (`resource_files.status`) and `resources.context_type` / `context_id`. Existing rows continue to work.
+- **No signature breaks** for the existing public API: `GET /resources` still works, `POST /resources/{id}/files` still accepts the single `file` field, and `GET /resources/{id}/download` without query parameters still returns the latest ACTIVE file.
+- **Multi-file upload accepts partial success**: each file is stored independently; a failure on a later file does not roll back earlier ones. The handler returns 201 with the list of persisted files.
+- **Inline preview allowlist is a strict subset of the download allowlist** (`internal/features/resources/handler.go::inlinePreviewContentTypes`) and never includes application/octet-stream. The 502 path (`errClassAccessUnavailable`) keeps class access errors retryable for clients.
+- **Class access seam**: `resources.ClassAccessChecker` is implemented in resources by `AcademicAccessAdapter`; the adapter wraps the academics repository (one-way dependency). The default `stubChecker` is used in unit tests to keep the dependency surface tight.
+- **Frontend file-specific download** uses the `file_id` parameter and falls back to the "latest ACTIVE" path when none is provided. The download button stays available for every file regardless of preview support.
+- **Accessibility**: file picker keeps the existing `data-testid="upload-{id}"`; the modal is keyboard dismissible and announces itself via `role="dialog"` + `aria-labelledby`. The upload progress region uses a `role="status"` + `aria-live="polite"` live region.
+- **Did not** add: file reorder / delete / version history UI, video / audio range streaming, upload cancel / resume across refresh, signed URLs, public bucket, bundle audit, Firefox / WebKit coverage, PWA, full WCAG sweep, apiClient cleanup — all explicitly deferred.

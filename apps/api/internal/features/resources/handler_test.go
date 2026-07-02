@@ -105,3 +105,39 @@ func TestDownloadHandler_RejectsMissingAuth(t *testing.T) {
 		t.Fatalf("status = %d, want 401", rec.Code)
 	}
 }
+
+func TestDownloadHandler_InlineDispositionForImage(t *testing.T) {
+	h, tok := newTestHandler(t, "image/png")
+	rec := httptest.NewRecorder()
+	r := httptest.NewRequest(http.MethodGet, "/api/v1/resources/res-1/download?disposition=inline", nil)
+	r.Header.Set("Authorization", "Bearer "+tok)
+	rctx := chi.NewRouteContext()
+	rctx.URLParams.Add("id", "res-1")
+	r = r.WithContext(context.WithValue(r.Context(), chi.RouteCtxKey, rctx))
+	h.DownloadFile(rec, r)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d", rec.Code)
+	}
+	disp := rec.Header().Get("Content-Disposition")
+	if !strings.HasPrefix(disp, "inline;") {
+		t.Fatalf("expected inline disposition, got %q", disp)
+	}
+}
+
+func TestDownloadHandler_InlineFallsBackToAttachmentForBinary(t *testing.T) {
+	h, tok := newTestHandler(t, "application/octet-stream")
+	rec := httptest.NewRecorder()
+	r := httptest.NewRequest(http.MethodGet, "/api/v1/resources/res-1/download?disposition=inline", nil)
+	r.Header.Set("Authorization", "Bearer "+tok)
+	rctx := chi.NewRouteContext()
+	rctx.URLParams.Add("id", "res-1")
+	r = r.WithContext(context.WithValue(r.Context(), chi.RouteCtxKey, rctx))
+	h.DownloadFile(rec, r)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d", rec.Code)
+	}
+	disp := rec.Header().Get("Content-Disposition")
+	if !strings.HasPrefix(disp, "attachment;") {
+		t.Fatalf("expected attachment disposition for unsafe MIME, got %q", disp)
+	}
+}

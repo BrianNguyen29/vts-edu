@@ -2152,6 +2152,21 @@ paths:
         List resources for the current organization.
         - Students receive only PUBLISHED resources.
         - Teachers and admins receive DRAFT and PUBLISHED resources.
+        - When `context_type=class` and `context_id=<uuid>` are provided,
+          only class-scoped resources for that class are returned.
+          Students must be enrolled in the class to see its resources.
+          Teachers must be assigned to the class; admins see all.
+      parameters:
+        - name: context_type
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [organization, class]
+        - name: context_id
+          in: query
+          required: false
+          schema: { type: string, format: uuid }
       responses:
         '200':
           description: Resources visible to the caller
@@ -2161,6 +2176,8 @@ paths:
                 $ref: '#/components/schemas/ResourceList'
         '401':
           $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
     post:
       operationId: resources.create
       tags: [Resources]
@@ -2227,13 +2244,43 @@ paths:
         '404':
           $ref: '#/components/responses/NotFound'
   /resources/{id}/files:
+    get:
+      operationId: resources.listFiles
+      tags: [Resources]
+      description: |
+        List the ACTIVE files attached to a resource. For class-scoped
+        resources the caller must be allowed to view the class. For
+        non-PUBLISHED resources, only managers can list files.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: Files attached to the resource
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/ResourceFile'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
     post:
       operationId: resources.uploadFile
       tags: [Resources]
       description: |
-        Teacher or admin only. Upload a file (multipart/form-data, field `file`)
-        that becomes the active file for the resource. Replaces any existing
-        ACTIVE file for the same resource. Capped by server `MAX_UPLOAD_SIZE`.
+        Teacher or admin only. Upload one or more files
+        (multipart/form-data). Accepts either a single `file` field or
+        repeated `files[]` fields. Multiple files are stored as
+        additional ACTIVE files on the same resource (multi-file
+        resources: existing ACTIVE files are NOT replaced). Capped by
+        server `MAX_UPLOAD_SIZE`.
       parameters:
         - name: id
           in: path
@@ -2245,18 +2292,24 @@ paths:
           multipart/form-data:
             schema:
               type: object
-              required: [file]
               properties:
                 file:
                   type: string
                   format: binary
+                files:
+                  type: array
+                  items:
+                    type: string
+                    format: binary
       responses:
         '201':
-          description: File stored
+          description: File(s) stored
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ResourceFile'
+                type: array
+                items:
+                  $ref: '#/components/schemas/ResourceFile'
         '400':
           $ref: '#/components/responses/BadRequest'
         '401':
@@ -2276,17 +2329,40 @@ paths:
       operationId: resources.downloadFile
       tags: [Resources]
       description: |
-        Download the active file for a resource. Students may only download
+        Download a file for a resource. Students may only download
         resources that are PUBLISHED. Teachers and admins may download any
-        non-archived resource.
+        non-archived resource. For class-scoped resources the caller must
+        be allowed to view the class.
+        - `file_id=<uuid>` returns a specific file. When omitted, the
+          latest ACTIVE file is returned.
+        - `disposition=inline` switches the response to `inline` for
+          safe preview MIME types (image/*, application/pdf,
+          text/plain, text/csv, text/markdown). All other MIME types
+          fall back to `attachment`. `X-Content-Type-Options: nosniff`
+          is always set.
       parameters:
         - name: id
           in: path
           required: true
           schema: { type: string, format: uuid }
+        - name: file_id
+          in: query
+          required: false
+          schema: { type: string, format: uuid }
+        - name: disposition
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [attachment, inline]
       responses:
         '200':
-          description: File payload (octet-stream, attachment)
+          description: File payload (content-type from allowlist, attachment or inline)
+          headers:
+            Content-Disposition:
+              schema: { type: string }
+            X-Content-Type-Options:
+              schema: { type: string, enum: [nosniff] }
           content:
             application/octet-stream:
               schema:

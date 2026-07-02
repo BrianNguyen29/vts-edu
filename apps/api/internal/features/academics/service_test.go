@@ -17,6 +17,7 @@ type fakeRepository struct {
 	getMembershipByUserIDFunc func(ctx context.Context, orgID, userID string) (MembershipInfo, error)
 	isClassTeacherFunc        func(ctx context.Context, orgID, classID, membershipID string) (bool, error)
 	classExistsFunc           func(ctx context.Context, orgID, classID string) (bool, error)
+	isStudentEnrolledFunc     func(ctx context.Context, orgID, classID, userID string) (bool, error)
 }
 
 func (f *fakeRepository) ListTerms(ctx context.Context, orgID string) ([]Term, error) {
@@ -136,6 +137,13 @@ func (f *fakeRepository) IsClassTeacher(ctx context.Context, orgID, classID, mem
 func (f *fakeRepository) ClassExists(ctx context.Context, orgID, classID string) (bool, error) {
 	if f.classExistsFunc != nil {
 		return f.classExistsFunc(ctx, orgID, classID)
+	}
+	return false, nil
+}
+
+func (f *fakeRepository) IsStudentEnrolled(ctx context.Context, orgID, classID, userID string) (bool, error) {
+	if f.isStudentEnrolledFunc != nil {
+		return f.isStudentEnrolledFunc(ctx, orgID, classID, userID)
 	}
 	return false, nil
 }

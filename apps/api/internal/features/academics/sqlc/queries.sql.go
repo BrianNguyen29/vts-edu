@@ -449,6 +449,32 @@ func (q *Queries) IsClassTeacher(ctx context.Context, arg IsClassTeacherParams) 
 	return exists, err
 }
 
+const isStudentEnrolled = `-- name: IsStudentEnrolled :one
+SELECT EXISTS (
+    SELECT 1
+    FROM enrollments e
+    JOIN organization_memberships m ON m.id = e.membership_id
+    WHERE e.organization_id = $1
+      AND e.class_section_id = $2
+      AND m.user_id = $3
+      AND e.status = 'ACTIVE'
+      AND m.status = 'ACTIVE'
+)
+`
+
+type IsStudentEnrolledParams struct {
+	OrganizationID pgtype.UUID `json:"organization_id"`
+	ClassSectionID pgtype.UUID `json:"class_section_id"`
+	UserID         pgtype.UUID `json:"user_id"`
+}
+
+func (q *Queries) IsStudentEnrolled(ctx context.Context, arg IsStudentEnrolledParams) (bool, error) {
+	row := q.db.QueryRow(ctx, isStudentEnrolled, arg.OrganizationID, arg.ClassSectionID, arg.UserID)
+	var exists bool
+	err := row.Scan(&exists)
+	return exists, err
+}
+
 const listClassTeachers = `-- name: ListClassTeachers :many
 SELECT ct.id, u.id AS user_id, u.display_name, ct.role, ct.status
 FROM class_teachers ct

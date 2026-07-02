@@ -13,6 +13,21 @@ import (
 	"github.com/go-chi/chi/v5"
 )
 
+// Allowed preview MIME types for inline rendering. Must be a strict
+// subset of storage.AllowedDownloadContentTypes and limited to types the
+// browser can render without an external plugin.
+var inlinePreviewContentTypes = map[string]struct{}{
+	"text/plain":      {},
+	"text/csv":        {},
+	"text/markdown":   {},
+	"application/pdf": {},
+	"image/png":       {},
+	"image/jpeg":      {},
+	"image/gif":       {},
+	"image/webp":      {},
+	"image/svg+xml":   {},
+}
+
 // Handler exposes the resources HTTP endpoints.
 type Handler struct {
 	svc    Service
@@ -49,6 +64,8 @@ func (h *Handler) mapError(w http.ResponseWriter, r *http.Request, err error) {
 		writeError(w, r, http.StatusNotFound, "not_found", "stored object not found")
 	case errors.Is(err, ErrStorageFailure):
 		writeError(w, r, http.StatusInternalServerError, "storage_error", "failed to process file")
+	case errors.Is(err, errClassAccessUnavailable):
+		writeError(w, r, http.StatusBadGateway, "upstream_unavailable", "class access check failed")
 	default:
 		writeError(w, r, http.StatusInternalServerError, "internal_error", "resource operation failed")
 	}
@@ -61,7 +78,11 @@ func (h *Handler) ListResources(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	resources, err := h.svc.ListResources(r.Context(), actor)
+	filter := ListFilter{
+		ContextType: strings.TrimSpace(r.URL.Query().Get("context_type")),
+		ContextID:   strings.TrimSpace(r.URL.Query().Get("context_id")),
+	}
+	resources, err := h.svc.ListResources(r.Context(), actor, filter)
 	if err != nil {
 		h.mapError(w, r, err)
 		return
@@ -125,7 +146,10 @@ func (h *Handler) ArchiveResource(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
-// UploadFile handles POST /api/v1/resources/{id}/files.
+// UploadFile handles POST /api/v1/resources/{id}/files. Accepts a
+// multipart body with either a `file` field (single) or a `files[]`
+// repeated field (multi). The single-field form is preserved for
+// backward compatibility.
 func (h *Handler) UploadFile(w http.ResponseWriter, r *http.Request) {
 	actor, ok := h.actor(w, r)
 	if !ok {
@@ -143,34 +167,92 @@ func (h *Handler) UploadFile(w http.ResponseWriter, r *http.Request) {
 		_ = r.MultipartForm.RemoveAll()
 	}()
 
-	files := r.MultipartForm.File["file"]
-	if len(files) == 0 {
+	multi := r.MultipartForm.File["files[]"]
+	if len(multi) == 0 {
+		multi = r.MultipartForm.File["files"]
+	}
+	if len(multi) == 0 {
+		multi = r.MultipartForm.File["file"]
+	}
+	if len(multi) == 0 {
 		writeError(w, r, http.StatusBadRequest, "bad_request", "missing file field")
 		return
 	}
-	fh := files[0]
 
-	file, err := fh.Open()
-	if err != nil {
-		writeError(w, r, http.StatusBadRequest, "bad_request", "cannot read uploaded file")
-		return
+	inputs := make([]UploadInput, 0, len(multi))
+	opened := make([]io.ReadCloser, 0, len(multi))
+	defer func() {
+		for _, c := range opened {
+			_ = c.Close()
+		}
+	}()
+
+	for _, fh := range multi {
+		f, err := fh.Open()
+		if err != nil {
+			writeError(w, r, http.StatusBadRequest, "bad_request", "cannot read uploaded file")
+			return
+		}
+		opened = append(opened, f)
+		ct := fh.Header.Get("Content-Type")
+		if ct == "" {
+			ct = "application/octet-stream"
+		}
+		inputs = append(inputs, UploadInput{
+			FileName:    fh.Filename,
+			ContentType: ct,
+			Data:        f,
+			Size:        fh.Size,
+		})
 	}
-	defer file.Close()
 
-	contentType := fh.Header.Get("Content-Type")
-	if contentType == "" {
-		contentType = "application/octet-stream"
-	}
-
-	uploaded, err := h.svc.UploadFile(r.Context(), actor, id, fh.Filename, contentType, file, fh.Size)
+	stored, err := h.svc.UploadFiles(r.Context(), actor, id, inputs)
 	if err != nil {
 		h.mapError(w, r, err)
 		return
 	}
-	writeData(w, http.StatusCreated, uploaded)
+	// Close opened files eagerly now that storage has read them.
+	for _, c := range opened {
+		_ = c.Close()
+	}
+	opened = nil
+	enveloped := make([]DataEnvelope, len(stored))
+	for i, f := range stored {
+		enveloped[i] = DataEnvelope{Data: f}
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusCreated)
+	_ = json.NewEncoder(w).Encode(enveloped)
+}
+
+// ListFiles handles GET /api/v1/resources/{id}/files.
+func (h *Handler) ListFiles(w http.ResponseWriter, r *http.Request) {
+	actor, ok := h.actor(w, r)
+	if !ok {
+		return
+	}
+	id := chi.URLParam(r, "id")
+	files, err := h.svc.ListFiles(r.Context(), actor, id)
+	if err != nil {
+		h.mapError(w, r, err)
+		return
+	}
+	enveloped := make([]DataEnvelope, len(files))
+	for i, f := range files {
+		enveloped[i] = DataEnvelope{Data: f}
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	_ = json.NewEncoder(w).Encode(enveloped)
 }
 
 // DownloadFile handles GET /api/v1/resources/{id}/download.
+// Optional query parameters:
+//   - file_id=<uuid>  – download a specific file. Defaults to the active
+//     file when omitted (backward compatible).
+//   - disposition=inline – render in the browser when the file's MIME is
+//     in inlinePreviewContentTypes. Anything else falls back to
+//     attachment and the X-Content-Type-Options: nosniff header is kept.
 func (h *Handler) DownloadFile(w http.ResponseWriter, r *http.Request) {
 	actor, ok := h.actor(w, r)
 	if !ok {
@@ -178,7 +260,9 @@ func (h *Handler) DownloadFile(w http.ResponseWriter, r *http.Request) {
 	}
 
 	id := chi.URLParam(r, "id")
-	reader, file, err := h.svc.DownloadFile(r.Context(), actor, id)
+	fileID := r.URL.Query().Get("file_id")
+
+	reader, file, err := h.svc.DownloadFile(r.Context(), actor, id, fileID)
 	if err != nil {
 		h.mapError(w, r, err)
 		return
@@ -188,8 +272,16 @@ func (h *Handler) DownloadFile(w http.ResponseWriter, r *http.Request) {
 	contentType := storage.SanitizeContentType(file.ContentType)
 	w.Header().Set("Content-Type", contentType)
 	w.Header().Set("Content-Length", strconv.FormatInt(file.SizeBytes, 10))
-	w.Header().Set("Content-Disposition", "attachment; filename=\""+safeFilename(file.OriginalName)+"\"")
 	w.Header().Set("X-Content-Type-Options", "nosniff")
+
+	disposition := r.URL.Query().Get("disposition")
+	dispType := "attachment"
+	if disposition == "inline" {
+		if _, ok := inlinePreviewContentTypes[contentType]; ok {
+			dispType = "inline"
+		}
+	}
+	w.Header().Set("Content-Disposition", dispType+"; filename=\""+safeFilename(file.OriginalName)+"\"")
 	w.WriteHeader(http.StatusOK)
 	_, _ = io.Copy(w, reader)
 }

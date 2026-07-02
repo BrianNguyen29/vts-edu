@@ -45,6 +45,7 @@ type Repository interface {
 	GetMembershipByUserID(ctx context.Context, orgID, userID string) (MembershipInfo, error)
 	IsClassTeacher(ctx context.Context, orgID, classID, membershipID string) (bool, error)
 	ClassExists(ctx context.Context, orgID, classID string) (bool, error)
+	IsStudentEnrolled(ctx context.Context, orgID, classID, userID string) (bool, error)
 
 	InsertAuditLog(ctx context.Context, tx pgx.Tx, p AuditLogParams) error
 }
@@ -801,6 +802,30 @@ func (r *sqlcRepository) ClassExists(ctx context.Context, orgID, classID string)
 		return false, fmt.Errorf("check class exists: %w", err)
 	}
 	return exists, nil
+}
+
+func (r *sqlcRepository) IsStudentEnrolled(ctx context.Context, orgID, classID, userID string) (bool, error) {
+	orgUUID, err := toUUID(orgID)
+	if err != nil {
+		return false, fmt.Errorf("invalid organization id: %w", err)
+	}
+	classUUID, err := toUUID(classID)
+	if err != nil {
+		return false, fmt.Errorf("invalid class id: %w", err)
+	}
+	userUUID, err := toUUID(userID)
+	if err != nil {
+		return false, fmt.Errorf("invalid user id: %w", err)
+	}
+	enrolled, err := r.queries.IsStudentEnrolled(ctx, academicssqlc.IsStudentEnrolledParams{
+		OrganizationID: orgUUID,
+		ClassSectionID: classUUID,
+		UserID:         userUUID,
+	})
+	if err != nil {
+		return false, fmt.Errorf("check student enrolled: %w", err)
+	}
+	return enrolled, nil
 }
 
 func (r *sqlcRepository) InsertAuditLog(ctx context.Context, tx pgx.Tx, p AuditLogParams) error {

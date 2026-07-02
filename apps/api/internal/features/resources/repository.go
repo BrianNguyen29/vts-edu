@@ -24,6 +24,7 @@ type Repository interface {
 	CreateResourceFile(ctx context.Context, file ResourceFile) (ResourceFile, error)
 	ListResourceFiles(ctx context.Context, orgID, resourceID string) ([]ResourceFile, error)
 	GetActiveResourceFile(ctx context.Context, orgID, resourceID string) (ResourceFile, error)
+	GetResourceFile(ctx context.Context, orgID, fileID string) (ResourceFile, error)
 	ArchiveResourceFile(ctx context.Context, orgID, fileID string) error
 }
 
@@ -263,6 +264,26 @@ func (r *sqlcRepository) GetActiveResourceFile(ctx context.Context, orgID, resou
 	return mapFile(row), nil
 }
 
+func (r *sqlcRepository) GetResourceFile(ctx context.Context, orgID, fileID string) (ResourceFile, error) {
+	fileUUID, err := toUUID(fileID)
+	if err != nil {
+		return ResourceFile{}, fmt.Errorf("invalid file id: %w", err)
+	}
+	orgUUID, err := toUUID(orgID)
+	if err != nil {
+		return ResourceFile{}, fmt.Errorf("invalid organization id: %w", err)
+	}
+
+	row, err := r.queries.GetResourceFile(ctx, resourcessqlc.GetResourceFileParams{
+		ID:             fileUUID,
+		OrganizationID: orgUUID,
+	})
+	if err != nil {
+		return ResourceFile{}, mapRepoError(err)
+	}
+	return mapFile(row), nil
+}
+
 func (r *sqlcRepository) ArchiveResourceFile(ctx context.Context, orgID, fileID string) error {
 	fileUUID, err := toUUID(fileID)
 	if err != nil {
@@ -361,6 +382,32 @@ func mapFile(row any) ResourceFile {
 			CreatedAt:    formatTime(f.CreatedAt),
 		}
 	case resourcessqlc.GetActiveResourceFileRow:
+		return ResourceFile{
+			ID:           f.ID.String(),
+			ResourceID:   f.ResourceID.String(),
+			OrgID:        f.OrganizationID.String(),
+			OriginalName: f.OriginalName,
+			StorageKey:   f.StorageKey,
+			ContentType:  f.ContentType,
+			SizeBytes:    f.SizeBytes,
+			Status:       f.Status,
+			CreatedBy:    f.CreatedBy.String(),
+			CreatedAt:    formatTime(f.CreatedAt),
+		}
+	case resourcessqlc.GetResourceFileRow:
+		return ResourceFile{
+			ID:           f.ID.String(),
+			ResourceID:   f.ResourceID.String(),
+			OrgID:        f.OrganizationID.String(),
+			OriginalName: f.OriginalName,
+			StorageKey:   f.StorageKey,
+			ContentType:  f.ContentType,
+			SizeBytes:    f.SizeBytes,
+			Status:       f.Status,
+			CreatedBy:    f.CreatedBy.String(),
+			CreatedAt:    formatTime(f.CreatedAt),
+		}
+	case resourcessqlc.ListResourceFilesRow:
 		return ResourceFile{
 			ID:           f.ID.String(),
 			ResourceID:   f.ResourceID.String(),

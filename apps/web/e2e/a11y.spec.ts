@@ -133,10 +133,17 @@ test.describe('accessibility smoke', () => {
     await page.goto('/app/resources');
     await expectLandmarkAndH1(page, /Tài liệu/);
 
-    // The table has a caption.
-    const table = page.getByTestId('resources-table');
-    await expect(table).toBeVisible();
-    await expect(table.locator('caption')).toHaveCount(1);
+    // The resource list is rendered with a list role and each item has
+    // a heading. When there are no resources, the empty placeholder
+    // appears; otherwise at least one resource card is visible.
+    const list = page.getByTestId('resources-list');
+    await expect(list).toBeVisible();
+    const empty = page.locator('.resource-list .empty');
+    const hasEmpty = await empty.isVisible().catch(() => false);
+    if (!hasEmpty) {
+      const cards = page.locator('[data-testid^="resource-card-"]');
+      await expect(cards.first()).toBeVisible();
+    }
   });
 
   test('gradebook: tab/tabpanel semantics and table caption', async ({ page }) => {

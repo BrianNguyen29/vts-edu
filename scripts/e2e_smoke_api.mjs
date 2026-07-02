@@ -107,6 +107,7 @@ async function changePassword(token, currentPassword, newPassword) {
   if (!r.ok) throw new Error(`change password failed: ${r.status}`);
   const json = await r.json();
   console.log('  change password success:', json.data.success);
+  return json;
 }
 
 async function assertChangePasswordRejected(token, currentPassword, newPassword) {
@@ -1058,6 +1059,77 @@ async function downloadResourceFile(token, resourceID) {
   return r.text();
 }
 
+async function uploadResourceFiles(token, resourceID, files) {
+  const form = new FormData();
+  for (const f of files) {
+    form.append('files[]', new Blob([f.body], { type: f.contentType }), f.name);
+  }
+  const h = headers(token, true);
+  delete h['Content-Type'];
+  const r = await fetch(`${API_PREFIX}/resources/${resourceID}/files`, {
+    method: 'POST',
+    headers: h,
+    body: form,
+  });
+  if (!r.ok) {
+    const body = await r.text();
+    throw new Error(`upload multiple files failed: ${r.status} body=${body}`);
+  }
+  const envelopes = (await r.json()) ?? [];
+  return envelopes.map((e) => e.data);
+}
+
+async function listResourceFiles(token, resourceID) {
+  const r = await fetch(`${API_PREFIX}/resources/${resourceID}/files`, { headers: headers(token) });
+  if (!r.ok) {
+    const body = await r.text();
+    throw new Error(`list resource files failed: ${r.status} body=${body}`);
+  }
+  const envelopes = (await r.json()) ?? [];
+  return envelopes.map((e) => e.data);
+}
+
+async function downloadResourceFileByID(token, resourceID, fileID) {
+  const url = `${API_PREFIX}/resources/${resourceID}/download?file_id=${fileID}`;
+  const r = await fetch(url, { headers: headers(token) });
+  if (!r.ok) {
+    throw new Error(`download specific file failed: ${r.status}`);
+  }
+  return r.text();
+}
+
+async function downloadResourceHeaders(token, resourceID, fileID, disposition) {
+  const params = new URLSearchParams({ file_id: fileID });
+  if (disposition) params.set('disposition', disposition);
+  const r = await fetch(`${API_PREFIX}/resources/${resourceID}/download?${params.toString()}`, {
+    headers: headers(token),
+  });
+  if (!r.ok) {
+    throw new Error(`download for headers failed: ${r.status}`);
+  }
+  // Drain body to avoid socket-already-closed issues.
+  await r.text();
+  const lower = {};
+  for (const [k, v] of r.headers.entries()) {
+    lower[k.toLowerCase()] = v;
+  }
+  return lower;
+}
+
+async function listResourcesByClass(token, classID) {
+  const url = `${API_PREFIX}/resources?context_type=class&context_id=${classID}`;
+  const r = await fetch(url, { headers: headers(token) });
+  if (!r.ok) {
+    const body = await r.text();
+    throw new Error(`list resources by class failed: ${r.status} body=${body}`);
+  }
+  return (await r.json()).data ?? [];
+}
+
+async function fetchRaw(url, token) {
+  return fetch(url, { headers: headers(token) });
+}
+
 async function assertStudentCannotDownloadDraft(token, resourceID) {
   const r = await fetch(`${API_PREFIX}/resources/${resourceID}/download`, {
     headers: headers(token),
@@ -1104,7 +1176,89 @@ async function assertResourcesFlow(teacherToken, studentToken, orgID) {
   if (downloaded !== payload) {
     throw new Error(`downloaded payload mismatch: got ${JSON.stringify(downloaded)}`);
   }
-  console.log('  resources: create, upload, publish, student list, download — ok');
+
+  // Multi-file: upload a second ACTIVE file alongside the first.
+  const multi = await uploadResourceFiles(teacherToken, resource.id, [
+    { name: 'second.txt', contentType: 'text/plain', body: 'second file body' },
+  ]);
+  if (multi.length !== 1) {
+    throw new Error(`expected 1 file from multi-upload, got ${multi.length}`);
+  }
+  const files = await listResourceFiles(teacherToken, resource.id);
+  if (files.length !== 2) {
+    throw new Error(`expected 2 ACTIVE files, got ${files.length}`);
+  }
+  // File-specific download returns the requested file.
+  const second = files.find((f) => f.original_name === 'second.txt');
+  if (!second) {
+    throw new Error('second file not found in list');
+  }
+  const specific = await downloadResourceFileByID(studentToken, resource.id, second.id);
+  if (specific !== 'second file body') {
+    throw new Error(`file-specific download mismatch: got ${JSON.stringify(specific)}`);
+  }
+  // Inline preview for a safe MIME returns inline disposition; for an
+  // unsafe MIME it falls back to attachment.
+  const inlineHeaders = await downloadResourceHeaders(
+    studentToken,
+    resource.id,
+    second.id,
+    'inline',
+  );
+  if (!inlineHeaders['content-disposition']?.startsWith('inline;')) {
+    throw new Error(`expected inline disposition, got ${inlineHeaders['content-disposition']}`);
+  }
+  if (inlineHeaders['x-content-type-options'] !== 'nosniff') {
+    throw new Error('expected nosniff on inline preview');
+  }
+
+  console.log('  resources: create, upload, publish, student list, download, multi-file, inline preview — ok');
+}
+
+async function assertResourceClassScopeFlow(teacherToken, studentToken, otherStudentToken, classID) {
+  console.log('Checking resources class scope...');
+  const title = `Tài liệu lớp ${Date.now()}`;
+  const created = await fetch(`${API_PREFIX}/resources`, {
+    method: 'POST',
+    headers: headers(teacherToken, true),
+    body: JSON.stringify({
+      title,
+      description: 'class scoped',
+      context_type: 'class',
+      context_id: classID,
+    }),
+  });
+  if (!created.ok) {
+    const body = await created.text();
+    throw new Error(`create class-scoped resource failed: ${created.status} body=${body}`);
+  }
+  const resource = (await created.json()).data;
+  await uploadResourceFile(teacherToken, resource.id, 'class-doc.txt', 'text/plain', 'class payload');
+  if ((await publishResource(teacherToken, resource.id)).status !== 'PUBLISHED') {
+    throw new Error('publish class-scoped resource failed');
+  }
+
+  // Class-scoped list: teacher sees it.
+  const teacherClassList = await listResourcesByClass(teacherToken, classID);
+  if (!teacherClassList.find((r) => r && r.data && r.data.id === resource.id)) {
+    throw new Error('teacher should see class-scoped resource when filtering by class');
+  }
+  // Student in the class sees it.
+  const studentClassList = await listResourcesByClass(studentToken, classID);
+  if (!studentClassList.find((r) => r && r.data && r.data.id === resource.id)) {
+    throw new Error('enrolled student should see class-scoped resource');
+  }
+  // Other student (not enrolled) does not see it.
+  const otherClassList = await listResourcesByClass(otherStudentToken, classID);
+  if (otherClassList.find((r) => r && r.data && r.data.id === resource.id)) {
+    throw new Error('non-enrolled student must not see class-scoped resource');
+  }
+  // Other student cannot download by direct id.
+  const direct = await fetchRaw(`${API_PREFIX}/resources/${resource.id}/download`, otherStudentToken);
+  if (direct.status !== 403) {
+    throw new Error(`expected 403 for non-enrolled student download, got ${direct.status}`);
+  }
+  console.log('  resources class scope: teacher + enrolled student + non-enrolled denied — ok');
 }
 
 async function assertNonMcqFlow(teacherToken, studentToken, adminToken, classId, studentUserId) {
@@ -1529,6 +1683,27 @@ async function main() {
   if (!resetLogin.data.roles.includes('teacher')) {
     throw new Error(`roles after update mismatch: ${resetLogin.data.roles}`);
   }
+
+  // Create a second student in the same org who is NOT enrolled in
+  // newClass. Used by the class-scoped resources flow.
+  const otherStudent = await createUser(
+    adminAfter.data.access_token,
+    'outsider',
+    'Outsider Student',
+    ['student'],
+    'TempOutsider123!',
+  );
+  // The user is in must_change_password state, so the initial password
+  // works once and we use change-password to set the real password.
+  const otherStudentLogin = await loginWith('outsider', 'TempOutsider123!');
+  const otherStudentInitialToken = otherStudentLogin.data.access_token;
+  await changePassword(
+    otherStudentInitialToken,
+    'TempOutsider123!',
+    'OutsiderPass123!',
+  );
+  const otherStudentFinal = await loginWith('outsider', 'OutsiderPass123!');
+  const otherStudentAccessToken = otherStudentFinal.data.access_token;
 
   const org = await getCurrentOrg(adminAfter.data.access_token);
   await updateCurrentOrg(adminAfter.data.access_token, 'Trường THPT Demo A Updated');
@@ -1963,6 +2138,13 @@ async function main() {
     teacherAfter.data.access_token,
     token,
     studentActor.organization_id,
+  );
+
+  await assertResourceClassScopeFlow(
+    teacherAfter.data.access_token,
+    token,
+    otherStudentAccessToken,
+    newClass.id,
   );
 
   await assertNonMcqFlow(

@@ -118,7 +118,8 @@ func main() {
 			os.Exit(1)
 		}
 		resourcesRepo := resources.NewRepository(pool.Pool)
-		resourcesSvc := resources.NewService(resourcesRepo, storageProvider, cfg.MaxUploadSize)
+		resourcesAccess := resources.NewAcademicAccessAdapter(academicsRepo)
+		resourcesSvc := resources.NewServiceWithAccess(resourcesRepo, storageProvider, cfg.MaxUploadSize, resourcesAccess)
 		resourcesHandler = resources.NewHandler(resourcesSvc, authIssuer)
 	}
 
@@ -316,6 +317,7 @@ func main() {
 			r.Post("/resources/{id}/publish", resourcesHandler.PublishResource)
 			r.Delete("/resources/{id}", resourcesHandler.ArchiveResource)
 			r.Post("/resources/{id}/files", resourcesHandler.UploadFile)
+			r.Get("/resources/{id}/files", resourcesHandler.ListFiles)
 			r.Get("/resources/{id}/download", resourcesHandler.DownloadFile)
 		} else {
 			r.Get("/resources", srv.academicsPlaceholderHandler)

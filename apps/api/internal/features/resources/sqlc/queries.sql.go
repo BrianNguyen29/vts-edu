@@ -251,6 +251,50 @@ func (q *Queries) GetResource(ctx context.Context, arg GetResourceParams) (GetRe
 	return i, err
 }
 
+const getResourceFile = `-- name: GetResourceFile :one
+SELECT
+  id, resource_id, organization_id, original_name, storage_key, content_type, size_bytes,
+  status::text, created_by, created_at
+FROM resource_files
+WHERE id = $1 AND organization_id = $2
+`
+
+type GetResourceFileParams struct {
+	ID             pgtype.UUID `json:"id"`
+	OrganizationID pgtype.UUID `json:"organization_id"`
+}
+
+type GetResourceFileRow struct {
+	ID             pgtype.UUID        `json:"id"`
+	ResourceID     pgtype.UUID        `json:"resource_id"`
+	OrganizationID pgtype.UUID        `json:"organization_id"`
+	OriginalName   string             `json:"original_name"`
+	StorageKey     string             `json:"storage_key"`
+	ContentType    string             `json:"content_type"`
+	SizeBytes      int64              `json:"size_bytes"`
+	Status         string             `json:"status"`
+	CreatedBy      pgtype.UUID        `json:"created_by"`
+	CreatedAt      pgtype.Timestamptz `json:"created_at"`
+}
+
+func (q *Queries) GetResourceFile(ctx context.Context, arg GetResourceFileParams) (GetResourceFileRow, error) {
+	row := q.db.QueryRow(ctx, getResourceFile, arg.ID, arg.OrganizationID)
+	var i GetResourceFileRow
+	err := row.Scan(
+		&i.ID,
+		&i.ResourceID,
+		&i.OrganizationID,
+		&i.OriginalName,
+		&i.StorageKey,
+		&i.ContentType,
+		&i.SizeBytes,
+		&i.Status,
+		&i.CreatedBy,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
 const listResourceFiles = `-- name: ListResourceFiles :many
 SELECT
   id, resource_id, organization_id, original_name, storage_key, content_type, size_bytes,

@@ -51,7 +51,10 @@ export const academicKeys = {
 
 export const resourceKeys = {
   all: ['resources'] as const,
-  list: () => [...resourceKeys.all, 'list'] as const,
+  list: (filter?: { contextType?: string; contextID?: string }) =>
+    [...resourceKeys.all, 'list', filter ?? {}] as const,
+  files: (resourceId: string) =>
+    [...resourceKeys.all, 'files', resourceId] as const,
 };
 
 export const gradingKeys = {

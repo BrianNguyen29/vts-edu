@@ -1143,6 +1143,10 @@ export interface paths {
          * @description List resources for the current organization.
          *     - Students receive only PUBLISHED resources.
          *     - Teachers and admins receive DRAFT and PUBLISHED resources.
+         *     - When `context_type=class` and `context_id=<uuid>` are provided,
+         *       only class-scoped resources for that class are returned.
+         *       Students must be enrolled in the class to see its resources.
+         *       Teachers must be assigned to the class; admins see all.
          */
         get: operations["resources.list"];
         put?: never;
@@ -1195,12 +1199,20 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        get?: never;
+        /**
+         * @description List the ACTIVE files attached to a resource. For class-scoped
+         *     resources the caller must be allowed to view the class. For
+         *     non-PUBLISHED resources, only managers can list files.
+         */
+        get: operations["resources.listFiles"];
         put?: never;
         /**
-         * @description Teacher or admin only. Upload a file (multipart/form-data, field `file`)
-         *     that becomes the active file for the resource. Replaces any existing
-         *     ACTIVE file for the same resource. Capped by server `MAX_UPLOAD_SIZE`.
+         * @description Teacher or admin only. Upload one or more files
+         *     (multipart/form-data). Accepts either a single `file` field or
+         *     repeated `files[]` fields. Multiple files are stored as
+         *     additional ACTIVE files on the same resource (multi-file
+         *     resources: existing ACTIVE files are NOT replaced). Capped by
+         *     server `MAX_UPLOAD_SIZE`.
          */
         post: operations["resources.uploadFile"];
         delete?: never;
@@ -1217,9 +1229,17 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * @description Download the active file for a resource. Students may only download
+         * @description Download a file for a resource. Students may only download
          *     resources that are PUBLISHED. Teachers and admins may download any
-         *     non-archived resource.
+         *     non-archived resource. For class-scoped resources the caller must
+         *     be allowed to view the class.
+         *     - `file_id=<uuid>` returns a specific file. When omitted, the
+         *       latest ACTIVE file is returned.
+         *     - `disposition=inline` switches the response to `inline` for
+         *       safe preview MIME types (image/*, application/pdf,
+         *       text/plain, text/csv, text/markdown). All other MIME types
+         *       fall back to `attachment`. `X-Content-Type-Options: nosniff`
+         *       is always set.
          */
         get: operations["resources.downloadFile"];
         put?: never;
@@ -4643,7 +4663,10 @@ export interface operations {
     };
     "resources.list": {
         parameters: {
-            query?: never;
+            query?: {
+                context_type?: "organization" | "class";
+                context_id?: string;
+            };
             header?: never;
             path?: never;
             cookie?: never;
@@ -4660,6 +4683,7 @@ export interface operations {
                 };
             };
             401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
         };
     };
     "resources.create": {
@@ -4737,6 +4761,31 @@ export interface operations {
             404: components["responses"]["NotFound"];
         };
     };
+    "resources.listFiles": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Files attached to the resource */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ResourceFile"][];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
     "resources.uploadFile": {
         parameters: {
             query?: never;
@@ -4750,18 +4799,19 @@ export interface operations {
             content: {
                 "multipart/form-data": {
                     /** Format: binary */
-                    file: string;
+                    file?: string;
+                    files?: string[];
                 };
             };
         };
         responses: {
-            /** @description File stored */
+            /** @description File(s) stored */
             201: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ResourceFile"];
+                    "application/json": components["schemas"]["ResourceFile"][];
                 };
             };
             400: components["responses"]["BadRequest"];
@@ -4781,7 +4831,10 @@ export interface operations {
     };
     "resources.downloadFile": {
         parameters: {
-            query?: never;
+            query?: {
+                file_id?: string;
+                disposition?: "attachment" | "inline";
+            };
             header?: never;
             path: {
                 id: string;
@@ -4790,9 +4843,11 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description File payload (octet-stream, attachment) */
+            /** @description File payload (content-type from allowlist, attachment or inline) */
             200: {
                 headers: {
+                    "Content-Disposition"?: string;
+                    "X-Content-Type-Options"?: "nosniff";
                     [name: string]: unknown;
                 };
                 content: {

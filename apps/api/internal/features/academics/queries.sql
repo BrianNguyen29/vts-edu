@@ -236,6 +236,18 @@ SELECT EXISTS (
       AND status = 'ACTIVE'
 );
 
+-- name: IsStudentEnrolled :one
+SELECT EXISTS (
+    SELECT 1
+    FROM enrollments e
+    JOIN organization_memberships m ON m.id = e.membership_id
+    WHERE e.organization_id = $1
+      AND e.class_section_id = $2
+      AND m.user_id = $3
+      AND e.status = 'ACTIVE'
+      AND m.status = 'ACTIVE'
+);
+
 -- name: InsertAuditLog :exec
 INSERT INTO audit_logs (
     organization_id,
