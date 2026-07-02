@@ -1463,3 +1463,36 @@ Repo-wide implementation tracking. Append-only; do not delete historical entries
 - **Tách preconditions thành sub-spike (không big-bang)**: 3 preconditions B.1 / B.2 / B.3 là bounded (≤ 1 ngày, có test, có rollback). Tránh việc mở một "preconditions spike" lớn có nguy cơ thất bại và phải redo.
 - **Rollback plan cho mỗi slice migration**: xóa sub-router mount + giữ nguyên chi routes. Mỗi slice phải có thể rollback trong 1 commit. Điều này giữ lợi ích của independent failure domains (chi routes là fallback nếu Huma operations fail).
 - **Did not** add: code spike cho streaming/binary, bất kỳ file nào trong `apps/api/`, bất kỳ dependency mới nào, bất kỳ OpenAPI generation mới nào. Tất cả thay đổi đều là markdown.
+## 2026-07-02 — Optional load / concurrency harness for attempt runtime
+
+### Done
+
+- **`scripts/e2e_load.sh`** (new): shell harness modeled on `e2e_smoke.sh` but exports `RATE_LIMIT_ENABLED=false` explicitly (default is already `false`, but the explicit export documents intent and protects against a future default flip). Starts E2E DB, applies migrations, builds + starts the API, runs the load script, then cleans up API + DB via the existing `trap` pattern.
+- **`scripts/e2e_load_api.mjs`** (new, ~440 lines): bounded harness with 4 scenarios on a fresh E2E DB.
+  - **S1 — concurrent saves** (N=8) on the seeded `00000000-0000-4000-8000-000000000001` attempt + first item: asserts all 8 PUTs return 200, all 8 return a numeric `revision`, max revision ≥ 8, and the observed revisions form a contiguous range ending at max (no gaps from lost writes).
+  - **S2 — concurrent submits** (N=8) on a freshly created draft assessment for class 8A1: teacher creates class 8A1 assessment + section + published-question item + target + validate + publish, then student starts a fresh attempt. N concurrent POST submits fire. Asserts all 8 return 200 (the submit handler is intentionally idempotent — the first one transitions IN_PROGRESS→SUBMITTED, subsequent ones see `Status == "SUBMITTED"` and return the original 200 with the same `submitted_at`/`score`/`grading_status`), and the 8 response bodies share identical `submitted_at` + `score` + `grading_status` (proving the database was written exactly once). Final `GET /attempts/{id}` confirms the terminal state.
+  - **S3 — save-after-submit** (single): after S2, a subsequent save returns 409 with `error.code = attempt_not_in_progress`.
+  - **S4 — burst reads** (N=16) on the seeded attempt: asserts all 16 return 200, all 16 share the same `status` + `item count` (proves read consistency under small bursts).
+- **No new dependencies**: uses only `node:fetch` + the existing scripts. No `package.json` deps change; `pnpm install --frozen-lockfile` is a no-op.
+- **`package.json`** (root): adds `e2e:load` (full DB + API + harness) and `e2e:load:direct` (against an already-running API on `$API_BASE`) scripts.
+- **`AGENTS.md`**: adds `pnpm e2e:load` + `pnpm e2e:load:direct` to the verified commands list; adds a "Recently implemented" bullet.
+- **`README.md`**: removes "load + concurrency tests" from the not-started next backlog (now shipped as a manual harness) and adds a small "Optional load / concurrency tests (manual, not in `pnpm check`)" block with the run command + scope.
+
+### Verification
+
+- `pnpm e2e:load` (full path: starts DB → applies migrations → builds + starts API → runs harness) — all 4 scenarios PASS on a fresh DB. S1: 8/8 status 200, revisions 2..9 contiguous, elapsed 233–341ms. S2: 8/8 status 200, all share `submitted_at=2026-07-02T17:08:35.865137Z` + `score=0.00` + `grading_status=GRADED`, final status SUBMITTED, elapsed 179–189ms. S3: 409 + `error.code=attempt_not_in_progress`. S4: 16/16 status 200, all IN_PROGRESS, item count 2, elapsed 35–45ms. Cleanup trap tears down API + DB.
+- `pnpm e2e:load:direct` against a temp API on port 8081 — same 4 scenarios PASS.
+- `pnpm check` (web typecheck + web build + go test + go vet + gofmt) — green. Load harness is **not** part of `pnpm check`.
+- `pnpm e2e:db:stop` after each run — verified no `vts-e2e-postgres` container left running, no stray API process.
+- `pnpm install --frozen-lockfile` — clean (no new deps; no lockfile change).
+
+### Decisions / notes
+
+- **Manual, not in `pnpm check`**: per task brief. `pnpm e2e:load` is intentionally a developer-only check, not CI. The default `pnpm check` chain is unchanged; the smoke + browser E2E suites already cover correctness.
+- **Idempotent submit, not "first wins"**: the submit service's switch on `attempt.Status` is intentional — once `SUBMITTED`, all subsequent submits return the original 200 (not 409). The harness asserts this via shared `submitted_at` / `score` / `grading_status` across all 8 responses. This is production behavior, not a bug. The original smoke test only fires one submit, so the idempotency was not previously covered.
+- **Revision contiguity for S1**: a prior smoke run inserts an initial answer row at revision 1 (per `000004` migration `INSERT INTO attempt_answers … VALUES … '{}'`). On a fresh DB the 8 concurrent saves give revisions 2..9, which is a contiguous range ending at max; the harness asserts this. If a prior load run left a higher revision, the same contiguity rule still holds as long as no writes were lost.
+- **Fresh assessment for S2 + S3**: the seeded attempt's `max_attempts=1` would prevent the same student from starting a second attempt; the harness creates a new assessment with `max_attempts=5` so repeat runs against the same DB are possible without DB reset.
+- **Teacher token, not student token, lists classes** (`GET /classes` is teacher-or-admin only). The harness logs in both student (`hs001`) and teacher (`gv001`) and uses the teacher token for the class-8A1 lookup.
+- **`POST /assessment-sections/{section_id}/items`** is the real path (the smoke script's helper `createItem` encodes this; the load script inlines the call to keep the script standalone).
+- **No new deps**: a single `node:fetch` based file. No test framework, no assertion library, no k6 / autocannon. The 4 scenarios are deterministic and fast (under 2 s for the full harness) which keeps the manual check cheap to run during development.
+- **Did not** add: any backend code change, any new package, any `pnpm check` wiring, any CI workflow, any production deploy, any modification to the rate limiter or attempt runtime. The harness only adds observability; if a real race is ever caught, a follow-up task can add a bounded fix and re-record here.

@@ -23,6 +23,8 @@
     "e2e:db:migrate": "./scripts/e2e_db_migrate.sh",
     "e2e:db:stop": "./scripts/e2e_db_stop.sh",
     "e2e:smoke": "./scripts/e2e_smoke.sh",
+    "e2e:load": "./scripts/e2e_load.sh",
+    "e2e:load:direct": "node scripts/e2e_load_api.mjs",
 
     "vercel:version": "pnpm exec vercel --version",
     "vercel:pull": "pnpm exec vercel env pull .env.local --yes --cwd apps/web",
