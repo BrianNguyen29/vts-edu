@@ -1301,3 +1301,26 @@ Repo-wide implementation tracking. Append-only; do not delete historical entries
 - **Hidden over false** for sourcemap: false would skip generating maps entirely, removing the ability to decode production stack traces. Hidden keeps the maps on disk without exposing them publicly. No app code references `process.env.NODE_ENV` directly, so the build-time branch is the only effect.
 - **No new dependencies**: only React 19 `lazy` / `Suspense` (already in use) and Vite's existing `sourcemap` option.
 - **Did not** add: bundle analyzer dependency, virtualized lists, CSS splitting, PWA, browser matrix, apiClient cleanup, route preloading (`React.startTransition` / `<link rel="modulepreload">`), chunk naming customisation. All explicitly deferred.
+
+## 2026-07-02 — Playwright cross-browser matrix (Firefox + WebKit)
+
+### Done
+
+- **`apps/web/playwright.config.ts`**: keeps Chromium as the default project so `pnpm e2e:browser` stays the fast local path. Adds `firefox` + `webkit` projects under the `PLAYWRIGHT_BROWSERS=1` env flag. The config comment documents that WebKit additionally needs host libraries and that the matrix runner probes them.
+- **`scripts/e2e_browser_all.sh`** + `pnpm e2e:browser:all`: spins up the same DB + API as `e2e_browser.sh`, then runs `pnpm web:e2e` with `PLAYWRIGHT_BROWSERS=1`. Before the run it tries to install the missing browsers and probes the WebKit host dependencies (libgtk-4, libgraphene-1.0, libxslt, libevent-2.1, libopus, libgstallocators) by launching and closing a headless WebKit. If the probe fails, the script falls back to chromium + firefox only and prints the install hint.
+- **`pnpm web:e2e:install:all`** + `apps/web/package.json::e2e:install:matrix`: one-shot helper to install all three browser binaries without system deps (system deps for WebKit are still required at runtime and not installed without sudo).
+- **`apps/web/e2e/critical-flow.spec.ts`**: locator for the student assessment card gained `.first()` to remain robust when the test data accumulates across re-runs (Firefox previously hit a strict-mode violation in the matrix because the previous chromium run left the same title in the seed).
+
+### Verification
+
+- `pnpm e2e:browser` (default Chromium-only path) still 20/20 green.
+- `pnpm e2e:browser:all` ran the matrix (chromium + firefox + webkit). WebKit probe failed with the documented missing libs; the script automatically fell back to chromium + firefox. Result: 38/40 pass — chromium 20/20, firefox 18/20. The 2 Firefox failures are the long-flow `critical-flow.spec.ts::admin bulk imports` and `teacher-builder.spec.ts::teacher assessment builder` hitting Firefox-headless GPU/SWGL renderer crashes (`RenderCompositorSWGL failed mapping default framebuffer, no dt`) on the WSL2 host. Same tests pass in chromium and on a properly GPU-accelerated Firefox host. No code change would fix this without a renderer upgrade.
+- `pnpm check` clean (web typecheck + web build + go test + go vet + gofmt).
+
+### Decisions / notes
+
+- **Opt-in matrix**: chromium stays the only project by default so `pnpm e2e:browser` is still the 2-minute local check. The matrix is only turned on when the env flag is set or `pnpm e2e:browser:all` is invoked.
+- **WebKit fallback is graceful, not a hard error**: the script prints the missing libs and continues with chromium + firefox. The user gets matrix coverage where the host allows, plus a clear instruction (`playwright install --with-deps webkit`) to opt into WebKit when the libs are available.
+- **No new dependencies**: only existing `@playwright/test` + `playwright install` CLI. No package.json additions beyond the script entries.
+- **Firefox renderer is host-bound**: headless Firefox on WSL2 / VM hosts without a real GPU hits SWGL renderer crashes during long flows. Keeping the matrix in place lets CI / properly GPU-accelerated hosts run all three browsers without us blocking on a single developer's host.
+- **Did not** add: per-test retries, browser-specific test fixtures, GitHub Actions workflow for the matrix (deferred — the local script is the entry point; CI can opt in with `PLAYWRIGHT_BROWSERS=1 pnpm e2e:browser:all`).

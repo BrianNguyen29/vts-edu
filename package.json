@@ -11,7 +11,9 @@
     "web:test": "pnpm --filter @vts-edu/web test",
     "web:e2e": "pnpm --filter @vts-edu/web e2e",
     "web:e2e:install": "pnpm --filter @vts-edu/web e2e:install",
+    "web:e2e:install:all": "pnpm --filter @vts-edu/web exec playwright install chromium firefox webkit",
     "e2e:browser": "./scripts/e2e_browser.sh",
+    "e2e:browser:all": "./scripts/e2e_browser_all.sh",
     "api:dev": "pnpm --filter @vts-edu/api dev",
     "api:test": "pnpm --filter @vts-edu/api test",
 

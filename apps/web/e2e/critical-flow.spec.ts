@@ -60,9 +60,9 @@ test.describe.serial('critical end-to-end flow', () => {
     const studentPage = await studentContext.newPage();
     await loginAs(studentPage, 'student');
 
-    const assessmentCard = studentPage.locator('.assessment-list-item', {
-      hasText: ASSESSMENT_TITLE,
-    });
+    const assessmentCard = studentPage
+      .locator('.assessment-list-item', { hasText: ASSESSMENT_TITLE })
+      .first();
     await expect(assessmentCard).toBeVisible();
     await assessmentCard.getByTestId('start-assessment-button').click();
 
