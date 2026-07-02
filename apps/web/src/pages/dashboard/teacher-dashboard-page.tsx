@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { Suspense, lazy, useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '@/app/providers/auth-provider';
 import { useCreateAssessment, useInfiniteAssessments } from '@/shared/api/assessments-queries';
@@ -6,8 +6,13 @@ import { useClasses } from '@/shared/api/academics-queries';
 import type { AssessmentListItem } from '@/shared/api/assessments';
 import type { ClassSection } from '@/shared/api/academics';
 import { ErrorState } from '@/shared/components/error-state';
-import { ClassRosterPanel } from './class-roster-panel';
 import { useDocumentTitle } from '@/shared/lib/use-document-title';
+
+// Lazy-load the class roster panel. It is only opened from a dialog, so
+// we defer the import until the user actually expands a class.
+const ClassRosterPanel = lazy(() =>
+  import('./class-roster-panel').then((m) => ({ default: m.ClassRosterPanel }))
+);
 
 export function TeacherDashboardPage() {
   const auth = useAuth();
@@ -235,10 +240,18 @@ export function TeacherDashboardPage() {
         <h2 id="teacher-classes-heading">Lớp học</h2>
 
         {selectedClass ? (
-          <ClassRosterPanel
-            classSection={selectedClass}
-            onClose={() => setSelectedClass(null)}
-          />
+          <Suspense
+            fallback={
+              <div className="loading-fallback" role="status" aria-live="polite">
+                Đang tải danh sách lớp…
+              </div>
+            }
+          >
+            <ClassRosterPanel
+              classSection={selectedClass}
+              onClose={() => setSelectedClass(null)}
+            />
+          </Suspense>
         ) : (
           <>
             {classesLoading && (

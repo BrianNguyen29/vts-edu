@@ -1250,3 +1250,54 @@ Repo-wide implementation tracking. Append-only; do not delete historical entries
 - **Frontend file-specific download** uses the `file_id` parameter and falls back to the "latest ACTIVE" path when none is provided. The download button stays available for every file regardless of preview support.
 - **Accessibility**: file picker keeps the existing `data-testid="upload-{id}"`; the modal is keyboard dismissible and announces itself via `role="dialog"` + `aria-labelledby`. The upload progress region uses a `role="status"` + `aria-live="polite"` live region.
 - **Did not** add: file reorder / delete / version history UI, video / audio range streaming, upload cancel / resume across refresh, signed URLs, public bucket, bundle audit, Firefox / WebKit coverage, PWA, full WCAG sweep, apiClient cleanup — all explicitly deferred.
+
+## 2026-07-02 — Frontend bundle split + hidden sourcemaps
+
+### Done
+
+- **Route-level code splitting** (`apps/web/src/app/router.tsx`):
+  - All 16 route page components are now imported via `React.lazy` + `dynamic import` so each route becomes its own chunk. The router still uses `createBrowserRouter`; every `element` is wrapped in a tiny `<SuspenseRoute>` helper that renders a `role="status" aria-live="polite"` fallback (`Đang tải…`) while the chunk loads.
+  - The auth + app + exam layouts stay statically imported (they hold the chrome / redirect logic and must be present immediately). Only the page modules are lazy.
+- **Dashboard panel splitting** (`apps/web/src/pages/dashboard/{admin-dashboard-page,teacher-dashboard-page}.tsx`):
+  - `AuditLogsPanel` and `AcademicManagementPanel` are now `React.lazy` imports inside `AdminDashboardPage`. The admin dashboard shell is loaded eagerly; each tab's panel arrives on demand and shows a Vietnamese `Đang tải nhật ký…` / `Đang tải học vụ…` placeholder inside the same tabpanel section.
+  - `ClassRosterPanel` is `React.lazy` inside `TeacherDashboardPage`. The teacher dashboard's class list is fully usable without it; the panel only loads when a teacher expands a class.
+- **Hidden sourcemaps in production** (`apps/web/vite.config.ts`):
+  - `build.sourcemap` is now `process.env.NODE_ENV === 'production' ? 'hidden' : true`. Production builds still emit `.js.map` files into `dist/assets/…` but the public bundle no longer carries a `//# sourceMappingURL=` comment, so end users cannot fetch the maps. Dev and preview builds keep full sourcemaps for local debugging. Operators can still upload the hidden maps to a server-side error monitor.
+- **Styling** (`apps/web/src/index.css`): added a small `.loading-fallback` rule (centered, muted, italic) reused by both the router and panel Suspense fallbacks.
+- **Documentation** (`AGENTS.md` + `docs/backend/backend-technical-spec/14-implementation-roadmap.md`): recorded the new slice.
+
+### Verification
+
+- `pnpm web:typecheck` clean.
+- `pnpm web:build` clean. Initial chunk dropped from 511.19 kB / 147.04 kB gzipped to **335.39 kB / 106.56 kB gzipped** (a ~34% reduction in raw bytes, ~28% reduction gzipped). The 16 page/panel chunks are listed below; they load on demand.
+  - `academic-management-panel-…js` 28.69 kB / 6.24 kB gz (largest)
+  - `assessment-builder-page-…js` 19.15 kB / 5.45 kB gz
+  - `admin-dashboard-page-…js` 16.01 kB / 4.59 kB gz
+  - `resources-page-…js` 15.30 kB / 5.24 kB gz
+  - `exam-page-…js` 12.42 kB / 4.45 kB gz
+  - `gradebook-page-…js` 10.27 kB / 3.08 kB gz
+  - `teacher-dashboard-page-…js` 7.09 kB / 2.43 kB gz
+  - `attempt-review-page-…js` 6.73 kB / 2.13 kB gz
+  - `dashboard-page-…js` 6.71 kB / 2.39 kB gz
+  - `question-banks-page-…js` 6.65 kB / 2.25 kB gz
+  - `audit-logs-panel-…js` 4.77 kB / 1.95 kB gz
+  - `grading-detail-page-…js` 4.72 kB / 1.99 kB gz
+  - `grading-queue-page-…js` 2.89 kB / 1.24 kB gz
+  - `change-password-page-…js` 3.23 kB / 1.37 kB gz
+  - `login-page-…js` 2.24 kB / 1.06 kB gz
+  - `class-roster-panel-…js` 2.19 kB / 1.09 kB gz
+  - `diagnostics-page-…js` 1.63 kB / 0.73 kB gz
+  - …plus shared `query-keys-…js` (14.27 kB), `openapi-client-…js` (7.36 kB), and small api adapter chunks.
+- Production build still emits sourcemap files but `grep "sourceMappingURL" dist/assets/index-*.js` returns nothing — the comment is suppressed. Maps remain on disk for operator-side error monitoring.
+- `pnpm web:test` 57/57 pass (8 test files).
+- `pnpm e2e:browser` 20/20 pass. No test changes were required because the lazy boundary is hidden behind the existing route elements; role redirects, auth guards, and tab semantics are unchanged.
+- `pnpm check` clean (web typecheck + web build + go test + go vet + gofmt).
+
+### Decisions / notes
+
+- **Route lazy boundary is `SuspenseRoute`**: a small wrapper that renders a `role="status"` placeholder. We avoided putting the Suspense around the page itself so the layouts (auth, app, exam) stay mounted and the auth redirect / role guard logic still sees a stable parent.
+- **Static imports kept on purpose**: layout components, auth provider, query provider, `LoginPage`'s css-only neighbours — these are tiny and shared by every route, so splitting them is not worth the extra round-trip.
+- **Panels inside admin/teacher dashboards are lazy, the dashboards themselves are not**: the dashboards are page-level chunks already; lazy-loading their child panels is a second split inside an already-deferred route.
+- **Hidden over false** for sourcemap: false would skip generating maps entirely, removing the ability to decode production stack traces. Hidden keeps the maps on disk without exposing them publicly. No app code references `process.env.NODE_ENV` directly, so the build-time branch is the only effect.
+- **No new dependencies**: only React 19 `lazy` / `Suspense` (already in use) and Vite's existing `sourcemap` option.
+- **Did not** add: bundle analyzer dependency, virtualized lists, CSS splitting, PWA, browser matrix, apiClient cleanup, route preloading (`React.startTransition` / `<link rel="modulepreload">`), chunk naming customisation. All explicitly deferred.

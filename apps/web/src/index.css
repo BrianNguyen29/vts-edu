@@ -136,6 +136,15 @@ label {
   padding: 2rem;
 }
 
+.loading-fallback {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 2rem;
+  color: var(--color-muted, #6b6b6b);
+  font-style: italic;
+}
+
 /* Auth layout */
 .auth-layout {
   display: flex;

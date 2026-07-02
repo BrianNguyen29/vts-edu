@@ -1,25 +1,108 @@
-import { createBrowserRouter, Navigate, useLocation } from 'react-router-dom';
+import {
+  createBrowserRouter,
+  Navigate,
+  useLocation,
+} from 'react-router-dom';
+import { lazy, Suspense, type ReactNode } from 'react';
 import { AuthLayout } from '@/app/layouts/auth-layout';
 import { AppShellLayout } from '@/app/layouts/app-shell-layout';
 import { ExamLayout } from '@/app/layouts/exam-layout';
-import { LoginPage } from '@/pages/login/login-page';
-import { DiagnosticsPage } from '@/pages/diagnostics/diagnostics-page';
-import { DashboardPage } from '@/pages/dashboard/dashboard-page';
-import { TeacherDashboardPage } from '@/pages/dashboard/teacher-dashboard-page';
-import { AdminDashboardPage } from '@/pages/dashboard/admin-dashboard-page';
-import { AssessmentBuilderPage } from '@/pages/assessment-builder/assessment-builder-page';
-import { GradebookPage } from '@/pages/gradebook/gradebook-page';
-import { ChangePasswordPage } from '@/pages/change-password/change-password-page';
-import { ExamPage } from '@/pages/exam/exam-page';
-import { AttemptReviewPage } from '@/pages/attempt-review/attempt-review-page';
-import { ResourcesPage } from '@/pages/resources/resources-page';
-import { QuestionBanksPage } from '@/pages/question-banks/question-banks-page';
-import { GradingQueuePage } from '@/pages/grading/grading-queue-page';
-import { GradingDetailPage } from '@/pages/grading/grading-detail-page';
-import { NotFoundPage } from '@/pages/not-found/not-found-page';
-import { ErrorPage } from '@/pages/error/error-page';
 import { useAuth } from '@/app/providers/auth-provider';
-import type { ReactNode } from 'react';
+
+// Route pages are split into their own chunks via React.lazy. They are
+// loaded on demand by react-router's data router so the initial JS only
+// includes the layout + auth shells.
+const LoginPage = lazy(() =>
+  import('@/pages/login/login-page').then((m) => ({ default: m.LoginPage }))
+);
+const DiagnosticsPage = lazy(() =>
+  import('@/pages/diagnostics/diagnostics-page').then((m) => ({
+    default: m.DiagnosticsPage,
+  }))
+);
+const DashboardPage = lazy(() =>
+  import('@/pages/dashboard/dashboard-page').then((m) => ({
+    default: m.DashboardPage,
+  }))
+);
+const TeacherDashboardPage = lazy(() =>
+  import('@/pages/dashboard/teacher-dashboard-page').then((m) => ({
+    default: m.TeacherDashboardPage,
+  }))
+);
+const AdminDashboardPage = lazy(() =>
+  import('@/pages/dashboard/admin-dashboard-page').then((m) => ({
+    default: m.AdminDashboardPage,
+  }))
+);
+const AssessmentBuilderPage = lazy(() =>
+  import('@/pages/assessment-builder/assessment-builder-page').then((m) => ({
+    default: m.AssessmentBuilderPage,
+  }))
+);
+const GradebookPage = lazy(() =>
+  import('@/pages/gradebook/gradebook-page').then((m) => ({
+    default: m.GradebookPage,
+  }))
+);
+const ChangePasswordPage = lazy(() =>
+  import('@/pages/change-password/change-password-page').then((m) => ({
+    default: m.ChangePasswordPage,
+  }))
+);
+const ExamPage = lazy(() =>
+  import('@/pages/exam/exam-page').then((m) => ({ default: m.ExamPage }))
+);
+const AttemptReviewPage = lazy(() =>
+  import('@/pages/attempt-review/attempt-review-page').then((m) => ({
+    default: m.AttemptReviewPage,
+  }))
+);
+const ResourcesPage = lazy(() =>
+  import('@/pages/resources/resources-page').then((m) => ({
+    default: m.ResourcesPage,
+  }))
+);
+const QuestionBanksPage = lazy(() =>
+  import('@/pages/question-banks/question-banks-page').then((m) => ({
+    default: m.QuestionBanksPage,
+  }))
+);
+const GradingQueuePage = lazy(() =>
+  import('@/pages/grading/grading-queue-page').then((m) => ({
+    default: m.GradingQueuePage,
+  }))
+);
+const GradingDetailPage = lazy(() =>
+  import('@/pages/grading/grading-detail-page').then((m) => ({
+    default: m.GradingDetailPage,
+  }))
+);
+const NotFoundPage = lazy(() =>
+  import('@/pages/not-found/not-found-page').then((m) => ({
+    default: m.NotFoundPage,
+  }))
+);
+const ErrorPage = lazy(() =>
+  import('@/pages/error/error-page').then((m) => ({ default: m.ErrorPage }))
+);
+
+function PageLoading() {
+  return (
+    <div
+      className="loading-fallback"
+      role="status"
+      aria-live="polite"
+      data-testid="page-loading"
+    >
+      Đang tải…
+    </div>
+  );
+}
+
+function SuspenseRoute({ children }: { children: ReactNode }) {
+  return <Suspense fallback={<PageLoading />}>{children}</Suspense>;
+}
 
 function ProtectedRoute({ children }: { children: ReactNode }) {
   const auth = useAuth();
@@ -115,13 +198,21 @@ export const router = createBrowserRouter([
     children: [
       {
         index: true,
-        element: <LoginPage />,
+        element: (
+          <SuspenseRoute>
+            <LoginPage />
+          </SuspenseRoute>
+        ),
       },
     ],
   },
   {
     path: '/diagnostics',
-    element: <DiagnosticsPage />,
+    element: (
+      <SuspenseRoute>
+        <DiagnosticsPage />
+      </SuspenseRoute>
+    ),
   },
   {
     path: '/app',
@@ -137,43 +228,83 @@ export const router = createBrowserRouter([
       },
       {
         path: 'student',
-        element: <DashboardPage />,
+        element: (
+          <SuspenseRoute>
+            <DashboardPage />
+          </SuspenseRoute>
+        ),
       },
       {
         path: 'teacher',
-        element: <TeacherDashboardPage />,
+        element: (
+          <SuspenseRoute>
+            <TeacherDashboardPage />
+          </SuspenseRoute>
+        ),
       },
       {
         path: 'teacher/assessments/:assessmentId',
-        element: <AssessmentBuilderPage />,
+        element: (
+          <SuspenseRoute>
+            <AssessmentBuilderPage />
+          </SuspenseRoute>
+        ),
       },
       {
         path: 'teacher/gradebook',
-        element: <GradebookPage />,
+        element: (
+          <SuspenseRoute>
+            <GradebookPage />
+          </SuspenseRoute>
+        ),
       },
       {
         path: 'resources',
-        element: <ResourcesPage />,
+        element: (
+          <SuspenseRoute>
+            <ResourcesPage />
+          </SuspenseRoute>
+        ),
       },
       {
         path: 'question-banks',
-        element: <QuestionBanksPage />,
+        element: (
+          <SuspenseRoute>
+            <QuestionBanksPage />
+          </SuspenseRoute>
+        ),
       },
       {
         path: 'grading',
-        element: <GradingQueuePage />,
+        element: (
+          <SuspenseRoute>
+            <GradingQueuePage />
+          </SuspenseRoute>
+        ),
       },
       {
         path: 'grading/:attemptId',
-        element: <GradingDetailPage />,
+        element: (
+          <SuspenseRoute>
+            <GradingDetailPage />
+          </SuspenseRoute>
+        ),
       },
       {
         path: 'admin',
-        element: <AdminDashboardPage />,
+        element: (
+          <SuspenseRoute>
+            <AdminDashboardPage />
+          </SuspenseRoute>
+        ),
       },
       {
         path: 'change-password',
-        element: <ChangePasswordPage />,
+        element: (
+          <SuspenseRoute>
+            <ChangePasswordPage />
+          </SuspenseRoute>
+        ),
       },
     ],
   },
@@ -187,7 +318,11 @@ export const router = createBrowserRouter([
     children: [
       {
         index: true,
-        element: <ExamPage />,
+        element: (
+          <SuspenseRoute>
+            <ExamPage />
+          </SuspenseRoute>
+        ),
       },
     ],
   },
@@ -201,16 +336,28 @@ export const router = createBrowserRouter([
     children: [
       {
         index: true,
-        element: <AttemptReviewPage />,
+        element: (
+          <SuspenseRoute>
+            <AttemptReviewPage />
+          </SuspenseRoute>
+        ),
       },
     ],
   },
   {
     path: '/error/:status?',
-    element: <ErrorPage />,
+    element: (
+      <SuspenseRoute>
+        <ErrorPage />
+      </SuspenseRoute>
+    ),
   },
   {
     path: '*',
-    element: <NotFoundPage />,
+    element: (
+      <SuspenseRoute>
+        <NotFoundPage />
+      </SuspenseRoute>
+    ),
   },
 ]);

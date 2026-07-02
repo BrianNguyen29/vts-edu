@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, Suspense, lazy } from 'react';
 import { useAuth } from '@/app/providers/auth-provider';
 import {
   createUser,
@@ -16,9 +16,27 @@ import {
 import { ApiResponseError } from '@/shared/api/attempts';
 import { PasswordPolicyHints } from '@/shared/components/password-policy-hints';
 import { validatePassword } from '@/shared/lib/password-policy';
-import { AuditLogsPanel } from './audit-logs-panel';
-import { AcademicManagementPanel } from './academic-management-panel';
 import { useDocumentTitle } from '@/shared/lib/use-document-title';
+
+// Audit and academic management are the largest sub-panels. Lazy-load
+// them so the admin dashboard's first paint does not pull in their
+// full query key factories and CSV parsers.
+const AuditLogsPanel = lazy(() =>
+  import('./audit-logs-panel').then((m) => ({ default: m.AuditLogsPanel }))
+);
+const AcademicManagementPanel = lazy(() =>
+  import('./academic-management-panel').then((m) => ({
+    default: m.AcademicManagementPanel,
+  }))
+);
+
+function PanelLoading({ label }: { label: string }) {
+  return (
+    <div className="loading-fallback" role="status" aria-live="polite">
+      {label}
+    </div>
+  );
+}
 
 const AVAILABLE_ROLES = ['student', 'teacher', 'admin'] as const;
 
@@ -827,7 +845,9 @@ export function AdminDashboardPage() {
           id="admin-panel-audit"
           aria-labelledby="admin-tab-audit"
         >
-          <AuditLogsPanel />
+          <Suspense fallback={<PanelLoading label="Đang tải nhật ký…" />}>
+            <AuditLogsPanel />
+          </Suspense>
         </section>
       )}
       {activeTab === 'academic' && (
@@ -836,7 +856,9 @@ export function AdminDashboardPage() {
           id="admin-panel-academic"
           aria-labelledby="admin-tab-academic"
         >
-          <AcademicManagementPanel />
+          <Suspense fallback={<PanelLoading label="Đang tải học vụ…" />}>
+            <AcademicManagementPanel />
+          </Suspense>
         </section>
       )}
     </div>
