@@ -157,7 +157,7 @@ Exit:
 ## 10. Phase 8 — Hardening & pilot (Tuần 26–28) 🟡 Mostly shipped; pilot still in progress
 
 - Cross-browser E2E — ✅ Chromium default + opt-in `firefox`/`webkit` matrix via `PLAYWRIGHT_BROWSERS=1` + `pnpm e2e:browser:all`; WebKit host-dep probe gracefully falls back to chromium + firefox on hosts missing libgtk-4 / libgraphene-1.0 / libxslt / libevent-2.1 / libopus / libgstallocators.
-- A11y audit — baseline ✅ (focus-visible, ARIA labels, error/`request_id` on states, keyboard accessible critical flows, accessible `NotificationBell`); full manual WCAG 2.1 AA audit + axe-core CI gate + focus-management regression suite still pending.
+- A11y audit — baseline ✅ (focus-visible, ARIA labels, error/`request_id` on states, keyboard accessible critical flows, accessible `NotificationBell`); **axe-core CI gate ✅** (`pnpm e2e:a11y` — `@axe-core/playwright` scanning 8 stable routes with WCAG 2.0/2.1 A+AA + best-practice, `color-contrast` + `target-size` intentionally disabled, intentionally NOT in `pnpm check`); full manual WCAG 2.1 AA audit + focus-management regression suite still pending.
 - Bundle/performance audit — ✅ (16 route pages + 3 dashboard panels `React.lazy` via `SuspenseRoute`; initial chunk 511.19 kB / 147.04 kB gz → 335.39 kB / 106.56 kB gz; production sourcemap `hidden` so `.map` files stay on disk for stack-trace decoding without leaking sourceMappingURL in the public bundle). Full bundle analyzer dependency, virtualized lists, CSS splitting still pending.
 - Error telemetry — pending.
 - Error pages with `request_id` ✅ (toàn bộ `ErrorState` + error pages show `request_id`; copy-to-clipboard included).
@@ -196,7 +196,7 @@ Exit:
 - Question bank: rich text / TipTap + KaTeX production rollout (spike complete on `spike/rich-text-editor` — see `docs/frontend/frontend-technical-spec/spikes/rich-text-editor-spike.md`; rollout needs typed `prompt_doc` column + renderer migration in exam/review/grading + replace `window.prompt` link UI + WebKit CI), version history UI, per-type question form polish.
 - Manual grading UI nâng cấp: rubric editor, teacher feedback templates, file submission review.
 - Auth-provider apiClient migration (5 call site còn lại trong `auth-provider.tsx`; auth flow cần adapter đặc biệt cho refresh rotation/queue — deferred).
-- Full WCAG 2.1 AA audit, axe-core CI gate, focus management regression suite cho builder/exam/admin.
+- Full WCAG 2.1 AA audit, focus management regression suite cho builder/exam/admin; axe-core CI gate đã ship (xem Phase 8).
 - Performance hardening: virtualized lists cho long gradebook/inbox, CSS splitting, bundle analyzer dependency.
 - Service Worker (sau khi proven safe cho active-exam update flow): cache shell, app-layer IndexedDB draft + SW handoff, push notifications, background sync.
 - Dark mode, parent portal, attendance, QTI import/export UI, AI assistant, gamification, advanced analytics — backlog sau pilot (xem §11).

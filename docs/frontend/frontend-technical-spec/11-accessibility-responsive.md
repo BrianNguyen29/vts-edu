@@ -184,10 +184,12 @@ Không dùng motion để báo trạng thái duy nhất.
 - **Reduced motion**: thêm `@media (prefers-reduced-motion: reduce)` để tắt transition/animation.
 - **Heading hierarchy**: chỉnh lại một số heading (vd. card title trong dashboard từ h2 xuống h3) để tránh skip level.
 - **A11y smoke e2e**: thêm `apps/web/e2e/a11y.spec.ts` (10 case) kiểm tra skip link, landmark, h1, role của error/alert, tab semantics, table caption, form description, accessible name.
+- **axe-core CI gate** (bổ sung sau slice-8): thêm `@axe-core/playwright@^4.12.1` làm devDependency, mới `apps/web/e2e/axe.spec.ts` chạy axe-core thật với rule sets `wcag2a`/`wcag2aa`/`wcag21a`/`wcag21aa`/`best-practice` trên 8 surface ổn định (`/login`, `/error/403`, `/this-does-not-exist`, `/app/student`, `/app/teacher`, `/app/resources`, `/app/change-password`, `/app/admin`). Script `pnpm e2e:a11y` (qua `scripts/e2e_a11y.sh`) spin-up DB + API + Vite giống `e2e:browser` rồi chạy riêng spec axe. Disable `color-contrast` (palette theo dõi riêng) và `target-size` (icon button đôi khi nhỏ hơn 24px) để giữ signal-to-noise. Cố ý **không** nằm trong `pnpm check` — cần DB/API đang chạy, giống `e2e:browser` / `e2e:load`.
 
 ### Limitations / known gaps
 
-- **Chưa tích hợp axe-core**: dùng Playwright locators thay vì `@axe-core/playwright` để giữ dependency footprint tối thiểu. Smoke spec kiểm tra các tiêu chí axe thường gặp cho luồng cốt lõi nhưng không thay thế axe scan đầy đủ.
+- **axe-core scan bị giới hạn scope**: spec `apps/web/e2e/axe.spec.ts` chỉ phủ 8 surface ổn định (login, error, 404, dashboards, resources, change-password). Exam runner, attempt review, builder, grading detail, question-banks cố ý không nằm trong gate vì phụ thuộc seed data cụ thể (đã IN_PROGRESS / SUBMITTED) hoặc cần setup tốn kém; chúng vẫn được khảo sát thủ công khi release.
+- **`color-contrast` + `target-size` rule tắt trong gate**: palette màu sắc và click-target size được theo dõi riêng (palette token trong `index.css`, icon button có aria-label đầy đủ), không đủ ổn định để gate CI. Khi cần audit full contrast, chạy axe-core thủ công bằng cách gỡ `disableRules` trong spec.
 - **Chưa có manual screen reader / keyboard review**: chưa chạy NVDA/VoiceOver thực tế, chưa test với 200% zoom trên production build, chưa test high-contrast mode.
 - **Tiêu điểm cho mobile**: chưa test screen reader trên thiết bị di động, chưa test landscape/portrait exam UI.
 - **Dialog focus trap**: preview dialog hiện tại chuyển focus đến close button nhưng chưa có focus trap đầy đủ (Tab có thể thoát ra ngoài panel).
