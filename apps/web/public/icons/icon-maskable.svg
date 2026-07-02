@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="VTS EDU">
+  <rect width="512" height="512" fill="#1d4ed8"/>
+  <path d="M144 160 L228 380 L284 380 L368 160 L324 160 L256 296 L188 160 Z" fill="#ffffff"/>
+  <path d="M256 380 L256 416" stroke="#ffffff" stroke-width="20" stroke-linecap="round" opacity="0.55"/>
+</svg>

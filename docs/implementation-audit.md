@@ -1197,6 +1197,20 @@ Repo-wide implementation tracking. Append-only; do not delete historical entries
 - **CSRF**: the grade PUT lives behind the existing `csrf.Validate(r)` middleware just like the answer-save and submit endpoints. The unsafe-method list in the openapi client automatically attaches `X-CSRF-Token` to the PUT.
 - **Did not** add: per-item grading_status column, rubric editor, file-submission attachments, bulk-grade, partial-essay auto-grade, teacher review-draft state, real-time push, AI/ML scoring, performance hardening (N+1 on detail page, large attempts). All explicitly deferred to P2/P3.
 
+## 2026-07-02 — PWA Level 0 installability (manifest only)
+
+### Done
+
+- **Manifest** (`apps/web/public/manifest.json`): name + short_name "VTS EDU", description (vi), `start_url`/`scope`/`id` pinned to `/app` so the installed app lands in the workspace, `display: standalone`, `orientation: any`, `background_color: #ffffff`, `theme_color: #1d4ed8`, `lang: vi`, `dir: ltr`, `categories: ["education", "productivity"]`, 2 icons.
+- **Icons** (`apps/web/public/icons/`):
+  - `icon.svg` — 512×512 rounded-square brand mark, `#1d4ed8` background + white "V" wordmark, `purpose: any`.
+  - `icon-maskable.svg` — 512×512 full-bleed `#1d4ed8` + smaller white "V" centered in the safe zone, `purpose: maskable`. Used by Android/Chrome when the launcher rounds the icon.
+- **`apps/web/index.html`**: added `<link rel="manifest" href="/manifest.json">`, `<link rel="apple-touch-icon" href="/icons/icon.svg">`, `<meta name="theme-color" content="#1d4ed8">`, `application-name`, `apple-mobile-web-app-title`, `apple-mobile-web-app-capable=yes`, `apple-mobile-web-app-status-bar-style=default`, `mobile-web-app-capable=yes`. Replaced legacy `/vite.svg` favicon with `/icons/icon.svg`.
+- **No service worker**: `grep -rE "serviceWorker|service-worker|workbox|pwa-register"` over `apps/web/{src,index.html,vite.config.ts,public}` returns zero hits. No `navigator.serviceWorker.register(...)`, no Workbox, no `vite-plugin-pwa`, no API/asset caching, no background sync / push. `apps/web/package.json` dependency surface unchanged (zero new runtime deps).
+- **Vite static asset pipeline**: Vite copies `public/` to `dist/` at build, so `dist/manifest.json` and `dist/icons/{icon,icon-maskable}.svg` are emitted alongside `index.html`. Build output bundle sizes unchanged — manifest is ~654 B and icons are ~800 B total.
+- **Verification**: `pnpm web:typecheck` ✓, `pnpm web:build` ✓ (no new chunks; bundle sizes identical to pre-change 360.50 kB / 114.37 kB gz for `index-*.js`), `python3 -c "import json; json.load(open('apps/web/public/manifest.json'))"` ✓ (valid JSON), icon path resolution ✓ (both `src` values exist on disk), `pnpm e2e:browser` (chromium) ✓ 20/20 still pass (no behavioral change). `pnpm check` ✓.
+- **Deferred** (P2/P3): Service Worker registration, asset/API caching, offline app shell, install-prompt UI, custom new-tab/window scope handling, real PNG icons (192/512), splash screen, iOS startup images, push notifications, background sync. Exam offline draft resilience stays at the app-layer IndexedDB level (already shipped).
+
 ## 2026-07-02 — Notification inbox + best-effort events (slice-15)
 
 ### Done

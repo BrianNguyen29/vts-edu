@@ -1,0 +1,29 @@
+{
+  "name": "VTS EDU",
+  "short_name": "VTS EDU",
+  "description": "Hệ thống quản lý học tập và đánh giá VTS EDU.",
+  "start_url": "/app",
+  "scope": "/app",
+  "id": "/app",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#ffffff",
+  "theme_color": "#1d4ed8",
+  "lang": "vi",
+  "dir": "ltr",
+  "categories": ["education", "productivity"],
+  "icons": [
+    {
+      "src": "/icons/icon.svg",
+      "type": "image/svg+xml",
+      "sizes": "any",
+      "purpose": "any"
+    },
+    {
+      "src": "/icons/icon-maskable.svg",
+      "type": "image/svg+xml",
+      "sizes": "any",
+      "purpose": "maskable"
+    }
+  ]
+}
