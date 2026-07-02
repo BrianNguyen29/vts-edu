@@ -62,9 +62,15 @@ function InlinePreviewModal({
   const [objectUrl, setObjectUrl] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const dialogRef = useRef<HTMLDivElement>(null);
+  const closeButtonRef = useRef<HTMLButtonElement | null>(null);
+  const lastFocusedBeforeOpenRef = useRef<HTMLElement | null>(null);
   useEffect(() => {
     let cancelled = false;
     let url: string | null = null;
+    // Remember which element opened the modal so we can return focus on close.
+    if (typeof document !== 'undefined' && document.activeElement instanceof HTMLElement) {
+      lastFocusedBeforeOpenRef.current = document.activeElement;
+    }
     (async () => {
       try {
         const [config, token] = await Promise.all([
@@ -88,6 +94,8 @@ function InlinePreviewModal({
         }
       }
     })();
+    // Move focus to the close button so keyboard users land inside the dialog.
+    closeButtonRef.current?.focus();
     return () => {
       cancelled = true;
       if (url) URL.revokeObjectURL(url);
@@ -96,11 +104,21 @@ function InlinePreviewModal({
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose();
+      if (e.key === 'Escape') {
+        onClose();
+      }
     };
     document.addEventListener('keydown', onKey);
     return () => document.removeEventListener('keydown', onKey);
   }, [onClose]);
+
+  function handleBackdropClose() {
+    onClose();
+    const previous = lastFocusedBeforeOpenRef.current;
+    if (previous && typeof previous.focus === 'function') {
+      previous.focus();
+    }
+  }
 
   return (
     <div
@@ -108,7 +126,7 @@ function InlinePreviewModal({
       role="dialog"
       aria-modal="true"
       aria-labelledby="preview-title"
-      onClick={onClose}
+      onClick={handleBackdropClose}
       data-testid="preview-modal"
     >
       <div
@@ -120,7 +138,14 @@ function InlinePreviewModal({
           <h2 id="preview-title">{file.original_name}</h2>
           <button
             type="button"
-            onClick={onClose}
+            ref={closeButtonRef}
+            onClick={() => {
+              onClose();
+              const previous = lastFocusedBeforeOpenRef.current;
+              if (previous && typeof previous.focus === 'function') {
+                previous.focus();
+              }
+            }}
             aria-label="Đóng cửa sổ xem trước"
             data-testid="preview-modal-close"
           >

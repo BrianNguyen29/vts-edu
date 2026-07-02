@@ -69,9 +69,15 @@ function NotificationItemView({
   );
 }
 
+// The id is reused by aria-controls on the trigger button and aria-labelledby
+// on the dropdown panel so screen readers can announce the relationship.
+const DROPDOWN_ID = 'notification-bell-dropdown';
+const DROPDOWN_TITLE_ID = 'notification-bell-dropdown-title';
+
 export function NotificationBell() {
   const [open, setOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement | null>(null);
+  const lastFocusedBeforeOpenRef = useRef<HTMLElement | null>(null);
 
   const unreadQuery = useUnreadCountQuery();
   const listQuery = useNotificationsQuery({ limit: 20, enabled: open });
@@ -82,6 +88,11 @@ export function NotificationBell() {
 
   useEffect(() => {
     if (!open) return;
+    // Remember the trigger so we can return focus to it when the dropdown
+    // closes (Escape / click-outside / item click).
+    if (typeof document !== 'undefined' && document.activeElement instanceof HTMLElement) {
+      lastFocusedBeforeOpenRef.current = document.activeElement;
+    }
     const handler = (event: MouseEvent) => {
       if (
         containerRef.current &&
@@ -91,7 +102,14 @@ export function NotificationBell() {
       }
     };
     const keyHandler = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') setOpen(false);
+      if (event.key === 'Escape') {
+        setOpen(false);
+        // Restore focus to the trigger so keyboard users do not lose context.
+        const previous = lastFocusedBeforeOpenRef.current;
+        if (previous && typeof previous.focus === 'function') {
+          previous.focus();
+        }
+      }
     };
     document.addEventListener('mousedown', handler);
     document.addEventListener('keydown', keyHandler);
@@ -112,6 +130,7 @@ export function NotificationBell() {
         aria-label="Thông báo"
         aria-haspopup="dialog"
         aria-expanded={open}
+        aria-controls={open ? DROPDOWN_ID : undefined}
         onClick={() => setOpen((value) => !value)}
         data-testid="notification-bell"
       >
@@ -139,13 +158,17 @@ export function NotificationBell() {
       {open && (
         <div
           className="notification-bell__dropdown"
+          id={DROPDOWN_ID}
           role="dialog"
-          aria-label="Hộp thư thông báo"
+          aria-labelledby={DROPDOWN_TITLE_ID}
           data-testid="notification-dropdown"
         >
-          <div className="notification-bell__dropdown-header" role="status">
+          <h2
+            className="notification-bell__dropdown-header"
+            id={DROPDOWN_TITLE_ID}
+          >
             Thông báo
-          </div>
+          </h2>
           {listQuery.isLoading && (
             <p className="notification-bell__empty">Đang tải…</p>
           )}

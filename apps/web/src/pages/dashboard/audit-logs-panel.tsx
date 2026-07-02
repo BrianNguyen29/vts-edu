@@ -213,11 +213,11 @@ export function AuditLogsPanel() {
               </caption>
               <thead>
                 <tr>
-                  <th>Thời gian</th>
-                  <th>Hành động</th>
-                  <th>Người thực hiện</th>
-                  <th>Đối tượng</th>
-                  <th>Thông tin thêm</th>
+                  <th scope="col">Thời gian</th>
+                  <th scope="col">Hành động</th>
+                  <th scope="col">Người thực hiện</th>
+                  <th scope="col">Đối tượng</th>
+                  <th scope="col">Thông tin thêm</th>
                 </tr>
               </thead>
               <tbody>

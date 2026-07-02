@@ -98,8 +98,8 @@ export function ClassRosterPanel({
             </caption>
             <thead>
               <tr>
-                <th>Họ tên</th>
-                <th>Trạng thái</th>
+                <th scope="col">Họ tên</th>
+                <th scope="col">Trạng thái</th>
               </tr>
             </thead>
             <tbody>

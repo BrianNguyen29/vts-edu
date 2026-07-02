@@ -572,8 +572,9 @@ export function AdminDashboardPage() {
                 required
                 value={tempPassword}
                 onChange={(e) => setTempPassword(e.target.value)}
+                aria-describedby="password-policy"
               />
-              <PasswordPolicyHints password={tempPassword} />
+              <PasswordPolicyHints password={tempPassword} id="password-policy" />
             </div>
             <div className="field">
               <label>Vai trò</label>
@@ -631,8 +632,9 @@ export function AdminDashboardPage() {
                 required
                 value={resetPassword}
                 onChange={(e) => setResetPassword(e.target.value)}
+                aria-describedby="password-policy-reset"
               />
-              <PasswordPolicyHints password={resetPassword} />
+              <PasswordPolicyHints password={resetPassword} id="password-policy-reset" />
             </div>
             <div className="form-actions">
               <button type="submit" className="primary">
@@ -774,12 +776,12 @@ export function AdminDashboardPage() {
                   </caption>
                   <thead>
                     <tr>
-                      <th>Tên đăng nhập</th>
-                      <th>Tên hiển thị</th>
-                      <th>Email</th>
-                      <th>Vai trò</th>
-                      <th>Đổi mật khẩu</th>
-                      <th>Thao tác</th>
+                      <th scope="col">Tên đăng nhập</th>
+                      <th scope="col">Tên hiển thị</th>
+                      <th scope="col">Email</th>
+                      <th scope="col">Vai trò</th>
+                      <th scope="col">Đổi mật khẩu</th>
+                      <th scope="col">Thao tác</th>
                     </tr>
                   </thead>
                   <tbody>

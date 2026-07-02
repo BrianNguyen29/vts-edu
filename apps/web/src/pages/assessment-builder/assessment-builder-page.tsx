@@ -797,7 +797,7 @@ export function AssessmentBuilderPage() {
                       className="inline-form"
                       style={{ flex: 1 }}
                     >
-                      <label htmlFor={`edit-item-question-${item.id}`} className="sr-only">
+                      <label htmlFor={`edit-item-question-${item.id}`} className="visually-hidden">
                         Câu hỏi
                       </label>
                       <select
@@ -1039,7 +1039,7 @@ export function AssessmentBuilderPage() {
 
         {!isPublished && (
           <form onSubmit={handleAddTarget} className="inline-form">
-            <label htmlFor="target-class" className="sr-only">
+            <label htmlFor="target-class" className="visually-hidden">
               Lớp đích
             </label>
             <select
