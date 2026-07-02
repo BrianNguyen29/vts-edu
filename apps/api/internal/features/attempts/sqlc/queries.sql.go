@@ -249,12 +249,17 @@ SELECT
     ai.answer_key_json,
     ai.question_type,
     aa.revision,
-    aa.answered_at
+    aa.answered_at,
+    COALESCE(ig.awarded_score, '0')::text AS awarded_score,
+    COALESCE(ig.feedback, '') AS feedback
 FROM attempt_items ai
 LEFT JOIN attempt_answers aa
     ON aa.attempt_item_id = ai.id
     AND aa.organization_id = ai.organization_id
     AND aa.attempt_id = ai.attempt_id
+LEFT JOIN item_grades ig
+    ON ig.attempt_item_id = ai.id
+    AND ig.organization_id = ai.organization_id
 WHERE ai.attempt_id = $1
   AND ai.organization_id = $2
 ORDER BY ai.position
@@ -277,6 +282,8 @@ type GetAttemptItemsRow struct {
 	QuestionType      string             `json:"question_type"`
 	Revision          pgtype.Int8        `json:"revision"`
 	AnsweredAt        pgtype.Timestamptz `json:"answered_at"`
+	AwardedScore      string             `json:"awarded_score"`
+	Feedback          string             `json:"feedback"`
 }
 
 func (q *Queries) GetAttemptItems(ctx context.Context, arg GetAttemptItemsParams) ([]GetAttemptItemsRow, error) {
@@ -300,6 +307,8 @@ func (q *Queries) GetAttemptItems(ctx context.Context, arg GetAttemptItemsParams
 			&i.QuestionType,
 			&i.Revision,
 			&i.AnsweredAt,
+			&i.AwardedScore,
+			&i.Feedback,
 		); err != nil {
 			return nil, err
 		}

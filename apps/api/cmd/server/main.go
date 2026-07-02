@@ -15,6 +15,7 @@ import (
 	"github.com/BrianNguyen29/vts-edu/apps/api/internal/features/attempts"
 	"github.com/BrianNguyen29/vts-edu/apps/api/internal/features/auth"
 	"github.com/BrianNguyen29/vts-edu/apps/api/internal/features/gradebook"
+	"github.com/BrianNguyen29/vts-edu/apps/api/internal/features/grading"
 	"github.com/BrianNguyen29/vts-edu/apps/api/internal/features/resources"
 	"github.com/BrianNguyen29/vts-edu/apps/api/internal/platform/csrf"
 	"github.com/BrianNguyen29/vts-edu/apps/api/internal/platform/db"
@@ -71,6 +72,7 @@ func main() {
 	var adminHandler *admin.Handler
 	var academicsHandler *academics.Handler
 	var gradebookHandler *gradebook.Handler
+	var gradingHandler *grading.Handler
 	var resourcesHandler *resources.Handler
 	var sched *scheduler.Scheduler
 	if !cfg.DatabaseSkip {
@@ -104,6 +106,11 @@ func main() {
 		gradebookRepo := gradebook.NewRepository(pool.Pool)
 		gradebookSvc := gradebook.NewService(gradebookRepo, &gradebook.AcademicAccessAdapter{Repo: academicsRepo})
 		gradebookHandler = gradebook.NewHandler(gradebookSvc, authIssuer)
+
+		gradingRepo := grading.NewRepository(pool.Pool)
+		gradingAudit := &admin.GradingAuditAdapter{Repo: adminRepo}
+		gradingSvc := grading.NewService(gradingRepo, srv.txManager, gradingAudit)
+		gradingHandler = grading.NewHandler(gradingSvc, authIssuer)
 
 		storageProvider, err := buildResourceStorageProvider(cfg)
 		if err != nil {
@@ -200,6 +207,10 @@ func main() {
 			r.Get("/assessments/{id}/results", gradebookHandler.GetAssessmentResults)
 			r.Get("/assessments/{id}/attempts/export", gradebookHandler.ExportAssessmentAttemptsCSV)
 
+			r.Get("/assessments/{id}/review-queue", gradingHandler.ListReviewQueue)
+			r.Get("/attempts/{attempt_id}/review", gradingHandler.GetAttemptForReview)
+			r.Put("/attempts/{attempt_id}/items/{item_id}/grade", gradingHandler.GradeItem)
+
 			r.Get("/questions", assessmentsHandler.ListQuestions)
 
 			r.Get("/question-banks", assessmentsHandler.ListQuestionBanks)
@@ -220,6 +231,7 @@ func main() {
 			r.Post("/assessments/{id}/targets", srv.listAssessmentsPlaceholderHandler)
 			r.Post("/assessments/{id}/validate", srv.listAssessmentsPlaceholderHandler)
 			r.Post("/assessments/{id}/publish", srv.listAssessmentsPlaceholderHandler)
+			r.Get("/assessments/{id}/review-queue", srv.listAssessmentsPlaceholderHandler)
 		}
 
 		// Admin endpoints.

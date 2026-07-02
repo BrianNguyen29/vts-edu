@@ -42,6 +42,8 @@ type AttemptItemRow struct {
 	AnswerKey         json.RawMessage
 	Revision          *int64
 	AnsweredAt        *time.Time
+	AwardedScore      *string
+	Feedback          *string
 }
 
 // Repository defines persistence operations for the attempts feature.
@@ -221,6 +223,8 @@ func (r *sqlcRepository) GetAttemptItems(ctx context.Context, attemptID, orgID s
 			AnswerKey:         json.RawMessage(row.AnswerKeyJson),
 			Revision:          int8Ptr(row.Revision),
 			AnsweredAt:        tsPtr(row.AnsweredAt),
+			AwardedScore:      nonEmptyStringPtr(row.AwardedScore),
+			Feedback:          nonEmptyStringPtr(row.Feedback),
 		}
 	}
 	return items, nil

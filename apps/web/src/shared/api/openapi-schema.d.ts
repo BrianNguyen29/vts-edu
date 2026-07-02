@@ -221,6 +221,57 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/assessments/{id}/review-queue": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Teacher or admin only. Lists attempts for the assessment that have at least one essay/short_answer item still pending manual review. */
+        get: operations["grading.listReviewQueue"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/attempts/{attempt_id}/review": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Teacher or admin only. Returns the attempt with all items and any current manual grades for the review detail page. */
+        get: operations["grading.getAttemptForReview"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/attempts/{attempt_id}/items/{item_id}/grade": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** @description Teacher or admin only. Requires Bearer access token and `X-CSRF-Token` header. Saves (or re-grades) the awarded score and feedback for one attempt item. Re-graded attempts are recomputed; if all essay/short_answer items are graded the attempt transitions to `GRADED` with a non-null `score`. An `attempt.grade` audit log entry is written for every save. */
+        put: operations["grading.gradeItem"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/attempts/{attempt_id}/result": {
         parameters: {
             query?: never;
@@ -1418,6 +1469,10 @@ export interface components {
             grading_status: "GRADED" | "PENDING_REVIEW";
             /** @description Omitted for items that are not auto-gradable (e.g. */
             is_correct?: boolean | null;
+            /** @description Manual grade for non-MCQ items. Present only when a teacher/admin has graded the item. */
+            awarded_score?: string | null;
+            /** @description Optional teacher feedback (manual grade). */
+            feedback?: string | null;
         };
         PageInfo: {
             limit: number;
@@ -1425,6 +1480,102 @@ export interface components {
             next_cursor?: string;
             has_more: boolean;
             total_count?: number;
+        };
+        ReviewQueueList: {
+            data: components["schemas"]["ReviewQueueEntry"][];
+        };
+        ReviewQueueEntry: {
+            /** Format: uuid */
+            attempt_id: string;
+            /** Format: uuid */
+            student_user_id: string;
+            student_name?: string;
+            /** @enum {string} */
+            status: "SUBMITTED" | "EXPIRED";
+            /** Format: date-time */
+            started_at?: string | null;
+            /** Format: date-time */
+            submitted_at?: string | null;
+            /** Format: date-time */
+            expires_at?: string | null;
+            max_score?: string | null;
+            pending_items: number;
+            total_non_mcq: number;
+        };
+        AttemptGradingContext: {
+            data: {
+                /** Format: uuid */
+                attempt_id: string;
+                /** Format: uuid */
+                assessment_id: string;
+                /** Format: uuid */
+                student_user_id: string;
+                student_name?: string;
+                /** @enum {string} */
+                status: "SUBMITTED" | "EXPIRED";
+                score?: string | null;
+                max_score?: string | null;
+                /** @enum {string} */
+                grading_status: "GRADED" | "PENDING_REVIEW" | "NOT_GRADED";
+                /** Format: date-time */
+                submitted_at?: string | null;
+                items: components["schemas"]["GradingItemDetail"][];
+            };
+        };
+        GradingItemDetail: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            question_version_id: string;
+            position: number;
+            points: string;
+            /** @enum {string} */
+            question_type: "multiple_choice" | "short_answer" | "essay";
+            prompt: {
+                text?: string;
+            } & {
+                [key: string]: unknown;
+            };
+            choices: {
+                [key: string]: unknown;
+            }[];
+            student_answer?: components["schemas"]["GradingStudentAnswer"];
+            item_grade?: components["schemas"]["GradingItemGrade"];
+        };
+        GradingStudentAnswer: {
+            answer_payload: {
+                [key: string]: unknown;
+            };
+            /** Format: int64 */
+            revision: number;
+            /** Format: date-time */
+            answered_at: string;
+        };
+        GradingItemGrade: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            grader_user_id: string;
+            awarded_score: string;
+            feedback?: string | null;
+            /** Format: date-time */
+            graded_at: string;
+        };
+        GradeItemRequest: {
+            /** @description Decimal string, 0 <= score <= item.points */
+            awarded_score: string;
+            feedback?: string | null;
+        };
+        GradeItemResponse: {
+            data: {
+                item_grade: components["schemas"]["GradingItemGrade"];
+                attempt_score: string;
+                attempt_max_score: string;
+                /** @enum {string} */
+                grading_status: "GRADED" | "PENDING_REVIEW";
+                still_pending_items: number;
+                total_non_mcq_items: number;
+            };
         };
         AssessmentList: {
             data: components["schemas"]["AssessmentListItem"][];
@@ -2160,6 +2311,13 @@ export interface components {
             detail?: string;
             request_id?: string;
         };
+        ErrorEnvelope: {
+            error: {
+                code: string;
+                message: string;
+                request_id?: string;
+            };
+        };
     };
     responses: {
         /** @description Authentication required or invalid */
@@ -2556,6 +2714,95 @@ export interface operations {
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
             409: components["responses"]["Conflict"];
+        };
+    };
+    "grading.listReviewQueue": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Review queue entries */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReviewQueueList"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    "grading.getAttemptForReview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                attempt_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Attempt + items for review */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AttemptGradingContext"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    "grading.gradeItem": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                attempt_id: string;
+                item_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["GradeItemRequest"];
+            };
+        };
+        responses: {
+            /** @description Grade saved */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GradeItemResponse"];
+                };
+            };
+            /** @description Validation error (e.g., awarded_score invalid, exceeds item points, item is auto-graded MCQ) */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
         };
     };
     "attempts.getResult": {

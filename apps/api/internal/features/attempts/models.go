@@ -75,6 +75,8 @@ type AttemptResultItem struct {
 	StudentAnswer     *AttemptResultAnswer `json:"student_answer,omitempty"`
 	GradingStatus     string               `json:"grading_status"`
 	IsCorrect         *bool                `json:"is_correct,omitempty"`
+	AwardedScore      *string              `json:"awarded_score,omitempty"`
+	Feedback          *string              `json:"feedback,omitempty"`
 }
 
 // AttemptResultAnswer is the student's answer for a result item.

@@ -328,6 +328,19 @@ type IdempotencyKey struct {
 	CreatedAt        pgtype.Timestamptz `json:"created_at"`
 }
 
+type ItemGrade struct {
+	ID             pgtype.UUID        `json:"id"`
+	OrganizationID pgtype.UUID        `json:"organization_id"`
+	AttemptID      pgtype.UUID        `json:"attempt_id"`
+	AttemptItemID  pgtype.UUID        `json:"attempt_item_id"`
+	GraderUserID   pgtype.UUID        `json:"grader_user_id"`
+	AwardedScore   pgtype.Numeric     `json:"awarded_score"`
+	Feedback       pgtype.Text        `json:"feedback"`
+	GradedAt       pgtype.Timestamptz `json:"graded_at"`
+	CreatedAt      pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt      pgtype.Timestamptz `json:"updated_at"`
+}
+
 type LoginAttempt struct {
 	ID                 pgtype.UUID        `json:"id"`
 	OrganizationID     pgtype.UUID        `json:"organization_id"`

@@ -1107,7 +1107,7 @@ async function assertResourcesFlow(teacherToken, studentToken, orgID) {
   console.log('  resources: create, upload, publish, student list, download — ok');
 }
 
-async function assertNonMcqFlow(teacherToken, studentToken, classId, studentUserId) {
+async function assertNonMcqFlow(teacherToken, studentToken, adminToken, classId, studentUserId) {
   console.log('Checking non-MCQ question types...');
 
   // 1. Create a question bank
@@ -1277,7 +1277,154 @@ async function assertNonMcqFlow(teacherToken, studentToken, classId, studentUser
     throw new Error('expected essay item with no is_correct');
   }
 
-  console.log('  non-MCQ: bank, MCQ/SA/essay create+validate, picker, mixed-attempt PENDING_REVIEW — ok');
+  // 11. Manual grading flow: review queue → grade essay + SA → recompute.
+  const queueRes = await fetch(
+    `${API_PREFIX}/assessments/${draft.id}/review-queue`,
+    { headers: headers(teacherToken) }
+  );
+  if (queueRes.status !== 200) {
+    throw new Error(`expected 200 on review-queue, got ${queueRes.status}`);
+  }
+  const queueBody = await queueRes.json();
+  const queueEntry = (queueBody.data || []).find(
+    (e) => e.attempt_id === started.id
+  );
+  if (!queueEntry || queueEntry.pending_items < 1) {
+    throw new Error(`expected review-queue entry for the pending attempt, got ${JSON.stringify(queueBody.data)}`);
+  }
+
+  const reviewRes = await fetch(
+    `${API_PREFIX}/attempts/${started.id}/review`,
+    { headers: headers(teacherToken) }
+  );
+  if (reviewRes.status !== 200) {
+    throw new Error(`expected 200 on attempt review, got ${reviewRes.status}`);
+  }
+  const reviewBody = (await reviewRes.json()).data;
+  const essayRow = reviewBody.items.find((it) => it.question_type === 'essay');
+  const saRow = reviewBody.items.find((it) => it.question_type === 'short_answer');
+  if (!essayRow || !saRow) {
+    throw new Error('expected review detail to include essay and short_answer items');
+  }
+
+  // 11a. Grade the essay with a score within its points.
+  const essayGradeRes = await fetch(
+    `${API_PREFIX}/attempts/${started.id}/items/${essayRow.id}/grade`,
+    {
+      method: 'PUT',
+      headers: headers(teacherToken, true),
+      body: JSON.stringify({
+        awarded_score: '1.50',
+        feedback: 'Lập luận rõ ràng, cần bổ sung ví dụ minh hoạ.',
+      }),
+    }
+  );
+  if (essayGradeRes.status !== 200) {
+    const errBody = await essayGradeRes.text();
+    throw new Error(`expected 200 on essay grade, got ${essayGradeRes.status}: ${errBody}`);
+  }
+  const essayGradeBody = (await essayGradeRes.json()).data;
+  if (essayGradeBody.item_grade.awarded_score !== '1.50') {
+    throw new Error(`expected essay awarded_score 1.50, got ${essayGradeBody.item_grade.awarded_score}`);
+  }
+  if (essayGradeBody.grading_status !== 'PENDING_REVIEW') {
+    throw new Error(`expected PENDING_REVIEW after grading only essay, got ${essayGradeBody.grading_status}`);
+  }
+
+  // 11b. Attempt to grade an MCQ item — must be rejected with 400 not_gradable.
+  const mcqItem = reviewBody.items.find((it) => it.question_type === 'multiple_choice');
+  if (mcqItem) {
+    const badGradeRes = await fetch(
+      `${API_PREFIX}/attempts/${started.id}/items/${mcqItem.id}/grade`,
+      {
+        method: 'PUT',
+        headers: headers(teacherToken, true),
+        body: JSON.stringify({ awarded_score: '1.00' }),
+      }
+    );
+    if (badGradeRes.status !== 400) {
+      throw new Error(`expected 400 on MCQ grade, got ${badGradeRes.status}`);
+    }
+  }
+
+  // 11c. Grade the short_answer, attempt should now transition to GRADED.
+  const saGradeRes = await fetch(
+    `${API_PREFIX}/attempts/${started.id}/items/${saRow.id}/grade`,
+    {
+      method: 'PUT',
+      headers: headers(teacherToken, true),
+      body: JSON.stringify({ awarded_score: '1.00', feedback: 'Đúng.' }),
+    }
+  );
+  if (saGradeRes.status !== 200) {
+    const errBody = await saGradeRes.text();
+    throw new Error(`expected 200 on SA grade, got ${saGradeRes.status}: ${errBody}`);
+  }
+  const saGradeBody = (await saGradeRes.json()).data;
+  if (saGradeBody.grading_status !== 'GRADED') {
+    throw new Error(`expected GRADED after grading all non-MCQ, got ${saGradeBody.grading_status}`);
+  }
+  if (saGradeBody.attempt_score === null || saGradeBody.attempt_score === undefined) {
+    throw new Error('expected non-null attempt_score after grading all non-MCQ items');
+  }
+  if (saGradeBody.still_pending_items !== 0) {
+    throw new Error(`expected 0 still_pending, got ${saGradeBody.still_pending_items}`);
+  }
+
+  // 11d. Re-grade the essay (audit log entry should still be present).
+  await fetch(
+    `${API_PREFIX}/attempts/${started.id}/items/${essayRow.id}/grade`,
+    {
+      method: 'PUT',
+      headers: headers(teacherToken, true),
+      body: JSON.stringify({ awarded_score: '1.75', feedback: 'Bổ sung điểm cộng.' }),
+    }
+  );
+
+  // 11e. Student result now shows GRADED with awarded_score + feedback per item.
+  const finalResult = await getAttemptResult(studentToken, started.id);
+  if (finalResult.grading_status !== 'GRADED') {
+    throw new Error(`expected GRADED on final result, got ${finalResult.grading_status}`);
+  }
+  const finalEssay = finalResult.items.find((it) => it.question_type === 'essay');
+  if (!finalEssay?.awarded_score) {
+    throw new Error('expected final essay item to have awarded_score');
+  }
+
+  // 11f. Audit log: confirm at least one attempt.grade entry exists.
+  const auditRes = await fetch(
+    `${API_PREFIX}/audit-logs?action=attempt.grade&limit=20`,
+    { headers: headers(adminToken) }
+  );
+  if (auditRes.status !== 200) {
+    throw new Error(`expected 200 on audit-logs (admin), got ${auditRes.status}`);
+  }
+  const auditBody = (await auditRes.json()).data || [];
+  const matching = auditBody.filter(
+    (e) => e.action === 'attempt.grade' && e.resource_id === essayRow.id
+  );
+  if (matching.length < 2) {
+    throw new Error(`expected >=2 attempt.grade audit entries for essay, got ${matching.length}`);
+  }
+
+  // 11g. Gradebook should now reflect the score.
+  const gradebookRes = await fetch(
+    `${API_PREFIX}/assessments/${draft.id}/attempts`,
+    { headers: headers(teacherToken) }
+  );
+  if (gradebookRes.status !== 200) {
+    throw new Error(`expected 200 on gradebook attempts, got ${gradebookRes.status}`);
+  }
+  const gradebookBody = (await gradebookRes.json()).data;
+  const gradebookEntry = gradebookBody.find((a) => a.id === started.id);
+  if (!gradebookEntry || gradebookEntry.grading_status !== 'GRADED') {
+    throw new Error(`expected gradebook entry GRADED, got ${JSON.stringify(gradebookEntry)}`);
+  }
+  if (!gradebookEntry.score) {
+    throw new Error('expected non-null gradebook score after manual grading');
+  }
+
+  console.log('  non-MCQ + manual grading: bank, MCQ/SA/essay, picker, attempt, grade, audit, gradebook — ok');
 }
 
 async function main() {
@@ -1821,6 +1968,7 @@ async function main() {
   await assertNonMcqFlow(
     teacherAfter.data.access_token,
     token,
+    adminAfter.data.access_token,
     newClass.id,
     studentActor.id,
   );

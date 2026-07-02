@@ -14,6 +14,8 @@ import { ExamPage } from '@/pages/exam/exam-page';
 import { AttemptReviewPage } from '@/pages/attempt-review/attempt-review-page';
 import { ResourcesPage } from '@/pages/resources/resources-page';
 import { QuestionBanksPage } from '@/pages/question-banks/question-banks-page';
+import { GradingQueuePage } from '@/pages/grading/grading-queue-page';
+import { GradingDetailPage } from '@/pages/grading/grading-detail-page';
 import { NotFoundPage } from '@/pages/not-found/not-found-page';
 import { ErrorPage } from '@/pages/error/error-page';
 import { useAuth } from '@/app/providers/auth-provider';
@@ -156,6 +158,14 @@ export const router = createBrowserRouter([
       {
         path: 'question-banks',
         element: <QuestionBanksPage />,
+      },
+      {
+        path: 'grading',
+        element: <GradingQueuePage />,
+      },
+      {
+        path: 'grading/:attemptId',
+        element: <GradingDetailPage />,
       },
       {
         path: 'admin',

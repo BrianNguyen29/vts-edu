@@ -1134,5 +1134,65 @@ Repo-wide implementation tracking. Append-only; do not delete historical entries
 - `AttemptResultItem.IsCorrect` is now `*bool` (omitted / null for `PENDING_REVIEW`); the frontend distinguishes "not yet graded" from "incorrect" via the field's presence rather than relying on `grading_status` alone.
 - Picker SQL uses `COALESCE(qv.id, '00000000-0000-0000-0000-000000000000'::uuid)` + `COALESCE(qv.status, '')` so that questions whose latest version is `DRAFT` (or has no version at all) still scan successfully; the repository skips those rows. Without the COALESCE the LEFT JOIN's nullable columns crashed sqlc's `*string` scan.
 - `SubmitAttempt` SQL returns `COALESCE(score, '0')::text` and `COALESCE(max_score, '0')::text` to keep the `*string` scan stable regardless of `PENDING_REVIEW` writes. The DB column itself is `NULL`-able (set by 19), so the persistence path is correct.
-- Did **not** add: rich-text editor, manual grading UI, rubric builder, question bank delete/archive, media uploads, Huma migration, teacher-only typing of SA/essay in flight (the answer is captured as free text only). Those are explicitly deferred.
+- Did **not** add: rich-text editor, rubric builder, manual grading UI (slice-11 ships the minimal version), question bank delete/archive, media uploads, Huma migration, teacher-only typing of SA/essay in flight (the answer is captured as free text only). The minimal manual grading UI ships in slice-11; rubrics and per-question rubrics stay deferred.
 - The `CreateQuestionResponse` schema is intentionally **not** wrapped in `.data`; the OpenAPI YAML declares `required: [question]` at the top level. The frontend wrapper reads it as a flat envelope, matching the existing convention.
+
+## 2026-07-02 — Manual review workflow (slice-11-manual-grading)
+
+### Done
+
+- [x] `supabase/migrations/000020_manual_grading.sql`: new `item_grades` table with `UNIQUE(organization_id, attempt_item_id)`, `CHECK (awarded_score >= 0)`, and indexes on `(organization_id, attempt_id, graded_at DESC)` and `(organization_id, grader_user_id, graded_at DESC)`. One row per attempt item; re-grade is allowed via `ON CONFLICT DO UPDATE`.
+- [x] `apps/api/internal/features/grading/` — new feature package: `models.go` (DTOs), `errors.go` (sentinels), `queries.sql` (8 sqlc queries including `ListReviewQueue`, `GetAttemptForGrading`, `GetAttemptItemsForGrading`, `GetAttemptItemForGrading`, `UpsertItemGrade`, `GetItemGrade`, `GetItemGradeByID`, `RecomputeAttemptScore`), `repository.go` (interface + sqlc impl with `nonEmptyStringPtr`/`numericPtr` helpers), `service.go` (auth + `WithinTx` + audit + recompute), `handler.go` (3 HTTP handlers with CSRF on the grade PUT), `service_test.go` (8 fake-repo test cases including validation paths and the audit/recompute integration).
+- [x] `apps/api/internal/features/admin/grading_audit_adapter.go`: small adapter that converts the grading package's `AuditLogEntry` into `admin.AuditLogParams` and delegates to the existing `admin.Repository.InsertAuditLog`. Implements the `grading.AuditLogger` interface so the grading package avoids a direct import of admin (no circular dep).
+- [x] `apps/api/cmd/server/main.go`: 3 new routes wired under existing CSRF middleware:
+  - `GET /api/v1/assessments/{id}/review-queue` (teacher/admin)
+  - `GET /api/v1/attempts/{attempt_id}/review` (teacher/admin)
+  - `PUT /api/v1/attempts/{attempt_id}/items/{item_id}/grade` (teacher/admin, CSRF-required)
+- [x] `apps/api/internal/features/attempts/`: `GetAttemptItems` sqlc query now LEFT JOINs `item_grades` and returns `awarded_score` + `feedback` (COALESCE'd to keep the `*string` scan stable across nullable rows). `AttemptResultItem` model extended with `AwardedScore *string` and `Feedback *string`; `GetAttemptResult` surfaces both on the student review view. SQL is additive; existing MCQ result tests still pass.
+- [x] `apps/api/sqlc.yaml` + regenerated sqlc: new `gradingsqlc` package, 8 new queries. All sqlc output is regenerated; no hand-edits.
+- [x] `docs/backend/backend-technical-spec/openapi/openapi-skeleton.yaml` + regenerated `openapi-schema.d.ts`: 3 new paths (`/assessments/{id}/review-queue`, `/attempts/{attempt_id}/review`, `/attempts/{attempt_id}/items/{item_id}/grade`); 9 new schemas (`ReviewQueueList`, `ReviewQueueEntry`, `AttemptGradingContext`, `GradingItemDetail`, `GradingStudentAnswer`, `GradingItemGrade`, `GradeItemRequest`, `GradeItemResponse`, `ErrorEnvelope`); `AttemptResultItem` extended with `awarded_score` (nullable) + `feedback` (nullable).
+- [x] Frontend API layer:
+  - `apps/web/src/shared/api/grading.ts` — typed wrappers for the 3 new endpoints.
+  - `apps/web/src/shared/api/grading-queries.ts` — TanStack Query hooks (`useReviewQueue`, `useAttemptForReview`, `useGradeAttemptItem`) with proper cache invalidation across the queue, the attempt review detail, and the student's attempt result.
+  - `apps/web/src/shared/api/query-keys.ts` — `gradingKeys` factory added.
+- [x] Frontend pages:
+  - `apps/web/src/pages/grading/grading-queue-page.tsx` — assessment selector + per-assessment review-queue table; data-testid `grading-assessment-select`, `grading-queue-table`, `grading-queue-row`, `grading-queue-grade-link`.
+  - `apps/web/src/pages/grading/grading-detail-page.tsx` — per-item grading form (score + feedback), re-grade enabled, shows student answer + reference accepted answers; data-testid `grading-items-list`, `grade-score-<id>`, `grade-feedback-<id>`, `grade-save-<id>`, `grading-save-success`.
+  - `apps/web/src/app/router.tsx` — `/app/grading` + `/app/grading/:attemptId` routes added.
+  - `apps/web/src/app/layouts/app-shell-layout.tsx` — teacher/admin-gated "Chấm bài" nav link.
+  - `apps/web/src/pages/attempt-review/attempt-review-page.tsx` — renders `awarded_score` + `feedback` on graded essay/short_answer items; data-testid `review-awarded`, `review-feedback`.
+- [x] Smoke coverage (`scripts/e2e_smoke_api.mjs::assertNonMcqFlow`):
+  - Creates a pending essay/SA attempt and verifies it shows up in the review-queue endpoint.
+  - Hits the attempt-review detail endpoint and asserts it includes both essay and short_answer items.
+  - Grades the essay, verifies 200, asserts `awarded_score` echoes back, verifies the attempt is still `PENDING_REVIEW` (SA still ungraded).
+  - Confirms MCQ items are rejected with 400 `not_gradable`.
+  - Grades the short_answer, verifies the attempt transitions to `GRADED` with a non-null `attempt_score` and `still_pending_items=0`.
+  - Re-grades the essay (audit log expects ≥2 `attempt.grade` entries with the right `resource_id`).
+  - Student `GET /attempts/{id}/result` returns `GRADED` with `awarded_score` populated.
+  - Admin `GET /audit-logs?action=attempt.grade&limit=20` returns ≥2 entries for the essay item.
+  - Gradebook `GET /assessments/{id}/attempts` returns the attempt with `grading_status=GRADED` and a non-null `score`.
+
+### Verification
+
+- `pnpm api:sqlc` + `pnpm api:types` clean.
+- `pnpm check` clean (web typecheck + web build + go test + go vet + gofmt).
+- `pnpm e2e:smoke` passes end-to-end (resources MVP, manual grading + audit + gradebook, login lockout).
+- `pnpm e2e:browser` passes 20/20 (no test changes; existing critical-flow + teacher-builder + admin flows unaffected).
+- `apps/web/test-results` and `apps/web/playwright-report` cleaned by the e2e_browser.sh trap.
+
+### Decisions / notes
+
+- **Audit seam**: the grading package declares a small `AuditLogger` interface (`InsertAuditLog(ctx, tx, grading.AuditLogEntry) error`) instead of importing admin. The admin package provides a `GradingAuditAdapter` that satisfies the interface and reuses the existing `admin.Repository.InsertAuditLog` (which already has full transaction scoping). This avoids a grading → admin import cycle while keeping the audit-row shape in sync with the rest of the system.
+- **Re-grade allowed**: `UpsertItemGrade` uses `INSERT ... ON CONFLICT (organization_id, attempt_item_id) DO UPDATE`. Every save (insert or update) writes a fresh `attempt.grade` audit log entry; the smoke harness asserts ≥2 entries for an item that was graded twice. The `before_json` snapshot captures the prior attempt score state and the `after_json` carries the new awarded score, grader_id, and feedback; metadata records the recomputed attempt score and grading_status.
+- **Recompute logic**: the `RecomputeAttemptScore` CTE sums `awarded_score` over all items and sets `grading_status = 'GRADED'` only when every non-MCQ (`essay` / `short_answer`) item has a corresponding `item_grades` row. MCQ items never carry a manual grade, so they don't block the promotion. If any non-MCQ item is still ungraded, the attempt stays `PENDING_REVIEW` with `score=NULL` (matching the existing 19 schema).
+- **Validation**:
+  - `awarded_score` is a decimal string parsed via `big.Rat`; negative or non-numeric → 400 `invalid_score`.
+  - `awarded_score` must be `<= item.points` → 400 `score_exceeds_points`.
+  - `question_type ∈ {essay, short_answer}` only → 400 `not_gradable` (rejects MCQ explicitly).
+  - `item.AttemptID == path attempt_id` → 404 `item_not_in_attempt`.
+  - Teacher/admin role required → 403 `forbidden`; CSRF middleware enforces 403 on unsafe PUTs.
+- **Response shape**: `GradeItemResponse` returns the persisted `item_grade`, the recomputed `attempt_score` + `attempt_max_score`, the new `grading_status`, and counts `still_pending_items` / `total_non_mcq_items` so the UI can render "you have 0/2 items left" without an extra round-trip.
+- **Result extension is additive**: `AttemptResultItem` gains `awarded_score` + `feedback` as `*string` (nullable). The student review page only renders them when present; existing MCQ result tests are unchanged.
+- **COALESCE pattern**: `GetAttemptItems` and `GetAttemptItemsForGrading` use `COALESCE(ig.awarded_score, '0')::text` + `COALESCE(ig.feedback, '')` to keep the sqlc `*string` / `string` scan stable. Without it, rows without a manual grade crash sqlc on `cannot scan NULL into *string`. The repository converts the empty/zero values back to `nil` for the response.
+- **CSRF**: the grade PUT lives behind the existing `csrf.Validate(r)` middleware just like the answer-save and submit endpoints. The unsafe-method list in the openapi client automatically attaches `X-CSRF-Token` to the PUT.
+- **Did not** add: per-item grading_status column, rubric editor, file-submission attachments, bulk-grade, partial-essay auto-grade, teacher review-draft state, real-time push, AI/ML scoring, performance hardening (N+1 on detail page, large attempts). All explicitly deferred to P2/P3.

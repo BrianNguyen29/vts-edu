@@ -284,6 +284,16 @@ function ReviewItemRow({ item }: { item: AttemptResultItem }) {
               <strong>Đáp án:</strong> {acceptedAnswers.join(', ')}
             </p>
           )}
+          {item.awarded_score && (
+            <p className="review-answer" data-testid="review-awarded">
+              <strong>Điểm giáo viên chấm:</strong> {item.awarded_score} / {item.points}
+            </p>
+          )}
+          {item.feedback && (
+            <p className="review-answer" data-testid="review-feedback">
+              <strong>Nhận xét:</strong> {item.feedback}
+            </p>
+          )}
         </div>
       )}
 
@@ -296,6 +306,16 @@ function ReviewItemRow({ item }: { item: AttemptResultItem }) {
           {isPending && (
             <p className="review-pending-note">
               Bài tự luận sẽ được giáo viên chấm và cập nhật điểm sau.
+            </p>
+          )}
+          {item.awarded_score && (
+            <p className="review-answer" data-testid="review-awarded">
+              <strong>Điểm giáo viên chấm:</strong> {item.awarded_score} / {item.points}
+            </p>
+          )}
+          {item.feedback && (
+            <p className="review-answer" data-testid="review-feedback">
+              <strong>Nhận xét:</strong> {item.feedback}
             </p>
           )}
         </div>

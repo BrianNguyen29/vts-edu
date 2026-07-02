@@ -232,6 +232,8 @@ func (s *service) GetAttemptResult(ctx context.Context, actor auth.Actor, attemp
 			Choices:           it.Choices,
 			CorrectAnswer:     it.AnswerKey,
 			GradingStatus:     "GRADED",
+			AwardedScore:      it.AwardedScore,
+			Feedback:          it.Feedback,
 		}
 		if it.Revision != nil {
 			item.StudentAnswer = &AttemptResultAnswer{
@@ -241,6 +243,12 @@ func (s *service) GetAttemptResult(ctx context.Context, actor auth.Actor, attemp
 		}
 		perItem, isCorrect := gradeItem(it)
 		item.GradingStatus = perItem
+		// If a manual grade was recorded, surface it as awarded_score (overrides
+		// the auto-grade `is_correct` for non-MCQ items). MCQ items should never
+		// carry a manual grade, so this branch is a no-op for them.
+		if it.AwardedScore != nil {
+			item.AwardedScore = it.AwardedScore
+		}
 		if isCorrect != nil {
 			item.IsCorrect = isCorrect
 		}

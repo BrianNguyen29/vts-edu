@@ -53,3 +53,11 @@ export const resourceKeys = {
   all: ['resources'] as const,
   list: () => [...resourceKeys.all, 'list'] as const,
 };
+
+export const gradingKeys = {
+  all: ['grading'] as const,
+  reviewQueue: (assessmentId: string) =>
+    [...gradingKeys.all, 'review-queue', assessmentId] as const,
+  attemptReview: (attemptId: string) =>
+    [...gradingKeys.all, 'attempt-review', attemptId] as const,
+};

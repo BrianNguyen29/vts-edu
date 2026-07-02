@@ -23,6 +23,7 @@ export function AppShellLayout() {
   const isHomeActive = isActive(location.pathname, '/app');
   const isResourcesActive = isActive(location.pathname, '/app/resources');
   const isQuestionBanksActive = isActive(location.pathname, '/app/question-banks');
+  const isGradingActive = isActive(location.pathname, '/app/grading');
   const isExamActive = isActive(location.pathname, '/exam/attempts');
 
   return (
@@ -59,6 +60,16 @@ export function AppShellLayout() {
                 aria-current={isQuestionBanksActive ? 'page' : undefined}
               >
                 Bộ câu hỏi
+              </Link>
+            )}
+            {isTeacherOrAdmin && (
+              <Link
+                to="/app/grading"
+                className={isGradingActive ? 'active' : ''}
+                aria-current={isGradingActive ? 'page' : undefined}
+                data-testid="nav-grading-link"
+              >
+                Chấm bài
               </Link>
             )}
             <Link

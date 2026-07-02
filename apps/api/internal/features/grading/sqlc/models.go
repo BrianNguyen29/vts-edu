@@ -2,7 +2,7 @@
 // versions:
 //   sqlc v1.31.1
 
-package attemptssqlc
+package gradingsqlc
 
 import (
 	"database/sql/driver"
