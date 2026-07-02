@@ -1394,3 +1394,35 @@ Repo-wide implementation tracking. Append-only; do not delete historical entries
 - **No new dependencies**: only existing `@playwright/test` + `playwright install` CLI. No package.json additions beyond the script entries.
 - **Firefox renderer is host-bound**: headless Firefox on WSL2 / VM hosts without a real GPU hits SWGL renderer crashes during long flows. Keeping the matrix in place lets CI / properly GPU-accelerated hosts run all three browsers without us blocking on a single developer's host.
 - **Did not** add: per-test retries, browser-specific test fixtures, GitHub Actions workflow for the matrix (deferred — the local script is the entry point; CI can opt in with `PLAYWRIGHT_BROWSERS=1 pnpm e2e:browser:all`).
+
+## 2026-07-02 — Rich text / TipTap + KaTeX question editor spike (docs-only recording)
+
+### Done (docs only — no `main` code or dependency changes)
+
+- **`docs/frontend/frontend-technical-spec/spikes/rich-text-editor-spike.md`** (new, 279 lines): full spike report copied from `spike/rich-text-editor`. Sections: TL;DR (GO with caveats), goal & scope, dependencies added, bundle impact (initial +0.04 kB gz; question-banks route +12.81 kB gz via lazy split of TipTap and KaTeX; ~184 kB gz opt-in cost), XSS / sanitization design + 20 test cases, backward compatibility result, what ships in the branch, E2E + test commands + results, KaTeX/Safari manual-test limitation, follow-up list, final GO/NO-GO.
+- **`README.md`**: next-backlog line rewritten — `TipTap/KaTeX rich editor` → `rich text / TipTap + KaTeX production rollout (spike complete, see …/spikes/rich-text-editor-spike.md; rollout gated on a follow-up slice that adds a typed `prompt_doc` column and wires the renderer into exam/review/grading)`.
+- **`docs/frontend/frontend-technical-spec/17-implementation-roadmap.md`**: Phase 5 question-bank line rewritten from `not started` to `🟡 Spike GO with caveats`; §12 (Current next backlog) "Question bank: editor TipTap/KaTeX" → "Question bank: rich text / TipTap + KaTeX production rollout (spike complete on `spike/rich-text-editor` …; rollout needs typed `prompt_doc` column + renderer migration in exam/review/grading + replace `window.prompt` link UI + WebKit CI)".
+
+### Spike branch summary (referenced for context; not merged into `main`)
+
+- Branch: `spike/rich-text-editor` (commit `0791561`).
+- 8 production deps + 2 dev type deps added: `@tiptap/core`, `@tiptap/extension-link`, `@tiptap/extension-underline`, `@tiptap/pm`, `@tiptap/react`, `@tiptap/starter-kit`, `dompurify`, `katex` + `@types/dompurify`, `@types/katex`.
+- New source tree `apps/web/src/shared/rich-prompt/` (sanitize.ts, rich-prompt-renderer.tsx, rich-prompt-editor.tsx, rich-prompt-editor.css, __tests__/sanitize.test.ts) — **NOT** carried to `main`.
+- `apps/web/src/pages/question-banks/question-banks-page.tsx` gains a `promptShape: plain|rich` mode toggle — **NOT** carried to `main`.
+- Persistence approach: JSON-stringify the rich doc into the existing `text` field. The renderer auto-detects both `{text}` and `{doc}` envelopes, so a future typed-column migration is purely additive on the persistence side.
+- 20 new vitest cases under `apps/web/src/shared/rich-prompt/__tests__/sanitize.test.ts`. 9 test files / 77 tests passing on the branch (was 8 / 57).
+- `pnpm e2e:smoke` and `pnpm e2e:browser` (23/23 chromium) both green on the branch. Existing question-bank path is unchanged in behaviour.
+- `pnpm audit --prod` on the branch: 0 known vulnerabilities from the new deps.
+
+### Verification (on `main`, this docs-only change)
+
+- `git diff --stat` → only docs files: `README.md`, `docs/frontend/frontend-technical-spec/17-implementation-roadmap.md`, and the new `docs/frontend/frontend-technical-spec/spikes/rich-text-editor-spike.md`.
+- `git status --short` → no `apps/web/package.json`, no `pnpm-lock.yaml`, no `apps/web/src/shared/rich-prompt/`.
+- No backend, no schema, no OpenAPI, no generated client diff.
+
+### Decisions / notes
+
+- **Docs only on `main`**: the spike code is on `spike/rich-text-editor` until the orchestrator calls a separate go. This is intentional — the spike’s GO has caveats (Safari unverified on this host, follow-up slice required for production) and we don’t want to ship 8 new production deps in a docs-only commit.
+- **No partial merge**: even a "spike code lands but feature-flagged off" merge would add 8 new prod deps to `main`’s `apps/web/package.json` and change `pnpm-lock.yaml`, which is exactly the out-of-scope list in the task brief.
+- **Backward compat is preserved by design**: the renderer accepts both `{text: …}` and `{doc: {type:‘doc’, content: […]}}` envelopes, so once the follow-up slice lands, the migration to a typed `prompt_doc` column is purely additive — no mass re-render or re-author of existing questions.
+- **Did not** add: any roadmap section renumber, any new doc directory, any cross-link from `AGENTS.md` (the `Recently implemented` list is reserved for code that actually shipped to `main`).

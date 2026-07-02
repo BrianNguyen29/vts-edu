@@ -79,7 +79,7 @@ Exit:
 - Question list/filter ✅ (basic picker for assessment builder; tenant-scoped, published-version-only).
 - Create/edit new version — ✅ (auto-creates an initial version on question create; explicit publish-version endpoint before items can reference it).
 - Question types — ✅ (MCQ + short_answer + essay; per-type grading dispatch with PENDING_REVIEW for essay; result review surfaces per-type UI).
-- TipTap/KaTeX rich editor — not started (current prompt is plain text + JSON).
+- TipTap/KaTeX rich editor — 🟡 **Spike GO with caveats** (branch `spike/rich-text-editor`; production rollout deferred). Bundle impact: initial +0.04 kB gz, question-banks route +12.81 kB gz by lazy-splitting TipTap and KaTeX; opt-in cost ≈ 184 kB gz (editor + KaTeX chunks, loaded only when a teacher opts into rich mode and inserts a math formula). 20 new sanitization unit tests; 77/77 web tests; e2e smoke and chromium 23/23 green on the branch. KaTeX-on-Safari unverified on this host (WebKit system libs missing). Follow-up slice required for production: typed `prompt_doc` column, renderer in exam/review/grading, replace `window.prompt` link UI, WebKit-capable CI. Full report: `docs/frontend/frontend-technical-spec/spikes/rich-text-editor-spike.md`.
 - Preview ✅ (within builder/assessment preview; per-type renderer in exam runner + attempt review).
 - Version history/status — not started (status badge is rendered but full history timeline deferred).
 
@@ -193,7 +193,7 @@ Exit:
 
 **C. Feature work (chỉ bắt đầu sau khi A & B xong)**
 
-- Question bank: editor TipTap/KaTeX, version history UI, per-type question form polish.
+- Question bank: rich text / TipTap + KaTeX production rollout (spike complete on `spike/rich-text-editor` — see `docs/frontend/frontend-technical-spec/spikes/rich-text-editor-spike.md`; rollout needs typed `prompt_doc` column + renderer migration in exam/review/grading + replace `window.prompt` link UI + WebKit CI), version history UI, per-type question form polish.
 - Manual grading UI nâng cấp: rubric editor, teacher feedback templates, file submission review.
 - Auth-provider apiClient migration (5 call site còn lại trong `auth-provider.tsx`; auth flow cần adapter đặc biệt cho refresh rotation/queue — deferred).
 - Full WCAG 2.1 AA audit, axe-core CI gate, focus management regression suite cho builder/exam/admin.
