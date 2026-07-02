@@ -48,5 +48,3 @@ export async function apiClient(
 
   return fetch(url, init);
 }
-
-export { fetchCsrfToken, getCsrfToken } from './csrf-middleware';

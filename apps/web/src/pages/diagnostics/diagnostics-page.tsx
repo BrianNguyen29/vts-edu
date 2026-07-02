@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { apiClient, getCsrfToken } from '@/shared/api/api-client';
+import { apiClient } from '@/shared/api/api-client';
+import { getCsrfToken } from '@/shared/api/csrf-middleware';
 import { useDocumentTitle } from '@/shared/lib/use-document-title';
 
 export function DiagnosticsPage() {

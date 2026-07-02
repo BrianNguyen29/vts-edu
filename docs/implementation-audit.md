@@ -1197,6 +1197,16 @@ Repo-wide implementation tracking. Append-only; do not delete historical entries
 - **CSRF**: the grade PUT lives behind the existing `csrf.Validate(r)` middleware just like the answer-save and submit endpoints. The unsafe-method list in the openapi client automatically attaches `X-CSRF-Token` to the PUT.
 - **Did not** add: per-item grading_status column, rubric editor, file-submission attachments, bulk-grade, partial-essay auto-grade, teacher review-draft state, real-time push, AI/ML scoring, performance hardening (N+1 on detail page, large attempts). All explicitly deferred to P2/P3.
 
+## 2026-07-02 — apiClient cleanup v1 (slice-17)
+
+### Done
+
+- **Migrated gradebook CSV exports off legacy `apiClient`** (`apps/web/src/shared/api/gradebook.ts`): `downloadCsv` no longer goes through `apiClient`; the two export helpers (`exportAssessmentAttemptsCSV`, `exportClassGradebookCSV`) now use the typed `getOpenAPIClient()` + `client.GET('/assessments/{id}/attempts/export', { params: { path: { id } } })` (and the class-gradebook equivalent) and call `.blob()` on the returned `Response`. Auth/CSRF are still injected by the openapi middleware so behavior is preserved. `import { apiClient } from './api-client'` removed from `gradebook.ts`.
+- **Removed dead re-export** (`apps/web/src/shared/api/api-client.ts`): the `export { fetchCsrfToken, getCsrfToken } from './csrf-middleware'` line had no remaining callers after the re-import in `diagnostics-page.tsx` was redirected to `csrf-middleware` directly. `apiClient` and `ApiClientOptions` stay (auth-provider still needs them).
+- **Diagnostics page blocker documented**: `apps/web/src/pages/diagnostics/diagnostics-page.tsx` calls `/healthz` and `POST /attempts/demo/submit`, neither of which is declared in `docs/backend/backend-technical-spec/openapi/openapi-skeleton.yaml`. openapi-typescript only generates types for declared paths, so migrating to the typed client would fail `tsc --noEmit`. Left as-is and split the `getCsrfToken` import out of `api-client` so the dead re-export could be removed without breaking diagnostics.
+- **Untouched** (per scope): `apps/web/src/app/providers/auth-provider.tsx` still uses `apiClient` for `/auth/refresh`, `/me`, `/auth/login`, `/auth/logout`, `/auth/change-password` (deferred — auth flow must be migrated in a follow-up slice). `apps/web/src/shared/api/resources.ts` XHR upload path is unchanged. `api-client.ts` is not deleted.
+- **Verification**: `pnpm web:typecheck` ✓, `pnpm web:build` ✓ (bundle 360.77 kB / 114.50 kB gz, +0.27 kB / +0.13 kB gz vs pre-change — re-export was tree-shaken but the typed client + a tiny `Response` reference is inlined), `pnpm web:test` ✓ (57/57), `pnpm e2e:smoke` ✓ (`assertResourcesFlow` + `assertNonMcqFlow` cover both gradebook CSV export endpoints; `assertAdminFlow` covers the audit-logs CSV; `expect(csv).toContain('header')` still passes), `pnpm e2e:browser` (chromium) ✓ 23/23 (extended to 23 with the PWA + notifications slices), `pnpm check` ✓. `grep -rE "\bapiClient\(" apps/web/src` returns 7 hits: 1 declaration in `api-client.ts` + 5 in `auth-provider.tsx` (deferred) + 2 in `diagnostics-page.tsx` (blocker).
+
 ## 2026-07-02 — PWA Level 0 installability (manifest only)
 
 ### Done

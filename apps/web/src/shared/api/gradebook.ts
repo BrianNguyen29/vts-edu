@@ -1,5 +1,4 @@
 import { getOpenAPIClient } from './openapi-client';
-import { apiClient } from './api-client';
 import { unwrapData, createApiError } from './attempts';
 import type { components } from './openapi-schema';
 
@@ -41,8 +40,10 @@ export async function getClassGradebook(
   );
 }
 
-async function downloadCsv(path: string, filename: string): Promise<void> {
-  const response = await apiClient(path, { method: 'GET' });
+async function downloadCsv(
+  response: Response,
+  filename: string
+): Promise<void> {
   if (!response.ok) {
     let raw: unknown;
     try {
@@ -67,15 +68,20 @@ async function downloadCsv(path: string, filename: string): Promise<void> {
 export async function exportAssessmentAttemptsCSV(
   assessmentId: string
 ): Promise<void> {
-  return downloadCsv(
-    `/assessments/${assessmentId}/attempts/export`,
-    `assessment-${assessmentId}-attempts.csv`
+  const client = await getOpenAPIClient();
+  const { response } = await client.GET(
+    '/assessments/{id}/attempts/export',
+    {
+      params: { path: { id: assessmentId } },
+    }
   );
+  return downloadCsv(response, `assessment-${assessmentId}-attempts.csv`);
 }
 
 export async function exportClassGradebookCSV(classId: string): Promise<void> {
-  return downloadCsv(
-    `/classes/${classId}/gradebook/export`,
-    `class-${classId}-gradebook.csv`
-  );
+  const client = await getOpenAPIClient();
+  const { response } = await client.GET('/classes/{class_id}/gradebook/export', {
+    params: { path: { class_id: classId } },
+  });
+  return downloadCsv(response, `class-${classId}-gradebook.csv`);
 }
