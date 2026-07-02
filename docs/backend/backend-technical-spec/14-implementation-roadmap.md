@@ -116,19 +116,28 @@ Exit criteria:
 
 ## 2.7 Current next backlog (not started)
 
-> **Thứ tự bắt buộc**: (1) hoàn tất cập nhật docs/ADRs còn stale, (2) chạy Huma feasibility spike và quyết định go/no-go, (3) mới triển khai feature mới. Mục tiêu là khóa "docs-completion before new feature work".
+> **Thứ tự bắt buộc**: (1) hoàn tất cập nhật docs/ADRs còn stale, (2) giải quyết 3 preconditions Huma JSON adoption (problem+json content type, X-Request-Id echo, OpenAPI divergence) qua các sub-spike, (3) chạy migration slice đầu tiên (`academics`) sau khi preconditions pass, (4) mới triển khai feature mới. Mục tiêu là khóa "docs-completion before new feature work".
 
 **A. Docs & ADR completion (ưu tiên cao nhất, chạy trước feature mới)**
 
 - Cập nhật các roadmap/backend/frontend/ADR còn stale (path count, resources MVP, accessibility baseline, error pages `request_id`).
-- Viết ADR mới hoặc cập nhật ADR-0010 với quyết định Huma sau spike.
+- ✅ **Done 2026-07-02**: ADR-0013 — Huma hybrid architecture (Huma cho JSON CRUD, chi cho binary/streaming/auth cookie). Supersedes phần Huma runtime adoption trong ADR-0010.
 
-**B. Huma feasibility spike (sau khi docs xong, trước feature mới)**
+**B. Huma preconditions (sub-spike trước khi migration slice đầu tiên)**
 
-- Bounded spike: triển khai Huma trên **một feature ít nhạy cảm** (academics hoặc gradebook), giữ auth/CSRF/refresh ngoài phạm vi, so sánh DX và regression risk với skeleton thủ công. Không migrate runtime toàn cục.
-- Quyết định: go (migrate theo slice) hoặc no-go (tiếp tục skeleton thủ công + tăng cường `generated-code-check`).
+3 preconditions theo ADR-0013 §"Điều kiện tiên quyết", mỗi cái ≤ 1 ngày, có test + rollback:
 
-**C. Feature work (chỉ bắt đầu sau khi A & B xong)**
+- **B.1** `application/problem+json` content type: chọn (a) update `openapi-fetch` client + frontend error handler để expect `problem+json`, hoặc (b) override Huma default error content type registration về `application/json` + envelope `{error:{code,message,request_id}}` của production. Ưu tiên (b) cho backward compat.
+- **B.2** `X-Request-Id` response header echo: thêm Huma middleware (qua `huma.NewError` hook hoặc custom `OperationConfig.Middlewares`) để đọc `X-Request-Id` từ `chi`-level middleware context và set response header. Tương tự `apps/api/internal/platform/middleware/response.go::respondError`.
+- **B.3** OpenAPI spec divergence: (a) giữ skeleton tay làm source of truth, dùng Huma-generated spec như evidence only, hoặc (b) absorb Huma-generated spec vào skeleton. Ưu tiên (a); `generated-code-check` CI sẽ fail nếu hai spec diverge.
+
+**C. Huma migration slice (chỉ bắt đầu sau khi A & B xong)**
+
+- Thứ tự ưu tiên (ít nhạy cảm → nhiều nhạy cảm): `academics` → `gradebook` → `notifications` → `question-banks` → `assessments` → `attempts` → `admin` (trừ reset-password) → `auth` (cuối cùng, có thể không bao giờ migrate).
+- **Endpoint KHÔNG migrate** (giữ chi): binary download (`/resources/{id}/download`), multipart upload (`/resources/{id}/files`), CSV export streaming (`/assessments/{id}/attempts.csv`, `/classes/{id}/gradebook.csv`), toàn bộ auth cookie + CSRF + refresh rotation (`/api/v1/auth/*`). Xem ADR-0013 §"Quyết định" mục 2 cho lý do.
+- **Endpoint KHÔNG migrate trong tương lai** (cho đến khi Huma bổ sung first-class streaming API): SSE, WebSocket, long polling.
+
+**D. Feature work (chỉ bắt đầu sau khi A, B, C xong)**
 
 - Resources/files: signed download (URL hết hạn ngắn) + inline preview + class-scoped resources + upload progress + resume. **Production storage adapter đã ship 2026-07-01** (`SupabaseProvider` với server-proxy download, `X-Content-Type-Options: nosniff`, content type allowlist). Local provider vẫn là default; Supabase bật qua `RESOURCE_STORAGE_TYPE=supabase` + 3 biến `SUPABASE_*`. **Class scope + multi-file + inline preview đã ship 2026-07-02** (slice-12): `ClassAccessChecker` + `AcademicAccessAdapter`, `academics.Repository.IsStudentEnrolled`, `GET /resources?context_type=class&context_id=<uuid>`, multi-file `POST /resources/{id}/files` (accept `file` + `files[]` + `files`, không auto-archive), `GET /resources/{id}/files`, `GET /resources/{id}/download?file_id=<uuid>&disposition=inline` (inline chỉ cho image/pdf/text, nosniff luôn set), frontend `/app/resources` rewrite grouped list cards + XHR upload (concurrency 3, per-file progress + live region) + inline preview modal + class filter / class scope selector cho managers. Signed URL/CDN/multipart resumable vẫn deferred.
 - Non-MCQ question types và manual review workflow (rubric, file submission, teacher feedback). **Foundation đã ship 2026-07-02** (slice-10): `multiple_choice | short_answer | essay`, per-type grading dispatch, PENDING_REVIEW semantics với score=NULL, minimal question bank editor (`/question-banks` với create/list bank, create question, publish version), exam runner + attempt review render per-type. **Manual review workflow đã ship 2026-07-02** (slice-11): `item_grades` table với UNIQUE(organization_id, attempt_item_id) và re-grade allowed, 3 routes (`/assessments/{id}/review-queue`, `/attempts/{id}/review`, `PUT /attempts/{id}/items/{id}/grade` dưới CSRF), `RecomputeAttemptScore` CTE promote GRADED khi tất cả essay/SA đã chấm, audit `attempt.grade` qua `grading.AuditLogger` + `admin.GradingAuditAdapter` (không circular), `/app/grading` queue + detail page. Rubric editor, file submission attachments, bulk-grade, AI scoring vẫn deferred.

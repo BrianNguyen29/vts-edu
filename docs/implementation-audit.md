@@ -1426,3 +1426,40 @@ Repo-wide implementation tracking. Append-only; do not delete historical entries
 - **No partial merge**: even a "spike code lands but feature-flagged off" merge would add 8 new prod deps to `main`’s `apps/web/package.json` and change `pnpm-lock.yaml`, which is exactly the out-of-scope list in the task brief.
 - **Backward compat is preserved by design**: the renderer accepts both `{text: …}` and `{doc: {type:‘doc’, content: […]}}` envelopes, so once the follow-up slice lands, the migration to a typed `prompt_doc` column is purely additive — no mass re-render or re-author of existing questions.
 - **Did not** add: any roadmap section renumber, any new doc directory, any cross-link from `AGENTS.md` (the `Recently implemented` list is reserved for code that actually shipped to `main`).
+
+## 2026-07-02 — Huma hybrid architecture ADR (docs-only)
+
+### Done (docs only — no `main` code or dependency changes)
+
+- **`docs/backend/backend-technical-spec/adr/0013-huma-hybrid-json-chi-binary.md`** (new): records the post-`huma-academics-spike` decision. Supersedes the "Huma runtime migration" paragraphs of [ADR-0010](./backend/backend-technical-spec/adr/0010-huma-sqlc-staged-groundwork.md). Status: **Accepted**.
+  - **Huma for JSON CRUD endpoints only**: `academics`, `gradebook` (khi không phải streaming CSV), `notifications`, `question-banks`, `assessments` (CRUD only), `attempts` (list/get only), `admin` (org + users + roles, trừ reset-password).
+  - **Chi kept for**: binary download (`GET /resources/{id}/download`), multipart upload (`POST /resources/{id}/files`), streaming CSV export (`GET /assessments/{id}/attempts.csv`, `GET /classes/{id}/gradebook.csv`), toàn bộ `/api/v1/auth/*` (cookie + CSRF + refresh rotation), CSRF header echo cho unsafe methods, future SSE / WebSocket / long polling (until Huma adds first-class streaming API).
+  - **3 preconditions** phải pass trước khi migration slice đầu tiên (`academics`): (B.1) `application/problem+json` content type → prefer override về `application/json` + envelope `{error:{code,message,request_id}}` của production; (B.2) `X-Request-Id` response header echo qua Huma middleware; (B.3) OpenAPI spec divergence → keep skeleton tay làm source of truth, dùng Huma-generated spec như evidence only.
+  - **Go/no-go per slice**: go nếu 3 preconditions pass + handler test coverage ≥ 80% + không regression ở smoke + e2e + thời gian thêm endpoint mới giảm ≥ 30% (đo qua 2 endpoint mới trong 2 tuần liên tiếp). No-go/pause nếu precondition nào fail, regression ở auth/CSRF/middleware ordering, hoặc team không cam kết test coverage ≥ 80%.
+  - **Migration order**: `academics` → `gradebook` → `notifications` → `question-banks` → `assessments` → `attempts` → `admin` (trừ reset-password) → `auth` (cuối cùng, có thể không bao giờ migrate).
+  - **Không có code spike cho streaming/binary**: nếu Huma sau này bổ sung first-class streaming API, mở ADR mới để re-evaluate; nếu không, ADR-0013 đóng cứng quyết định chi cho binary/streaming/auth.
+- **`docs/backend/backend-technical-spec/14-implementation-roadmap.md` §2.7**: thay toàn bộ mục "Huma feasibility spike (sau khi docs xong, trước feature mới)" bằng 3 mục mới:
+  - A. Docs & ADR completion — note "✅ Done 2026-07-02: ADR-0013".
+  - B. Huma preconditions — 3 sub-spike B.1, B.2, B.3 mỗi cái ≤ 1 ngày, có test + rollback.
+  - C. Huma migration slice — chỉ bắt đầu sau khi A & B xong, theo thứ tự ưu tiên từ ít nhạy cảm → nhiều nhạy cảm, endpoint không migrate được liệt kê rõ.
+- **`README.md`**: next-backlog line đã rewrite ở task trước không đề cập Huma binary/streaming spike; docs hiện tại đã nhất quán với ADR-0013 (Huma migration gated on spike go/no-go).
+
+### Oracle verdict recorded
+
+- **Không chạy Huma resources/binary streaming code spike** vì Huma v2 không có first-class streaming API; cố ép sẽ triệt tiêu lợi ích validation tự động của Huma.
+- **Hai routing paradigm cùng tồn tại** (Huma operations + chi handlers) là trade-off chấp nhận được vì binary/streaming/auth là những phần khó nhất của Huma adoption; cô lập chúng trên chi giảm risk profile.
+- **OpenAPI skeleton tay tiếp tục là source of truth** cho `openapi-typescript` cho đến khi precondition B.3 được giải quyết; `generated-code-check` CI giữ vai trò divergence guard.
+
+### Verification (on `main`, this docs-only change)
+
+- `git diff --stat` → chỉ docs files: `docs/backend/backend-technical-spec/14-implementation-roadmap.md`, `docs/implementation-audit.md`, và ADR mới `docs/backend/backend-technical-spec/adr/0013-huma-hybrid-json-chi-binary.md`.
+- `git status --short` → không có `apps/api/`, không có `go.mod`, không có `go.sum`, không có `apps/web/package.json` / `pnpm-lock.yaml`, không có `openapi-skeleton.yaml`, không có generated code.
+- `pnpm web:typecheck` clean (sanity check; không có code change nào ảnh hưởng frontend).
+
+### Decisions / notes
+
+- **ADR-0013 supersedes (không xóa) nội dung "Huma runtime adoption" trong ADR-0010**: ADR-0010 vẫn giữ context cho Stage 1 (sqlc) và Stage 3 (typed client); phần runtime Huma adoption được cross-link tới ADR-0013. Tránh rewrite lịch sử ADR-0010 (đã có 5 lần revisit) mà vẫn đảm bảo ADR-0013 là nguồn quyết định hiện hành.
+- **Không tái cấu trúc 14-implementation-roadmap.md §2.5**: phần "Stage 2 — Huma migration (deferred)" vẫn là nguồn gốc lịch sử của trigger 60-paths; §2.7 mới là nơi thể hiện hành động tiếp theo. Hai phần bổ sung cho nhau.
+- **Tách preconditions thành sub-spike (không big-bang)**: 3 preconditions B.1 / B.2 / B.3 là bounded (≤ 1 ngày, có test, có rollback). Tránh việc mở một "preconditions spike" lớn có nguy cơ thất bại và phải redo.
+- **Rollback plan cho mỗi slice migration**: xóa sub-router mount + giữ nguyên chi routes. Mỗi slice phải có thể rollback trong 1 commit. Điều này giữ lợi ích của independent failure domains (chi routes là fallback nếu Huma operations fail).
+- **Did not** add: code spike cho streaming/binary, bất kỳ file nào trong `apps/api/`, bất kỳ dependency mới nào, bất kỳ OpenAPI generation mới nào. Tất cả thay đổi đều là markdown.
