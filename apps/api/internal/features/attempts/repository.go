@@ -33,6 +33,7 @@ type Attempt struct {
 type AttemptItemRow struct {
 	ID                string
 	QuestionVersionID string
+	QuestionType      string
 	Position          int
 	Points            string
 	Prompt            json.RawMessage
@@ -67,6 +68,7 @@ type Repository interface {
 // AttemptItemInput is the data needed to create an attempt_item row.
 type AttemptItemInput struct {
 	QuestionVersionID string
+	QuestionType      string
 	Position          int
 	Points            string
 	Prompt            json.RawMessage
@@ -210,6 +212,7 @@ func (r *sqlcRepository) GetAttemptItems(ctx context.Context, attemptID, orgID s
 		items[i] = AttemptItemRow{
 			ID:                row.ID.String(),
 			QuestionVersionID: row.QuestionVersionID.String(),
+			QuestionType:      row.QuestionType,
 			Position:          int(row.Position),
 			Points:            row.AiPoints,
 			Prompt:            json.RawMessage(row.PromptJson),
@@ -365,9 +368,14 @@ func (r *sqlcRepository) SubmitAttempt(ctx context.Context, tx pgx.Tx, attemptID
 	if err != nil {
 		return nil, fmt.Errorf("invalid user id: %w", err)
 	}
-	scoreNum, err := toNumeric(score)
-	if err != nil {
-		return nil, fmt.Errorf("invalid score: %w", err)
+	var scoreNum pgtype.Numeric
+	if gradingStatus == "PENDING_REVIEW" {
+		scoreNum = pgtype.Numeric{}
+	} else {
+		scoreNum, err = toNumeric(score)
+		if err != nil {
+			return nil, fmt.Errorf("invalid score: %w", err)
+		}
 	}
 	maxScoreNum, err := toNumeric(maxScore)
 	if err != nil {
@@ -709,6 +717,10 @@ func (r *sqlcRepository) CreateAttemptItems(ctx context.Context, tx pgx.Tx, orgI
 		if err != nil {
 			return fmt.Errorf("invalid points: %w", err)
 		}
+		questionType := item.QuestionType
+		if questionType == "" {
+			questionType = "multiple_choice"
+		}
 		if err := r.queries.WithTx(tx).CreateAttemptItem(ctx, attemptssqlc.CreateAttemptItemParams{
 			OrganizationID:    org,
 			AttemptID:         attempt,
@@ -718,6 +730,7 @@ func (r *sqlcRepository) CreateAttemptItems(ctx context.Context, tx pgx.Tx, orgI
 			PromptJson:        []byte(item.Prompt),
 			ChoicesJson:       []byte(item.Choices),
 			AnswerKeyJson:     []byte(item.AnswerKey),
+			QuestionType:      questionType,
 		}); err != nil {
 			return fmt.Errorf("create attempt item: %w", err)
 		}

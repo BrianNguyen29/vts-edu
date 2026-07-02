@@ -27,6 +27,7 @@ SELECT
     ai.choices_json,
     aa.answer_payload,
     ai.answer_key_json,
+    ai.question_type,
     aa.revision,
     aa.answered_at
 FROM attempt_items ai
@@ -103,7 +104,7 @@ WHERE id = $1
   AND organization_id = $2
   AND student_user_id = $3
   AND status = 'IN_PROGRESS'
-RETURNING submitted_at, score::text, max_score::text, grading_status;
+RETURNING submitted_at, COALESCE(score, '0')::text AS score, COALESCE(max_score, '0')::text AS max_score, grading_status;
 
 -- name: ListAssignedAssessments :many
 SELECT a.id, a.title, a.status, a.duration_minutes, a.max_attempts, a.revision, a.opens_at, a.closes_at, ap.id AS publication_id, ap.published_at, COALESCE(used.cnt, 0) AS attempts_used
@@ -149,6 +150,16 @@ WHERE organization_id = $1
 ORDER BY version DESC
 LIMIT 1;
 
+-- name: GetQuestionVersionType :one
+SELECT question_type
+FROM question_versions
+WHERE id = $1;
+
+-- name: ListQuestionVersionTypes :many
+SELECT id, question_type
+FROM question_versions
+WHERE id = ANY($1::uuid[]);
+
 -- name: GetInProgressAttempt :one
 SELECT id, organization_id, assessment_id, publication_id, status, started_at, expires_at, submitted_at, score, max_score, grading_status
 FROM attempts
@@ -171,5 +182,5 @@ VALUES ($1, $2, $3, $4, 'IN_PROGRESS', $5, $6)
 RETURNING id, organization_id, assessment_id, publication_id, status, started_at, expires_at, submitted_at, score, max_score, grading_status;
 
 -- name: CreateAttemptItem :exec
-INSERT INTO attempt_items (organization_id, attempt_id, question_version_id, position, points, prompt_json, choices_json, answer_key_json)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8);
+INSERT INTO attempt_items (organization_id, attempt_id, question_version_id, position, points, prompt_json, choices_json, answer_key_json, question_type)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9);

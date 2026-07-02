@@ -575,6 +575,18 @@ export function AssessmentBuilderPage() {
     return q?.prompt ?? versionId;
   }
 
+  function questionTypeLabel(t: string | undefined): string {
+    switch (t) {
+      case 'short_answer':
+        return 'TLN';
+      case 'essay':
+        return 'TL';
+      case 'multiple_choice':
+      default:
+        return 'TN';
+    }
+  }
+
   if (loading) {
     return (
       <div className="dashboard-page">
@@ -912,7 +924,7 @@ export function AssessmentBuilderPage() {
                     <option value="">Chọn…</option>
                     {filteredQuestions.map((q) => (
                       <option key={q.question_version_id} value={q.question_version_id}>
-                        {q.prompt}
+                        {`[${questionTypeLabel(q.question_type)}] ${q.prompt}`}
                       </option>
                     ))}
                   </select>

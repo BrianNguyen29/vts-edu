@@ -118,7 +118,7 @@ ORDER BY position;
 
 -- name: GetAssessmentItemsWithContent :many
 SELECT ai.id, ai.assessment_section_id, ai.question_version_id, ai.position, ai.points,
-       qv.prompt_json, qv.choices_json, qv.answer_key_json, qv.max_score
+       qv.prompt_json, qv.choices_json, qv.answer_key_json, qv.max_score, qv.question_type
 FROM assessment_items ai
 JOIN question_versions qv ON qv.id = ai.question_version_id
 WHERE ai.organization_id = sqlc.arg(organization_id)
@@ -301,11 +301,11 @@ WHERE id = sqlc.arg(item_id)
   AND status = 'ACTIVE';
 
 -- name: ListQuestions :many
-SELECT q.id, q.question_bank_id, qv.id AS question_version_id, qv.status AS question_version_status, qv.prompt_json ->> 'text' AS prompt_text
+SELECT q.id, q.question_bank_id, COALESCE(qv.id, '00000000-0000-0000-0000-000000000000'::uuid) AS question_version_id, COALESCE(qv.status, '') AS question_version_status, COALESCE(qv.question_type, '') AS question_type, qv.prompt_json ->> 'text' AS prompt_text
 FROM questions q
 JOIN question_banks qb ON qb.id = q.question_bank_id
 LEFT JOIN LATERAL (
-    SELECT id, status, prompt_json
+    SELECT id, status, prompt_json, question_type
     FROM question_versions
     WHERE question_id = q.id
       AND status = 'PUBLISHED'
@@ -381,3 +381,94 @@ SET status = 'CLOSED',
 WHERE status = 'OPEN'
   AND closes_at IS NOT NULL
   AND closes_at <= now();
+
+-- Question bank editor queries
+
+-- name: CreateQuestionBank :one
+INSERT INTO question_banks (organization_id, title)
+VALUES (sqlc.arg(organization_id), sqlc.arg(title))
+RETURNING id, organization_id, title, status, created_at, updated_at;
+
+-- name: ListQuestionBanksByOrganization :many
+SELECT id, organization_id, title, status, created_at, updated_at
+FROM question_banks
+WHERE organization_id = sqlc.arg(organization_id)
+  AND (sqlc.arg(include_archived)::bool OR status = 'ACTIVE')
+ORDER BY created_at DESC
+LIMIT NULLIF(sqlc.arg(page_limit)::int, 0) OFFSET sqlc.arg(page_offset)::int;
+
+-- name: GetQuestionBank :one
+SELECT id, organization_id, title, status, created_at, updated_at
+FROM question_banks
+WHERE id = sqlc.arg(id)
+  AND organization_id = sqlc.arg(organization_id);
+
+-- name: CreateQuestion :one
+INSERT INTO questions (question_bank_id)
+VALUES (sqlc.arg(question_bank_id))
+RETURNING id, question_bank_id, status, created_at, updated_at;
+
+-- name: ListQuestionsInBank :many
+SELECT q.id, q.question_bank_id, q.status, q.created_at, q.updated_at,
+       qv.id AS latest_version_id, qv.status AS latest_version_status,
+       qv.question_type, qv.version AS latest_version
+FROM questions q
+LEFT JOIN LATERAL (
+    SELECT id, status, question_type, version
+    FROM question_versions
+    WHERE question_id = q.id
+    ORDER BY version DESC, created_at DESC
+    LIMIT 1
+) qv ON true
+WHERE q.question_bank_id = sqlc.arg(bank_id)
+  AND (sqlc.arg(include_archived)::bool OR q.status = 'ACTIVE')
+ORDER BY q.created_at DESC
+LIMIT NULLIF(sqlc.arg(page_limit)::int, 0) OFFSET sqlc.arg(page_offset)::int;
+
+-- name: GetQuestion :one
+SELECT id, question_bank_id, status, created_at, updated_at
+FROM questions
+WHERE id = sqlc.arg(id)
+  AND question_bank_id = sqlc.arg(bank_id);
+
+-- name: GetQuestionWithBank :one
+SELECT q.id, q.question_bank_id, qb.organization_id, q.status, q.created_at, q.updated_at
+FROM questions q
+JOIN question_banks qb ON qb.id = q.question_bank_id
+WHERE q.id = sqlc.arg(id);
+
+-- name: CreateQuestionVersion :one
+INSERT INTO question_versions (
+    question_id, version, prompt_json, choices_json, answer_key_json, max_score, status, question_type
+) VALUES (
+    sqlc.arg(question_id),
+    sqlc.arg(version),
+    sqlc.arg(prompt_json),
+    sqlc.arg(choices_json),
+    sqlc.arg(answer_key_json),
+    sqlc.arg(max_score),
+    sqlc.arg(status),
+    sqlc.arg(question_type)
+)
+RETURNING id, question_id, version, prompt_json, choices_json, answer_key_json, max_score, status, question_type, created_at;
+
+-- name: GetQuestionVersion :one
+SELECT qv.id, qv.question_id, qv.version, qv.prompt_json, qv.choices_json, qv.answer_key_json, qv.max_score, qv.status, qv.question_type, qv.created_at
+FROM question_versions qv
+JOIN questions q ON q.id = qv.question_id
+JOIN question_banks qb ON qb.id = q.question_bank_id
+WHERE qv.id = sqlc.arg(version_id)
+  AND qb.organization_id = sqlc.arg(organization_id);
+
+-- name: GetLatestVersionNumber :one
+SELECT COALESCE(MAX(version), 0)::int AS version
+FROM question_versions
+WHERE question_id = sqlc.arg(question_id);
+
+-- name: PublishQuestionVersion :one
+UPDATE question_versions
+SET status = 'PUBLISHED',
+    created_at = created_at
+WHERE id = sqlc.arg(version_id)
+  AND status = 'DRAFT'
+RETURNING id, question_id, version, prompt_json, choices_json, answer_key_json, max_score, status, question_type, created_at;

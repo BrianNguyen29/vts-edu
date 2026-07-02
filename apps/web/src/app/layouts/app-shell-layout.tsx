@@ -18,8 +18,11 @@ export function AppShellLayout() {
 
   const displayName = auth.actor?.displayName ?? 'Người dùng';
   const isRestricted = auth.status === 'restricted';
+  const roles = auth.actor?.roles ?? [];
+  const isTeacherOrAdmin = roles.includes('teacher') || roles.includes('admin');
   const isHomeActive = isActive(location.pathname, '/app');
   const isResourcesActive = isActive(location.pathname, '/app/resources');
+  const isQuestionBanksActive = isActive(location.pathname, '/app/question-banks');
   const isExamActive = isActive(location.pathname, '/exam/attempts');
 
   return (
@@ -49,6 +52,15 @@ export function AppShellLayout() {
             >
               Tài liệu
             </Link>
+            {isTeacherOrAdmin && (
+              <Link
+                to="/app/question-banks"
+                className={isQuestionBanksActive ? 'active' : ''}
+                aria-current={isQuestionBanksActive ? 'page' : undefined}
+              >
+                Bộ câu hỏi
+              </Link>
+            )}
             <Link
               to="/diagnostics"
               className={location.pathname === '/diagnostics' ? 'active' : ''}

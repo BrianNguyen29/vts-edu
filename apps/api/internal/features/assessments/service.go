@@ -51,6 +51,14 @@ type Service interface {
 	DuplicateSection(ctx context.Context, actor auth.Actor, assessmentID, sectionID string) (SectionDetail, error)
 	DuplicateItem(ctx context.Context, actor auth.Actor, sectionID, itemID string) (ItemDetail, error)
 	PreviewAssessment(ctx context.Context, actor auth.Actor, assessmentID string) (AssessmentPreview, error)
+
+	// Question bank editor
+	CreateQuestionBank(ctx context.Context, actor auth.Actor, req CreateQuestionBankRequest) (QuestionBank, error)
+	ListQuestionBanks(ctx context.Context, actor auth.Actor, opts ListQuestionBanksOptions) ([]QuestionBank, error)
+	CreateQuestion(ctx context.Context, actor auth.Actor, bankID string, req CreateQuestionRequest) (CreateQuestionResponse, error)
+	ListQuestionsInBank(ctx context.Context, actor auth.Actor, bankID string, opts ListQuestionBanksOptions) ([]QuestionBankQuestion, error)
+	CreateQuestionVersion(ctx context.Context, actor auth.Actor, bankID, questionID string, req CreateQuestionVersionRequest) (QuestionVersion, error)
+	PublishQuestionVersion(ctx context.Context, actor auth.Actor, bankID, questionID, versionID string) (PublishQuestionVersionResult, error)
 }
 
 type service struct {
@@ -900,6 +908,7 @@ func (s *service) buildSnapshot(ctx context.Context, orgID string, assessment As
 	type snapshotItem struct {
 		ID                string          `json:"id"`
 		QuestionVersionID string          `json:"question_version_id"`
+		QuestionType      string          `json:"question_type"`
 		Position          int             `json:"position"`
 		Points            string          `json:"points"`
 		Prompt            json.RawMessage `json:"prompt"`
@@ -933,6 +942,7 @@ func (s *service) buildSnapshot(ctx context.Context, orgID string, assessment As
 		sec.Items = append(sec.Items, snapshotItem{
 			ID:                it.ID,
 			QuestionVersionID: it.QuestionVersionID,
+			QuestionType:      it.QuestionType,
 			Position:          it.Position,
 			Points:            it.Points,
 			Prompt:            it.Prompt,
@@ -976,4 +986,199 @@ func (s *service) buildSnapshot(ctx context.Context, orgID string, assessment As
 	}
 
 	return json.Marshal(snapshot)
+}
+
+// ----- Question bank editor -----
+
+// QuestionType constants are mirrored from models.go for use in service validation.
+
+func isValidQuestionType(t string) bool {
+	return t == QuestionTypeMultipleChoice || t == QuestionTypeShortAnswer || t == QuestionTypeEssay
+}
+
+func validateQuestionContent(questionType string, prompt, choices, answerKey json.RawMessage, maxScore string) error {
+	if !isValidQuestionType(questionType) {
+		return fmt.Errorf("%w: question_type must be one of multiple_choice, short_answer, essay", ErrInvalidInput)
+	}
+	if len(prompt) == 0 {
+		return fmt.Errorf("%w: prompt is required", ErrInvalidInput)
+	}
+	if maxScore == "" {
+		maxScore = "1.00"
+	}
+	pts, err := strconv.ParseFloat(maxScore, 64)
+	if err != nil || pts <= 0 {
+		return fmt.Errorf("%w: max_score must be a positive number", ErrInvalidInput)
+	}
+	switch questionType {
+	case QuestionTypeMultipleChoice:
+		if len(choices) == 0 {
+			return fmt.Errorf("%w: choices are required for multiple_choice", ErrInvalidInput)
+		}
+		if len(answerKey) == 0 {
+			return fmt.Errorf("%w: answer_key with correct_option is required for multiple_choice", ErrInvalidInput)
+		}
+		var key struct {
+			CorrectOption string `json:"correct_option"`
+		}
+		if err := json.Unmarshal(answerKey, &key); err != nil || key.CorrectOption == "" {
+			return fmt.Errorf("%w: answer_key.correct_option is required for multiple_choice", ErrInvalidInput)
+		}
+	case QuestionTypeShortAnswer:
+		if len(answerKey) == 0 {
+			return fmt.Errorf("%w: answer_key with accepted_answers is required for short_answer", ErrInvalidInput)
+		}
+		var key struct {
+			AcceptedAnswers []string `json:"accepted_answers"`
+		}
+		if err := json.Unmarshal(answerKey, &key); err != nil || len(key.AcceptedAnswers) == 0 {
+			return fmt.Errorf("%w: answer_key.accepted_answers must be a non-empty list for short_answer", ErrInvalidInput)
+		}
+	case QuestionTypeEssay:
+		// Essay can be auto-graded to PENDING_REVIEW; no answer_key required.
+	}
+	return nil
+}
+
+func (s *service) CreateQuestionBank(ctx context.Context, actor auth.Actor, req CreateQuestionBankRequest) (QuestionBank, error) {
+	if !isTeacherOrAdmin(actor.Roles) {
+		return QuestionBank{}, ErrUnauthorized
+	}
+	title := strings.TrimSpace(req.Title)
+	if title == "" {
+		return QuestionBank{}, fmt.Errorf("%w: title is required", ErrInvalidInput)
+	}
+	var bank QuestionBank
+	err := s.tm.WithinTx(ctx, func(ctx context.Context, tx pgx.Tx) error {
+		var err error
+		bank, err = s.repo.CreateQuestionBank(ctx, tx, actor.OrgID, title)
+		return err
+	})
+	if err != nil {
+		return QuestionBank{}, mapRepoError(err)
+	}
+	return bank, nil
+}
+
+func (s *service) ListQuestionBanks(ctx context.Context, actor auth.Actor, opts ListQuestionBanksOptions) ([]QuestionBank, error) {
+	if !isTeacherOrAdmin(actor.Roles) {
+		return nil, ErrUnauthorized
+	}
+	return s.repo.ListQuestionBanksByOrganization(ctx, actor.OrgID, opts)
+}
+
+func (s *service) CreateQuestion(ctx context.Context, actor auth.Actor, bankID string, req CreateQuestionRequest) (CreateQuestionResponse, error) {
+	if !isTeacherOrAdmin(actor.Roles) {
+		return CreateQuestionResponse{}, ErrUnauthorized
+	}
+	if _, err := s.repo.GetQuestionBank(ctx, actor.OrgID, bankID); err != nil {
+		return CreateQuestionResponse{}, mapRepoError(err)
+	}
+	if err := validateQuestionContent(req.QuestionType, req.Prompt, req.Choices, req.AnswerKey, req.MaxScore); err != nil {
+		return CreateQuestionResponse{}, err
+	}
+	maxScore := req.MaxScore
+	if maxScore == "" {
+		maxScore = "1.00"
+	}
+	resp := CreateQuestionResponse{}
+	err := s.tm.WithinTx(ctx, func(ctx context.Context, tx pgx.Tx) error {
+		question, err := s.repo.CreateQuestion(ctx, tx, bankID)
+		if err != nil {
+			return err
+		}
+		resp.Question = question
+		// Always create an initial version; the editor scope is minimal.
+		next, err := s.repo.GetLatestVersionNumber(ctx, tx, question.ID)
+		if err != nil {
+			return err
+		}
+		version, err := s.repo.CreateQuestionVersion(ctx, tx, question.ID, CreateQuestionVersionRequest{
+			QuestionType: req.QuestionType,
+			Prompt:       req.Prompt,
+			Choices:      req.Choices,
+			AnswerKey:    req.AnswerKey,
+		}, maxScore, next+1)
+		if err != nil {
+			return err
+		}
+		resp.Version = &version
+		return nil
+	})
+	if err != nil {
+		return CreateQuestionResponse{}, mapRepoError(err)
+	}
+	return resp, nil
+}
+
+func (s *service) ListQuestionsInBank(ctx context.Context, actor auth.Actor, bankID string, opts ListQuestionBanksOptions) ([]QuestionBankQuestion, error) {
+	if !isTeacherOrAdmin(actor.Roles) {
+		return nil, ErrUnauthorized
+	}
+	if _, err := s.repo.GetQuestionBank(ctx, actor.OrgID, bankID); err != nil {
+		return nil, mapRepoError(err)
+	}
+	return s.repo.ListQuestionsInBank(ctx, bankID, opts)
+}
+
+func (s *service) CreateQuestionVersion(ctx context.Context, actor auth.Actor, bankID, questionID string, req CreateQuestionVersionRequest) (QuestionVersion, error) {
+	if !isTeacherOrAdmin(actor.Roles) {
+		return QuestionVersion{}, ErrUnauthorized
+	}
+	if _, err := s.repo.GetQuestionBank(ctx, actor.OrgID, bankID); err != nil {
+		return QuestionVersion{}, mapRepoError(err)
+	}
+	if _, err := s.repo.GetQuestion(ctx, bankID, questionID); err != nil {
+		return QuestionVersion{}, mapRepoError(err)
+	}
+	if err := validateQuestionContent(req.QuestionType, req.Prompt, req.Choices, req.AnswerKey, req.MaxScore); err != nil {
+		return QuestionVersion{}, err
+	}
+	maxScore := req.MaxScore
+	if maxScore == "" {
+		maxScore = "1.00"
+	}
+	var version QuestionVersion
+	err := s.tm.WithinTx(ctx, func(ctx context.Context, tx pgx.Tx) error {
+		next, err := s.repo.GetLatestVersionNumber(ctx, tx, questionID)
+		if err != nil {
+			return err
+		}
+		version, err = s.repo.CreateQuestionVersion(ctx, tx, questionID, req, maxScore, next+1)
+		return err
+	})
+	if err != nil {
+		return QuestionVersion{}, mapRepoError(err)
+	}
+	return version, nil
+}
+
+func (s *service) PublishQuestionVersion(ctx context.Context, actor auth.Actor, bankID, questionID, versionID string) (PublishQuestionVersionResult, error) {
+	if !isTeacherOrAdmin(actor.Roles) {
+		return PublishQuestionVersionResult{}, ErrUnauthorized
+	}
+	if _, err := s.repo.GetQuestionBank(ctx, actor.OrgID, bankID); err != nil {
+		return PublishQuestionVersionResult{}, mapRepoError(err)
+	}
+	// Fetch the version to verify it belongs to this question/bank.
+	version, err := s.repo.GetQuestionVersion(ctx, actor.OrgID, versionID)
+	if err != nil {
+		return PublishQuestionVersionResult{}, mapRepoError(err)
+	}
+	// Sanity: confirm the question belongs to the bank.
+	if _, err := s.repo.GetQuestion(ctx, bankID, questionID); err != nil {
+		return PublishQuestionVersionResult{}, mapRepoError(err)
+	}
+	if version.QuestionID != questionID {
+		return PublishQuestionVersionResult{}, ErrNotFound
+	}
+	var published QuestionVersion
+	err = s.tm.WithinTx(ctx, func(ctx context.Context, tx pgx.Tx) error {
+		published, err = s.repo.PublishQuestionVersion(ctx, tx, versionID)
+		return err
+	})
+	if err != nil {
+		return PublishQuestionVersionResult{}, mapRepoError(err)
+	}
+	return PublishQuestionVersionResult{Version: published}, nil
 }

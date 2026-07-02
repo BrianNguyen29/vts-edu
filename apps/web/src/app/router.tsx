@@ -13,6 +13,7 @@ import { ChangePasswordPage } from '@/pages/change-password/change-password-page
 import { ExamPage } from '@/pages/exam/exam-page';
 import { AttemptReviewPage } from '@/pages/attempt-review/attempt-review-page';
 import { ResourcesPage } from '@/pages/resources/resources-page';
+import { QuestionBanksPage } from '@/pages/question-banks/question-banks-page';
 import { NotFoundPage } from '@/pages/not-found/not-found-page';
 import { ErrorPage } from '@/pages/error/error-page';
 import { useAuth } from '@/app/providers/auth-provider';
@@ -151,6 +152,10 @@ export const router = createBrowserRouter([
       {
         path: 'resources',
         element: <ResourcesPage />,
+      },
+      {
+        path: 'question-banks',
+        element: <QuestionBanksPage />,
       },
       {
         path: 'admin',

@@ -329,6 +329,51 @@ func (f *fakeRepo) TransitionAssessmentsToClosed(ctx context.Context) (int64, er
 	return 0, nil
 }
 
+// Question bank editor stubs
+func (f *fakeRepo) CreateQuestionBank(ctx context.Context, tx pgx.Tx, orgID, title string) (QuestionBank, error) {
+	return QuestionBank{ID: "bank-id", OrganizationID: orgID, Title: title, Status: "ACTIVE"}, nil
+}
+
+func (f *fakeRepo) ListQuestionBanksByOrganization(ctx context.Context, orgID string, opts ListQuestionBanksOptions) ([]QuestionBank, error) {
+	return nil, nil
+}
+
+func (f *fakeRepo) GetQuestionBank(ctx context.Context, orgID, bankID string) (QuestionBank, error) {
+	return QuestionBank{ID: bankID, OrganizationID: orgID, Status: "ACTIVE"}, nil
+}
+
+func (f *fakeRepo) CreateQuestion(ctx context.Context, tx pgx.Tx, bankID string) (QuestionBankQuestion, error) {
+	return QuestionBankQuestion{ID: "q-id", QuestionBankID: bankID, Status: "ACTIVE"}, nil
+}
+
+func (f *fakeRepo) ListQuestionsInBank(ctx context.Context, bankID string, opts ListQuestionBanksOptions) ([]QuestionBankQuestion, error) {
+	return nil, nil
+}
+
+func (f *fakeRepo) GetQuestionWithBank(ctx context.Context, questionID string) (QuestionBankQuestion, string, error) {
+	return QuestionBankQuestion{ID: questionID, Status: "ACTIVE"}, "org-id", nil
+}
+
+func (f *fakeRepo) GetQuestion(ctx context.Context, bankID, questionID string) (QuestionBankQuestion, error) {
+	return QuestionBankQuestion{ID: questionID, QuestionBankID: bankID, Status: "ACTIVE"}, nil
+}
+
+func (f *fakeRepo) CreateQuestionVersion(ctx context.Context, tx pgx.Tx, questionID string, req CreateQuestionVersionRequest, maxScore string, version int) (QuestionVersion, error) {
+	return QuestionVersion{ID: "v-id", QuestionID: questionID, Version: version, QuestionType: req.QuestionType, Status: "DRAFT"}, nil
+}
+
+func (f *fakeRepo) GetQuestionVersion(ctx context.Context, orgID, versionID string) (QuestionVersion, error) {
+	return QuestionVersion{ID: versionID, QuestionID: "q-id", Status: "DRAFT"}, nil
+}
+
+func (f *fakeRepo) GetLatestVersionNumber(ctx context.Context, tx pgx.Tx, questionID string) (int, error) {
+	return 0, nil
+}
+
+func (f *fakeRepo) PublishQuestionVersion(ctx context.Context, tx pgx.Tx, versionID string) (QuestionVersion, error) {
+	return QuestionVersion{ID: versionID, Status: "PUBLISHED"}, nil
+}
+
 type stubTxManager struct{}
 
 func (stubTxManager) WithinTx(ctx context.Context, fn func(ctx context.Context, tx pgx.Tx) error) error {
@@ -699,5 +744,56 @@ func TestService_PreviewAssessment_HidesAnswerKey(t *testing.T) {
 	}
 	if string(item.Choices) == "" {
 		t.Error("expected choices to be present")
+	}
+}
+
+func TestService_CreateQuestionBank_EmptyTitle(t *testing.T) {
+	svc := NewService(&fakeRepo{}, stubTxManager{})
+	_, err := svc.CreateQuestionBank(context.Background(), auth.Actor{Roles: []string{"teacher"}}, CreateQuestionBankRequest{Title: "  "})
+	if !errors.Is(err, ErrInvalidInput) {
+		t.Fatalf("expected ErrInvalidInput, got %v", err)
+	}
+}
+
+func TestService_CreateQuestionBank_Unauthorized(t *testing.T) {
+	svc := NewService(&fakeRepo{}, stubTxManager{})
+	_, err := svc.CreateQuestionBank(context.Background(), auth.Actor{Roles: []string{"student"}}, CreateQuestionBankRequest{Title: "Bank"})
+	if !errors.Is(err, ErrUnauthorized) {
+		t.Fatalf("expected ErrUnauthorized, got %v", err)
+	}
+}
+
+func TestService_CreateQuestion_MCQMissingChoices(t *testing.T) {
+	svc := NewService(&fakeRepo{}, stubTxManager{})
+	_, err := svc.CreateQuestion(context.Background(), auth.Actor{Roles: []string{"teacher"}, OrgID: "org-id", UserID: "user-id"}, "bank-id", CreateQuestionRequest{
+		QuestionType: "multiple_choice",
+		Prompt:       json.RawMessage(`{"text":"x"}`),
+		AnswerKey:    json.RawMessage(`{"correct_option":"A"}`),
+	})
+	if !errors.Is(err, ErrInvalidInput) {
+		t.Fatalf("expected ErrInvalidInput, got %v", err)
+	}
+}
+
+func TestService_CreateQuestion_ShortAnswerMissingAcceptedAnswers(t *testing.T) {
+	svc := NewService(&fakeRepo{}, stubTxManager{})
+	_, err := svc.CreateQuestion(context.Background(), auth.Actor{Roles: []string{"teacher"}, OrgID: "org-id", UserID: "user-id"}, "bank-id", CreateQuestionRequest{
+		QuestionType: "short_answer",
+		Prompt:       json.RawMessage(`{"text":"x"}`),
+		AnswerKey:    json.RawMessage(`{}`),
+	})
+	if !errors.Is(err, ErrInvalidInput) {
+		t.Fatalf("expected ErrInvalidInput, got %v", err)
+	}
+}
+
+func TestService_CreateQuestion_InvalidType(t *testing.T) {
+	svc := NewService(&fakeRepo{}, stubTxManager{})
+	_, err := svc.CreateQuestion(context.Background(), auth.Actor{Roles: []string{"teacher"}, OrgID: "org-id", UserID: "user-id"}, "bank-id", CreateQuestionRequest{
+		QuestionType: "matching",
+		Prompt:       json.RawMessage(`{"text":"x"}`),
+	})
+	if !errors.Is(err, ErrInvalidInput) {
+		t.Fatalf("expected ErrInvalidInput, got %v", err)
 	}
 }

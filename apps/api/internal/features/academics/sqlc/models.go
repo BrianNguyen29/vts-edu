@@ -251,6 +251,7 @@ type AttemptItem struct {
 	AnswerKeyJson     []byte             `json:"answer_key_json"`
 	PromptJson        []byte             `json:"prompt_json"`
 	ChoicesJson       []byte             `json:"choices_json"`
+	QuestionType      string             `json:"question_type"`
 }
 
 type AuditLog struct {
@@ -403,6 +404,7 @@ type QuestionVersion struct {
 	MaxScore      pgtype.Numeric     `json:"max_score"`
 	Status        string             `json:"status"`
 	CreatedAt     pgtype.Timestamptz `json:"created_at"`
+	QuestionType  string             `json:"question_type"`
 }
 
 type RefreshSession struct {

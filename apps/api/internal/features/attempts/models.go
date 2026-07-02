@@ -66,13 +66,15 @@ type AttemptResult struct {
 type AttemptResultItem struct {
 	ID                string               `json:"id"`
 	QuestionVersionID string               `json:"question_version_id"`
+	QuestionType      string               `json:"question_type"`
 	Position          int                  `json:"position"`
 	Points            string               `json:"points"`
 	Prompt            json.RawMessage      `json:"prompt"`
 	Choices           json.RawMessage      `json:"choices"`
 	CorrectAnswer     json.RawMessage      `json:"correct_answer"`
 	StudentAnswer     *AttemptResultAnswer `json:"student_answer,omitempty"`
-	IsCorrect         bool                 `json:"is_correct"`
+	GradingStatus     string               `json:"grading_status"`
+	IsCorrect         *bool                `json:"is_correct,omitempty"`
 }
 
 // AttemptResultAnswer is the student's answer for a result item.
@@ -106,6 +108,7 @@ type PublicationSection struct {
 type PublicationItem struct {
 	ID                string          `json:"id"`
 	QuestionVersionID string          `json:"question_version_id"`
+	QuestionType      string          `json:"question_type"`
 	Position          int             `json:"position"`
 	Points            string          `json:"points"`
 	Prompt            json.RawMessage `json:"prompt"`
@@ -118,6 +121,7 @@ type PublicationItem struct {
 type AttemptItem struct {
 	ID                string          `json:"id"`
 	QuestionVersionID string          `json:"question_version_id"`
+	QuestionType      string          `json:"question_type"`
 	Position          int             `json:"position"`
 	Points            string          `json:"points"`
 	Prompt            json.RawMessage `json:"prompt"`

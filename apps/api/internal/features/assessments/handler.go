@@ -515,6 +515,164 @@ func (h *Handler) PreviewAssessment(w http.ResponseWriter, r *http.Request) {
 	writeData(w, http.StatusOK, preview)
 }
 
+// ListQuestionBanks handles GET /api/v1/question-banks.
+func (h *Handler) ListQuestionBanks(w http.ResponseWriter, r *http.Request) {
+	actor, ok := h.actor(w, r)
+	if !ok {
+		return
+	}
+	opts := ListQuestionBanksOptions{Query: strings.TrimSpace(r.URL.Query().Get("q"))}
+	if r.URL.Query().Get("include_archived") == "true" {
+		opts.IncludeArchived = true
+	}
+	if l := r.URL.Query().Get("limit"); l != "" {
+		val, err := strconv.Atoi(l)
+		if err != nil || val < 1 {
+			writeError(w, r, http.StatusBadRequest, "bad_request", "invalid limit")
+			return
+		}
+		opts.Limit = val
+	}
+	if o := r.URL.Query().Get("offset"); o != "" {
+		val, err := strconv.Atoi(o)
+		if err != nil || val < 0 {
+			writeError(w, r, http.StatusBadRequest, "bad_request", "invalid offset")
+			return
+		}
+		opts.Offset = val
+	}
+	list, err := h.svc.ListQuestionBanks(r.Context(), actor, opts)
+	if err != nil {
+		h.mapError(w, r, err)
+		return
+	}
+	writeData(w, http.StatusOK, list)
+}
+
+// CreateQuestionBank handles POST /api/v1/question-banks.
+func (h *Handler) CreateQuestionBank(w http.ResponseWriter, r *http.Request) {
+	actor, ok := h.actor(w, r)
+	if !ok {
+		return
+	}
+	if !csrf.Validate(r) {
+		writeError(w, r, http.StatusForbidden, "invalid_csrf", "invalid csrf token")
+		return
+	}
+	var req CreateQuestionBankRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, r, http.StatusBadRequest, "bad_request", "invalid request body")
+		return
+	}
+	bank, err := h.svc.CreateQuestionBank(r.Context(), actor, req)
+	if err != nil {
+		h.mapError(w, r, err)
+		return
+	}
+	writeData(w, http.StatusCreated, bank)
+}
+
+// ListQuestionsInBank handles GET /api/v1/question-banks/{bank_id}/questions.
+func (h *Handler) ListQuestionsInBank(w http.ResponseWriter, r *http.Request) {
+	actor, ok := h.actor(w, r)
+	if !ok {
+		return
+	}
+	opts := ListQuestionBanksOptions{}
+	if r.URL.Query().Get("include_archived") == "true" {
+		opts.IncludeArchived = true
+	}
+	if l := r.URL.Query().Get("limit"); l != "" {
+		val, err := strconv.Atoi(l)
+		if err != nil || val < 1 {
+			writeError(w, r, http.StatusBadRequest, "bad_request", "invalid limit")
+			return
+		}
+		opts.Limit = val
+	}
+	if o := r.URL.Query().Get("offset"); o != "" {
+		val, err := strconv.Atoi(o)
+		if err != nil || val < 0 {
+			writeError(w, r, http.StatusBadRequest, "bad_request", "invalid offset")
+			return
+		}
+		opts.Offset = val
+	}
+	list, err := h.svc.ListQuestionsInBank(r.Context(), actor, chi.URLParam(r, "bank_id"), opts)
+	if err != nil {
+		h.mapError(w, r, err)
+		return
+	}
+	writeData(w, http.StatusOK, list)
+}
+
+// CreateQuestionInBank handles POST /api/v1/question-banks/{bank_id}/questions.
+func (h *Handler) CreateQuestionInBank(w http.ResponseWriter, r *http.Request) {
+	actor, ok := h.actor(w, r)
+	if !ok {
+		return
+	}
+	if !csrf.Validate(r) {
+		writeError(w, r, http.StatusForbidden, "invalid_csrf", "invalid csrf token")
+		return
+	}
+	var req CreateQuestionRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, r, http.StatusBadRequest, "bad_request", "invalid request body")
+		return
+	}
+	resp, err := h.svc.CreateQuestion(r.Context(), actor, chi.URLParam(r, "bank_id"), req)
+	if err != nil {
+		h.mapError(w, r, err)
+		return
+	}
+	writeData(w, http.StatusCreated, resp)
+}
+
+// CreateQuestionVersion handles POST /api/v1/question-banks/{bank_id}/questions/{question_id}/versions.
+func (h *Handler) CreateQuestionVersion(w http.ResponseWriter, r *http.Request) {
+	actor, ok := h.actor(w, r)
+	if !ok {
+		return
+	}
+	if !csrf.Validate(r) {
+		writeError(w, r, http.StatusForbidden, "invalid_csrf", "invalid csrf token")
+		return
+	}
+	var req CreateQuestionVersionRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, r, http.StatusBadRequest, "bad_request", "invalid request body")
+		return
+	}
+	version, err := h.svc.CreateQuestionVersion(r.Context(), actor, chi.URLParam(r, "bank_id"), chi.URLParam(r, "question_id"), req)
+	if err != nil {
+		h.mapError(w, r, err)
+		return
+	}
+	writeData(w, http.StatusCreated, version)
+}
+
+// PublishQuestionVersion handles POST /api/v1/question-banks/{bank_id}/questions/{question_id}/versions/{version_id}/publish.
+func (h *Handler) PublishQuestionVersion(w http.ResponseWriter, r *http.Request) {
+	actor, ok := h.actor(w, r)
+	if !ok {
+		return
+	}
+	if !csrf.Validate(r) {
+		writeError(w, r, http.StatusForbidden, "invalid_csrf", "invalid csrf token")
+		return
+	}
+	result, err := h.svc.PublishQuestionVersion(r.Context(), actor,
+		chi.URLParam(r, "bank_id"),
+		chi.URLParam(r, "question_id"),
+		chi.URLParam(r, "version_id"))
+	if err != nil {
+		h.mapError(w, r, err)
+		return
+	}
+	writeData(w, http.StatusOK, result)
+}
+
 func parseListOptions(w http.ResponseWriter, r *http.Request) (ListOptions, bool) {
 	opts := ListOptions{Query: strings.TrimSpace(r.URL.Query().Get("q"))}
 

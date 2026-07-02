@@ -88,8 +88,8 @@ func (q *Queries) CreateAttempt(ctx context.Context, arg CreateAttemptParams) (C
 }
 
 const createAttemptItem = `-- name: CreateAttemptItem :exec
-INSERT INTO attempt_items (organization_id, attempt_id, question_version_id, position, points, prompt_json, choices_json, answer_key_json)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+INSERT INTO attempt_items (organization_id, attempt_id, question_version_id, position, points, prompt_json, choices_json, answer_key_json, question_type)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
 `
 
 type CreateAttemptItemParams struct {
@@ -101,6 +101,7 @@ type CreateAttemptItemParams struct {
 	PromptJson        []byte         `json:"prompt_json"`
 	ChoicesJson       []byte         `json:"choices_json"`
 	AnswerKeyJson     []byte         `json:"answer_key_json"`
+	QuestionType      string         `json:"question_type"`
 }
 
 func (q *Queries) CreateAttemptItem(ctx context.Context, arg CreateAttemptItemParams) error {
@@ -113,6 +114,7 @@ func (q *Queries) CreateAttemptItem(ctx context.Context, arg CreateAttemptItemPa
 		arg.PromptJson,
 		arg.ChoicesJson,
 		arg.AnswerKeyJson,
+		arg.QuestionType,
 	)
 	return err
 }
@@ -245,6 +247,7 @@ SELECT
     ai.choices_json,
     aa.answer_payload,
     ai.answer_key_json,
+    ai.question_type,
     aa.revision,
     aa.answered_at
 FROM attempt_items ai
@@ -271,6 +274,7 @@ type GetAttemptItemsRow struct {
 	ChoicesJson       []byte             `json:"choices_json"`
 	AnswerPayload     []byte             `json:"answer_payload"`
 	AnswerKeyJson     []byte             `json:"answer_key_json"`
+	QuestionType      string             `json:"question_type"`
 	Revision          pgtype.Int8        `json:"revision"`
 	AnsweredAt        pgtype.Timestamptz `json:"answered_at"`
 }
@@ -293,6 +297,7 @@ func (q *Queries) GetAttemptItems(ctx context.Context, arg GetAttemptItemsParams
 			&i.ChoicesJson,
 			&i.AnswerPayload,
 			&i.AnswerKeyJson,
+			&i.QuestionType,
 			&i.Revision,
 			&i.AnsweredAt,
 		); err != nil {
@@ -380,6 +385,19 @@ func (q *Queries) GetLatestPublication(ctx context.Context, arg GetLatestPublica
 	var i GetLatestPublicationRow
 	err := row.Scan(&i.ID, &i.SnapshotJson, &i.PublishedAt)
 	return i, err
+}
+
+const getQuestionVersionType = `-- name: GetQuestionVersionType :one
+SELECT question_type
+FROM question_versions
+WHERE id = $1
+`
+
+func (q *Queries) GetQuestionVersionType(ctx context.Context, id pgtype.UUID) (string, error) {
+	row := q.db.QueryRow(ctx, getQuestionVersionType, id)
+	var question_type string
+	err := row.Scan(&question_type)
+	return question_type, err
 }
 
 const itemExists = `-- name: ItemExists :one
@@ -473,6 +491,37 @@ func (q *Queries) ListAssignedAssessments(ctx context.Context, arg ListAssignedA
 			&i.PublishedAt,
 			&i.AttemptsUsed,
 		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listQuestionVersionTypes = `-- name: ListQuestionVersionTypes :many
+SELECT id, question_type
+FROM question_versions
+WHERE id = ANY($1::uuid[])
+`
+
+type ListQuestionVersionTypesRow struct {
+	ID           pgtype.UUID `json:"id"`
+	QuestionType string      `json:"question_type"`
+}
+
+func (q *Queries) ListQuestionVersionTypes(ctx context.Context, dollar_1 []pgtype.UUID) ([]ListQuestionVersionTypesRow, error) {
+	rows, err := q.db.Query(ctx, listQuestionVersionTypes, dollar_1)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListQuestionVersionTypesRow
+	for rows.Next() {
+		var i ListQuestionVersionTypesRow
+		if err := rows.Scan(&i.ID, &i.QuestionType); err != nil {
 			return nil, err
 		}
 		items = append(items, i)
@@ -587,7 +636,7 @@ WHERE id = $1
   AND organization_id = $2
   AND student_user_id = $3
   AND status = 'IN_PROGRESS'
-RETURNING submitted_at, score::text, max_score::text, grading_status
+RETURNING submitted_at, COALESCE(score, '0')::text AS score, COALESCE(max_score, '0')::text AS max_score, grading_status
 `
 
 type SubmitAttemptParams struct {

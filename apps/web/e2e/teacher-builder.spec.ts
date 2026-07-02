@@ -19,11 +19,21 @@ test.describe('teacher assessment builder', () => {
     await page.getByTestId('add-section-button').click();
     await expect(page.getByTestId('builder-section')).toHaveCount(1);
 
-    // Add the first available question to the section.
+    // Add a multiple_choice question to the section. The picker now exposes
+    // short_answer/essay options after the non-MCQ foundation; this spec only
+    // covers the MCQ publish path, so we filter by the `[TN]` label prefix.
     await page.getByTestId('add-question-button').first().click();
     const pickerSelect = page.getByTestId('picker-question-select');
     await expect.poll(async () => await pickerSelect.locator('option').count()).toBeGreaterThan(1);
-    await pickerSelect.selectOption({ index: 1 });
+    const mcqValue = await pickerSelect.evaluate((el) => {
+      const select = el as HTMLSelectElement;
+      const opt = Array.from(select.options).find((o) => /^\[TN\]/.test(o.textContent ?? ''));
+      return opt?.value ?? '';
+    });
+    if (!mcqValue) {
+      throw new Error('No multiple_choice question available in the picker.');
+    }
+    await pickerSelect.selectOption(mcqValue);
     await page.getByTestId('picker-add-button').click();
 
     // Assign the same class as target.

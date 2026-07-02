@@ -816,10 +816,10 @@ func TestService_GetAttemptResult_OK(t *testing.T) {
 	if len(result.Items) != 2 {
 		t.Fatalf("expected 2 items, got %d", len(result.Items))
 	}
-	if !result.Items[0].IsCorrect {
+	if result.Items[0].IsCorrect == nil || !*result.Items[0].IsCorrect {
 		t.Error("expected first item to be correct")
 	}
-	if result.Items[1].IsCorrect {
+	if result.Items[1].IsCorrect != nil && *result.Items[1].IsCorrect {
 		t.Error("expected second item to be incorrect")
 	}
 	if result.Items[0].StudentAnswer == nil {
@@ -904,5 +904,175 @@ func TestHandler_GetAttemptResult_OK(t *testing.T) {
 
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, want %d", rec.Code, http.StatusOK)
+	}
+}
+
+func TestService_Submit_EssayAlwaysPendingReview(t *testing.T) {
+	rev := int64(1)
+	repo := &fakeRepo{
+		getForUpdate: func(ctx context.Context, tx pgx.Tx, id, orgID, userID string) (*attempts.Attempt, error) {
+			expires := time.Now().Add(time.Hour)
+			return &attempts.Attempt{ID: id, Status: "IN_PROGRESS", ExpiresAt: &expires}, nil
+		},
+		getItems: func(ctx context.Context, id, orgID string) ([]attempts.AttemptItemRow, error) {
+			return []attempts.AttemptItemRow{
+				{
+					ID:            "item-1",
+					QuestionType:  "essay",
+					Position:      1,
+					Points:        "2.00",
+					AnswerPayload: json.RawMessage(`{"text":"My essay answer"}`),
+					AnswerKey:     json.RawMessage(`{}`),
+					Revision:      &rev,
+				},
+			}, nil
+		},
+		submit: func(ctx context.Context, tx pgx.Tx, id, orgID, userID, score, maxScore, gradingStatus string) (*attempts.GradingResult, error) {
+			return &attempts.GradingResult{
+				SubmittedAt:   time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC),
+				Score:         score,
+				MaxScore:      maxScore,
+				GradingStatus: gradingStatus,
+			}, nil
+		},
+	}
+	svc := attempts.NewService(repo, stubTxManager{})
+	result, err := svc.SubmitAttempt(context.Background(), auth.Actor{UserID: "user-id", OrgID: "org-id"}, "attempt-id")
+	if err != nil {
+		t.Fatalf("SubmitAttempt failed: %v", err)
+	}
+	if result.GradingStatus != "PENDING_REVIEW" {
+		t.Errorf("grading_status = %q, want PENDING_REVIEW", result.GradingStatus)
+	}
+	if result.Score != "0.00" {
+		t.Errorf("score = %q, want 0.00 (pending review placeholder)", result.Score)
+	}
+	if result.MaxScore != "2.00" {
+		t.Errorf("max_score = %q, want 2.00", result.MaxScore)
+	}
+}
+
+func TestService_Submit_ShortAnswerExactMatch(t *testing.T) {
+	rev := int64(1)
+	repo := &fakeRepo{
+		getForUpdate: func(ctx context.Context, tx pgx.Tx, id, orgID, userID string) (*attempts.Attempt, error) {
+			expires := time.Now().Add(time.Hour)
+			return &attempts.Attempt{ID: id, Status: "IN_PROGRESS", ExpiresAt: &expires}, nil
+		},
+		getItems: func(ctx context.Context, id, orgID string) ([]attempts.AttemptItemRow, error) {
+			return []attempts.AttemptItemRow{
+				{
+					ID:            "item-1",
+					QuestionType:  "short_answer",
+					Position:      1,
+					Points:        "1.00",
+					AnswerPayload: json.RawMessage(`{"text":"7"}`),
+					AnswerKey:     json.RawMessage(`{"accepted_answers":["7","bảy"]}`),
+					Revision:      &rev,
+				},
+			}, nil
+		},
+		submit: func(ctx context.Context, tx pgx.Tx, id, orgID, userID, score, maxScore, gradingStatus string) (*attempts.GradingResult, error) {
+			return &attempts.GradingResult{
+				SubmittedAt:   time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC),
+				Score:         score,
+				MaxScore:      maxScore,
+				GradingStatus: gradingStatus,
+			}, nil
+		},
+	}
+	svc := attempts.NewService(repo, stubTxManager{})
+	result, err := svc.SubmitAttempt(context.Background(), auth.Actor{UserID: "user-id", OrgID: "org-id"}, "attempt-id")
+	if err != nil {
+		t.Fatalf("SubmitAttempt failed: %v", err)
+	}
+	if result.GradingStatus != "GRADED" {
+		t.Errorf("grading_status = %q, want GRADED", result.GradingStatus)
+	}
+	if result.Score != "1.00" {
+		t.Errorf("score = %q, want 1.00", result.Score)
+	}
+}
+
+func TestService_Submit_MixedMCQAndEssayPending(t *testing.T) {
+	rev := int64(1)
+	repo := &fakeRepo{
+		getForUpdate: func(ctx context.Context, tx pgx.Tx, id, orgID, userID string) (*attempts.Attempt, error) {
+			expires := time.Now().Add(time.Hour)
+			return &attempts.Attempt{ID: id, Status: "IN_PROGRESS", ExpiresAt: &expires}, nil
+		},
+		getItems: func(ctx context.Context, id, orgID string) ([]attempts.AttemptItemRow, error) {
+			return []attempts.AttemptItemRow{
+				{
+					ID:            "item-1",
+					QuestionType:  "multiple_choice",
+					Position:      1,
+					Points:        "1.00",
+					AnswerPayload: json.RawMessage(`{"selected_option":"A"}`),
+					AnswerKey:     json.RawMessage(`{"correct_option":"A"}`),
+					Revision:      &rev,
+				},
+				{
+					ID:            "item-2",
+					QuestionType:  "essay",
+					Position:      2,
+					Points:        "2.00",
+					AnswerPayload: json.RawMessage(`{"text":"essay"}`),
+					AnswerKey:     json.RawMessage(`{}`),
+					Revision:      &rev,
+				},
+			}, nil
+		},
+		submit: func(ctx context.Context, tx pgx.Tx, id, orgID, userID, score, maxScore, gradingStatus string) (*attempts.GradingResult, error) {
+			return &attempts.GradingResult{
+				SubmittedAt:   time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC),
+				Score:         score,
+				MaxScore:      maxScore,
+				GradingStatus: gradingStatus,
+			}, nil
+		},
+	}
+	svc := attempts.NewService(repo, stubTxManager{})
+	result, err := svc.SubmitAttempt(context.Background(), auth.Actor{UserID: "user-id", OrgID: "org-id"}, "attempt-id")
+	if err != nil {
+		t.Fatalf("SubmitAttempt failed: %v", err)
+	}
+	if result.GradingStatus != "PENDING_REVIEW" {
+		t.Errorf("grading_status = %q, want PENDING_REVIEW", result.GradingStatus)
+	}
+}
+
+func TestService_GetAttemptResult_PendingItemNoIsCorrect(t *testing.T) {
+	rev := int64(1)
+	answered := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	repo := &fakeRepo{
+		getAttempt: func(ctx context.Context, id, orgID, userID string) (*attempts.Attempt, error) {
+			return &attempts.Attempt{ID: id, OrganizationID: orgID, AssessmentID: "assessment-id", Status: "SUBMITTED"}, nil
+		},
+		getItems: func(ctx context.Context, id, orgID string) ([]attempts.AttemptItemRow, error) {
+			return []attempts.AttemptItemRow{
+				{
+					ID:            "item-1",
+					QuestionType:  "essay",
+					Position:      1,
+					Points:        "2.00",
+					AnswerPayload: json.RawMessage(`{"text":"essay"}`),
+					AnswerKey:     json.RawMessage(`{}`),
+					Revision:      &rev,
+					AnsweredAt:    &answered,
+				},
+			}, nil
+		},
+	}
+	svc := attempts.NewService(repo, stubTxManager{})
+	result, err := svc.GetAttemptResult(context.Background(), auth.Actor{UserID: "user-id", OrgID: "org-id"}, "attempt-id")
+	if err != nil {
+		t.Fatalf("GetAttemptResult failed: %v", err)
+	}
+	if result.Items[0].GradingStatus != "PENDING_REVIEW" {
+		t.Errorf("grading_status = %q, want PENDING_REVIEW", result.Items[0].GradingStatus)
+	}
+	if result.Items[0].IsCorrect != nil {
+		t.Error("expected IsCorrect to be nil for PENDING_REVIEW item")
 	}
 }

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"math/big"
+	"strings"
 	"time"
 
 	"github.com/BrianNguyen29/vts-edu/apps/api/internal/features/auth"
@@ -65,6 +66,7 @@ func (s *service) GetAttempt(ctx context.Context, actor auth.Actor, attemptID st
 		item := AttemptItem{
 			ID:                it.ID,
 			QuestionVersionID: it.QuestionVersionID,
+			QuestionType:      it.QuestionType,
 			Position:          it.Position,
 			Points:            it.Points,
 			Prompt:            it.Prompt,
@@ -159,9 +161,9 @@ func (s *service) SubmitAttempt(ctx context.Context, actor auth.Actor, attemptID
 			if err != nil {
 				return err
 			}
-			score, maxScore := gradeAttempt(items)
+			score, maxScore, gradingStatus := gradeAttempt(items)
 
-			grading, err := s.repo.SubmitAttempt(ctx, tx, attemptID, actor.OrgID, actor.UserID, score, maxScore, "GRADED")
+			grading, err := s.repo.SubmitAttempt(ctx, tx, attemptID, actor.OrgID, actor.UserID, score, maxScore, gradingStatus)
 			if err != nil {
 				return err
 			}
@@ -223,11 +225,13 @@ func (s *service) GetAttemptResult(ctx context.Context, actor auth.Actor, attemp
 		item := AttemptResultItem{
 			ID:                it.ID,
 			QuestionVersionID: it.QuestionVersionID,
+			QuestionType:      it.QuestionType,
 			Position:          it.Position,
 			Points:            it.Points,
 			Prompt:            it.Prompt,
 			Choices:           it.Choices,
 			CorrectAnswer:     it.AnswerKey,
+			GradingStatus:     "GRADED",
 		}
 		if it.Revision != nil {
 			item.StudentAnswer = &AttemptResultAnswer{
@@ -235,16 +239,21 @@ func (s *service) GetAttemptResult(ctx context.Context, actor auth.Actor, attemp
 				AnsweredAt:    *it.AnsweredAt,
 			}
 		}
-		item.IsCorrect = it.Revision != nil && answerMatches(it.AnswerPayload, it.AnswerKey)
+		perItem, isCorrect := gradeItem(it)
+		item.GradingStatus = perItem
+		if isCorrect != nil {
+			item.IsCorrect = isCorrect
+		}
 		result.Items[i] = item
 	}
 
 	return result, nil
 }
 
-func gradeAttempt(items []AttemptItemRow) (string, string) {
+func gradeAttempt(items []AttemptItemRow) (string, string, string) {
 	score := big.NewRat(0, 1)
 	maxScore := big.NewRat(0, 1)
+	hasPending := false
 
 	for _, it := range items {
 		points, ok := new(big.Rat).SetString(it.Points)
@@ -253,12 +262,81 @@ func gradeAttempt(items []AttemptItemRow) (string, string) {
 		}
 		maxScore.Add(maxScore, points)
 
-		if it.Revision != nil && answerMatches(it.AnswerPayload, it.AnswerKey) {
+		perItem, isCorrect := gradeItem(it)
+		if perItem == "PENDING_REVIEW" {
+			hasPending = true
+			continue
+		}
+		if isCorrect != nil && *isCorrect {
 			score.Add(score, points)
 		}
 	}
 
-	return score.FloatString(2), maxScore.FloatString(2)
+	if hasPending {
+		return "0.00", maxScore.FloatString(2), "PENDING_REVIEW"
+	}
+	return score.FloatString(2), maxScore.FloatString(2), "GRADED"
+}
+
+// gradeItem returns the per-item grading status and (for gradeable items) whether it is correct.
+// isCorrect is nil for non-gradeable items (essay, short_answer without accepted_answers).
+func gradeItem(it AttemptItemRow) (string, *bool) {
+	switch it.QuestionType {
+	case "essay":
+		return "PENDING_REVIEW", nil
+	case "short_answer":
+		if it.Revision == nil {
+			return "GRADED", boolPtr(false)
+		}
+		if answerMatchesShortAnswer(it.AnswerPayload, it.AnswerKey) {
+			return "GRADED", boolPtr(true)
+		}
+		return "GRADED", boolPtr(false)
+	default: // multiple_choice
+		if it.Revision == nil {
+			return "GRADED", boolPtr(false)
+		}
+		correct := answerMatches(it.AnswerPayload, it.AnswerKey)
+		return "GRADED", &correct
+	}
+}
+
+func boolPtr(b bool) *bool { return &b }
+
+func answerMatchesShortAnswer(answer, answerKey json.RawMessage) bool {
+	var submitted struct {
+		Text string `json:"text"`
+	}
+	if err := json.Unmarshal(answer, &submitted); err != nil {
+		return false
+	}
+	if submitted.Text == "" {
+		// Fall back to legacy selected_option payload
+		var legacy struct {
+			SelectedOption string `json:"selected_option"`
+		}
+		if err := json.Unmarshal(answer, &legacy); err != nil || legacy.SelectedOption == "" {
+			return false
+		}
+		submitted.Text = legacy.SelectedOption
+	}
+	var key struct {
+		AcceptedAnswers []string `json:"accepted_answers"`
+	}
+	if err := json.Unmarshal(answerKey, &key); err != nil || len(key.AcceptedAnswers) == 0 {
+		return false
+	}
+	normalized := normalizeAnswerText(submitted.Text)
+	for _, a := range key.AcceptedAnswers {
+		if normalizeAnswerText(a) == normalized {
+			return true
+		}
+	}
+	return false
+}
+
+func normalizeAnswerText(s string) string {
+	return strings.TrimSpace(strings.ToLower(s))
 }
 
 func answerMatches(answer json.RawMessage, answerKey json.RawMessage) bool {
@@ -417,8 +495,13 @@ func flattenSnapshotItems(snap *PublicationSnapshot) []AttemptItemInput {
 			if answerKey == nil {
 				answerKey = json.RawMessage("{}")
 			}
+			questionType := item.QuestionType
+			if questionType == "" {
+				questionType = "multiple_choice"
+			}
 			inputs = append(inputs, AttemptItemInput{
 				QuestionVersionID: item.QuestionVersionID,
+				QuestionType:      questionType,
 				Position:          pos,
 				Points:            item.Points,
 				Prompt:            prompt,

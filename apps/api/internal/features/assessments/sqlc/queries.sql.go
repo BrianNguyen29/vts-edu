@@ -366,6 +366,119 @@ func (q *Queries) CreateAssessmentTarget(ctx context.Context, arg CreateAssessme
 	return i, err
 }
 
+const createQuestion = `-- name: CreateQuestion :one
+INSERT INTO questions (question_bank_id)
+VALUES ($1)
+RETURNING id, question_bank_id, status, created_at, updated_at
+`
+
+func (q *Queries) CreateQuestion(ctx context.Context, questionBankID pgtype.UUID) (Question, error) {
+	row := q.db.QueryRow(ctx, createQuestion, questionBankID)
+	var i Question
+	err := row.Scan(
+		&i.ID,
+		&i.QuestionBankID,
+		&i.Status,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const createQuestionBank = `-- name: CreateQuestionBank :one
+
+INSERT INTO question_banks (organization_id, title)
+VALUES ($1, $2)
+RETURNING id, organization_id, title, status, created_at, updated_at
+`
+
+type CreateQuestionBankParams struct {
+	OrganizationID pgtype.UUID `json:"organization_id"`
+	Title          string      `json:"title"`
+}
+
+// Question bank editor queries
+func (q *Queries) CreateQuestionBank(ctx context.Context, arg CreateQuestionBankParams) (QuestionBank, error) {
+	row := q.db.QueryRow(ctx, createQuestionBank, arg.OrganizationID, arg.Title)
+	var i QuestionBank
+	err := row.Scan(
+		&i.ID,
+		&i.OrganizationID,
+		&i.Title,
+		&i.Status,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const createQuestionVersion = `-- name: CreateQuestionVersion :one
+INSERT INTO question_versions (
+    question_id, version, prompt_json, choices_json, answer_key_json, max_score, status, question_type
+) VALUES (
+    $1,
+    $2,
+    $3,
+    $4,
+    $5,
+    $6,
+    $7,
+    $8
+)
+RETURNING id, question_id, version, prompt_json, choices_json, answer_key_json, max_score, status, question_type, created_at
+`
+
+type CreateQuestionVersionParams struct {
+	QuestionID    pgtype.UUID    `json:"question_id"`
+	Version       int32          `json:"version"`
+	PromptJson    []byte         `json:"prompt_json"`
+	ChoicesJson   []byte         `json:"choices_json"`
+	AnswerKeyJson []byte         `json:"answer_key_json"`
+	MaxScore      pgtype.Numeric `json:"max_score"`
+	Status        string         `json:"status"`
+	QuestionType  string         `json:"question_type"`
+}
+
+type CreateQuestionVersionRow struct {
+	ID            pgtype.UUID        `json:"id"`
+	QuestionID    pgtype.UUID        `json:"question_id"`
+	Version       int32              `json:"version"`
+	PromptJson    []byte             `json:"prompt_json"`
+	ChoicesJson   []byte             `json:"choices_json"`
+	AnswerKeyJson []byte             `json:"answer_key_json"`
+	MaxScore      pgtype.Numeric     `json:"max_score"`
+	Status        string             `json:"status"`
+	QuestionType  string             `json:"question_type"`
+	CreatedAt     pgtype.Timestamptz `json:"created_at"`
+}
+
+func (q *Queries) CreateQuestionVersion(ctx context.Context, arg CreateQuestionVersionParams) (CreateQuestionVersionRow, error) {
+	row := q.db.QueryRow(ctx, createQuestionVersion,
+		arg.QuestionID,
+		arg.Version,
+		arg.PromptJson,
+		arg.ChoicesJson,
+		arg.AnswerKeyJson,
+		arg.MaxScore,
+		arg.Status,
+		arg.QuestionType,
+	)
+	var i CreateQuestionVersionRow
+	err := row.Scan(
+		&i.ID,
+		&i.QuestionID,
+		&i.Version,
+		&i.PromptJson,
+		&i.ChoicesJson,
+		&i.AnswerKeyJson,
+		&i.MaxScore,
+		&i.Status,
+		&i.QuestionType,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
 const getAssessment = `-- name: GetAssessment :one
 SELECT id, organization_id, class_section_id, title, duration_minutes, max_attempts, settings_json, status, revision, instructions, opens_at, closes_at, created_at, updated_at
 FROM assessments
@@ -554,7 +667,7 @@ func (q *Queries) GetAssessmentItemsBySection(ctx context.Context, arg GetAssess
 
 const getAssessmentItemsWithContent = `-- name: GetAssessmentItemsWithContent :many
 SELECT ai.id, ai.assessment_section_id, ai.question_version_id, ai.position, ai.points,
-       qv.prompt_json, qv.choices_json, qv.answer_key_json, qv.max_score
+       qv.prompt_json, qv.choices_json, qv.answer_key_json, qv.max_score, qv.question_type
 FROM assessment_items ai
 JOIN question_versions qv ON qv.id = ai.question_version_id
 WHERE ai.organization_id = $1
@@ -578,6 +691,7 @@ type GetAssessmentItemsWithContentRow struct {
 	ChoicesJson         []byte         `json:"choices_json"`
 	AnswerKeyJson       []byte         `json:"answer_key_json"`
 	MaxScore            pgtype.Numeric `json:"max_score"`
+	QuestionType        string         `json:"question_type"`
 }
 
 func (q *Queries) GetAssessmentItemsWithContent(ctx context.Context, arg GetAssessmentItemsWithContentParams) ([]GetAssessmentItemsWithContentRow, error) {
@@ -599,6 +713,7 @@ func (q *Queries) GetAssessmentItemsWithContent(ctx context.Context, arg GetAsse
 			&i.ChoicesJson,
 			&i.AnswerKeyJson,
 			&i.MaxScore,
+			&i.QuestionType,
 		); err != nil {
 			return nil, err
 		}
@@ -807,6 +922,145 @@ func (q *Queries) GetItemAssessmentID(ctx context.Context, arg GetItemAssessment
 	var assessment_id pgtype.UUID
 	err := row.Scan(&assessment_id)
 	return assessment_id, err
+}
+
+const getLatestVersionNumber = `-- name: GetLatestVersionNumber :one
+SELECT COALESCE(MAX(version), 0)::int AS version
+FROM question_versions
+WHERE question_id = $1
+`
+
+func (q *Queries) GetLatestVersionNumber(ctx context.Context, questionID pgtype.UUID) (int32, error) {
+	row := q.db.QueryRow(ctx, getLatestVersionNumber, questionID)
+	var version int32
+	err := row.Scan(&version)
+	return version, err
+}
+
+const getQuestion = `-- name: GetQuestion :one
+SELECT id, question_bank_id, status, created_at, updated_at
+FROM questions
+WHERE id = $1
+  AND question_bank_id = $2
+`
+
+type GetQuestionParams struct {
+	ID     pgtype.UUID `json:"id"`
+	BankID pgtype.UUID `json:"bank_id"`
+}
+
+func (q *Queries) GetQuestion(ctx context.Context, arg GetQuestionParams) (Question, error) {
+	row := q.db.QueryRow(ctx, getQuestion, arg.ID, arg.BankID)
+	var i Question
+	err := row.Scan(
+		&i.ID,
+		&i.QuestionBankID,
+		&i.Status,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const getQuestionBank = `-- name: GetQuestionBank :one
+SELECT id, organization_id, title, status, created_at, updated_at
+FROM question_banks
+WHERE id = $1
+  AND organization_id = $2
+`
+
+type GetQuestionBankParams struct {
+	ID             pgtype.UUID `json:"id"`
+	OrganizationID pgtype.UUID `json:"organization_id"`
+}
+
+func (q *Queries) GetQuestionBank(ctx context.Context, arg GetQuestionBankParams) (QuestionBank, error) {
+	row := q.db.QueryRow(ctx, getQuestionBank, arg.ID, arg.OrganizationID)
+	var i QuestionBank
+	err := row.Scan(
+		&i.ID,
+		&i.OrganizationID,
+		&i.Title,
+		&i.Status,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const getQuestionVersion = `-- name: GetQuestionVersion :one
+SELECT qv.id, qv.question_id, qv.version, qv.prompt_json, qv.choices_json, qv.answer_key_json, qv.max_score, qv.status, qv.question_type, qv.created_at
+FROM question_versions qv
+JOIN questions q ON q.id = qv.question_id
+JOIN question_banks qb ON qb.id = q.question_bank_id
+WHERE qv.id = $1
+  AND qb.organization_id = $2
+`
+
+type GetQuestionVersionParams struct {
+	VersionID      pgtype.UUID `json:"version_id"`
+	OrganizationID pgtype.UUID `json:"organization_id"`
+}
+
+type GetQuestionVersionRow struct {
+	ID            pgtype.UUID        `json:"id"`
+	QuestionID    pgtype.UUID        `json:"question_id"`
+	Version       int32              `json:"version"`
+	PromptJson    []byte             `json:"prompt_json"`
+	ChoicesJson   []byte             `json:"choices_json"`
+	AnswerKeyJson []byte             `json:"answer_key_json"`
+	MaxScore      pgtype.Numeric     `json:"max_score"`
+	Status        string             `json:"status"`
+	QuestionType  string             `json:"question_type"`
+	CreatedAt     pgtype.Timestamptz `json:"created_at"`
+}
+
+func (q *Queries) GetQuestionVersion(ctx context.Context, arg GetQuestionVersionParams) (GetQuestionVersionRow, error) {
+	row := q.db.QueryRow(ctx, getQuestionVersion, arg.VersionID, arg.OrganizationID)
+	var i GetQuestionVersionRow
+	err := row.Scan(
+		&i.ID,
+		&i.QuestionID,
+		&i.Version,
+		&i.PromptJson,
+		&i.ChoicesJson,
+		&i.AnswerKeyJson,
+		&i.MaxScore,
+		&i.Status,
+		&i.QuestionType,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
+const getQuestionWithBank = `-- name: GetQuestionWithBank :one
+SELECT q.id, q.question_bank_id, qb.organization_id, q.status, q.created_at, q.updated_at
+FROM questions q
+JOIN question_banks qb ON qb.id = q.question_bank_id
+WHERE q.id = $1
+`
+
+type GetQuestionWithBankRow struct {
+	ID             pgtype.UUID        `json:"id"`
+	QuestionBankID pgtype.UUID        `json:"question_bank_id"`
+	OrganizationID pgtype.UUID        `json:"organization_id"`
+	Status         string             `json:"status"`
+	CreatedAt      pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt      pgtype.Timestamptz `json:"updated_at"`
+}
+
+func (q *Queries) GetQuestionWithBank(ctx context.Context, id pgtype.UUID) (GetQuestionWithBankRow, error) {
+	row := q.db.QueryRow(ctx, getQuestionWithBank, id)
+	var i GetQuestionWithBankRow
+	err := row.Scan(
+		&i.ID,
+		&i.QuestionBankID,
+		&i.OrganizationID,
+		&i.Status,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
 }
 
 const getSectionAssessmentID = `-- name: GetSectionAssessmentID :one
@@ -1164,12 +1418,60 @@ func (q *Queries) ListPublishedByOrganization(ctx context.Context, arg ListPubli
 	return items, nil
 }
 
+const listQuestionBanksByOrganization = `-- name: ListQuestionBanksByOrganization :many
+SELECT id, organization_id, title, status, created_at, updated_at
+FROM question_banks
+WHERE organization_id = $1
+  AND ($2::bool OR status = 'ACTIVE')
+ORDER BY created_at DESC
+LIMIT NULLIF($4::int, 0) OFFSET $3::int
+`
+
+type ListQuestionBanksByOrganizationParams struct {
+	OrganizationID  pgtype.UUID `json:"organization_id"`
+	IncludeArchived bool        `json:"include_archived"`
+	PageOffset      int32       `json:"page_offset"`
+	PageLimit       int32       `json:"page_limit"`
+}
+
+func (q *Queries) ListQuestionBanksByOrganization(ctx context.Context, arg ListQuestionBanksByOrganizationParams) ([]QuestionBank, error) {
+	rows, err := q.db.Query(ctx, listQuestionBanksByOrganization,
+		arg.OrganizationID,
+		arg.IncludeArchived,
+		arg.PageOffset,
+		arg.PageLimit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []QuestionBank
+	for rows.Next() {
+		var i QuestionBank
+		if err := rows.Scan(
+			&i.ID,
+			&i.OrganizationID,
+			&i.Title,
+			&i.Status,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listQuestions = `-- name: ListQuestions :many
-SELECT q.id, q.question_bank_id, qv.id AS question_version_id, qv.status AS question_version_status, qv.prompt_json ->> 'text' AS prompt_text
+SELECT q.id, q.question_bank_id, COALESCE(qv.id, '00000000-0000-0000-0000-000000000000'::uuid) AS question_version_id, COALESCE(qv.status, '') AS question_version_status, COALESCE(qv.question_type, '') AS question_type, qv.prompt_json ->> 'text' AS prompt_text
 FROM questions q
 JOIN question_banks qb ON qb.id = q.question_bank_id
 LEFT JOIN LATERAL (
-    SELECT id, status, prompt_json
+    SELECT id, status, prompt_json, question_type
     FROM question_versions
     WHERE question_id = q.id
       AND status = 'PUBLISHED'
@@ -1197,6 +1499,7 @@ type ListQuestionsRow struct {
 	QuestionBankID        pgtype.UUID `json:"question_bank_id"`
 	QuestionVersionID     pgtype.UUID `json:"question_version_id"`
 	QuestionVersionStatus string      `json:"question_version_status"`
+	QuestionType          string      `json:"question_type"`
 	PromptText            interface{} `json:"prompt_text"`
 }
 
@@ -1220,7 +1523,80 @@ func (q *Queries) ListQuestions(ctx context.Context, arg ListQuestionsParams) ([
 			&i.QuestionBankID,
 			&i.QuestionVersionID,
 			&i.QuestionVersionStatus,
+			&i.QuestionType,
 			&i.PromptText,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listQuestionsInBank = `-- name: ListQuestionsInBank :many
+SELECT q.id, q.question_bank_id, q.status, q.created_at, q.updated_at,
+       qv.id AS latest_version_id, qv.status AS latest_version_status,
+       qv.question_type, qv.version AS latest_version
+FROM questions q
+LEFT JOIN LATERAL (
+    SELECT id, status, question_type, version
+    FROM question_versions
+    WHERE question_id = q.id
+    ORDER BY version DESC, created_at DESC
+    LIMIT 1
+) qv ON true
+WHERE q.question_bank_id = $1
+  AND ($2::bool OR q.status = 'ACTIVE')
+ORDER BY q.created_at DESC
+LIMIT NULLIF($4::int, 0) OFFSET $3::int
+`
+
+type ListQuestionsInBankParams struct {
+	BankID          pgtype.UUID `json:"bank_id"`
+	IncludeArchived bool        `json:"include_archived"`
+	PageOffset      int32       `json:"page_offset"`
+	PageLimit       int32       `json:"page_limit"`
+}
+
+type ListQuestionsInBankRow struct {
+	ID                  pgtype.UUID        `json:"id"`
+	QuestionBankID      pgtype.UUID        `json:"question_bank_id"`
+	Status              string             `json:"status"`
+	CreatedAt           pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt           pgtype.Timestamptz `json:"updated_at"`
+	LatestVersionID     pgtype.UUID        `json:"latest_version_id"`
+	LatestVersionStatus string             `json:"latest_version_status"`
+	QuestionType        string             `json:"question_type"`
+	LatestVersion       int32              `json:"latest_version"`
+}
+
+func (q *Queries) ListQuestionsInBank(ctx context.Context, arg ListQuestionsInBankParams) ([]ListQuestionsInBankRow, error) {
+	rows, err := q.db.Query(ctx, listQuestionsInBank,
+		arg.BankID,
+		arg.IncludeArchived,
+		arg.PageOffset,
+		arg.PageLimit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListQuestionsInBankRow
+	for rows.Next() {
+		var i ListQuestionsInBankRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.QuestionBankID,
+			&i.Status,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.LatestVersionID,
+			&i.LatestVersionStatus,
+			&i.QuestionType,
+			&i.LatestVersion,
 		); err != nil {
 			return nil, err
 		}
@@ -1254,6 +1630,46 @@ func (q *Queries) PublishAssessment(ctx context.Context, arg PublishAssessmentPa
 		return 0, err
 	}
 	return result.RowsAffected(), nil
+}
+
+const publishQuestionVersion = `-- name: PublishQuestionVersion :one
+UPDATE question_versions
+SET status = 'PUBLISHED',
+    created_at = created_at
+WHERE id = $1
+  AND status = 'DRAFT'
+RETURNING id, question_id, version, prompt_json, choices_json, answer_key_json, max_score, status, question_type, created_at
+`
+
+type PublishQuestionVersionRow struct {
+	ID            pgtype.UUID        `json:"id"`
+	QuestionID    pgtype.UUID        `json:"question_id"`
+	Version       int32              `json:"version"`
+	PromptJson    []byte             `json:"prompt_json"`
+	ChoicesJson   []byte             `json:"choices_json"`
+	AnswerKeyJson []byte             `json:"answer_key_json"`
+	MaxScore      pgtype.Numeric     `json:"max_score"`
+	Status        string             `json:"status"`
+	QuestionType  string             `json:"question_type"`
+	CreatedAt     pgtype.Timestamptz `json:"created_at"`
+}
+
+func (q *Queries) PublishQuestionVersion(ctx context.Context, versionID pgtype.UUID) (PublishQuestionVersionRow, error) {
+	row := q.db.QueryRow(ctx, publishQuestionVersion, versionID)
+	var i PublishQuestionVersionRow
+	err := row.Scan(
+		&i.ID,
+		&i.QuestionID,
+		&i.Version,
+		&i.PromptJson,
+		&i.ChoicesJson,
+		&i.AnswerKeyJson,
+		&i.MaxScore,
+		&i.Status,
+		&i.QuestionType,
+		&i.CreatedAt,
+	)
+	return i, err
 }
 
 const questionVersionExists = `-- name: QuestionVersionExists :one

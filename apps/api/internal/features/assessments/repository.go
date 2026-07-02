@@ -67,6 +67,21 @@ type Repository interface {
 
 	TransitionAssessmentsToOpen(ctx context.Context) (int64, error)
 	TransitionAssessmentsToClosed(ctx context.Context) (int64, error)
+
+	// Question bank editor
+	CreateQuestionBank(ctx context.Context, tx pgx.Tx, orgID, title string) (QuestionBank, error)
+	ListQuestionBanksByOrganization(ctx context.Context, orgID string, opts ListQuestionBanksOptions) ([]QuestionBank, error)
+	GetQuestionBank(ctx context.Context, orgID, bankID string) (QuestionBank, error)
+
+	CreateQuestion(ctx context.Context, tx pgx.Tx, bankID string) (QuestionBankQuestion, error)
+	ListQuestionsInBank(ctx context.Context, bankID string, opts ListQuestionBanksOptions) ([]QuestionBankQuestion, error)
+	GetQuestionWithBank(ctx context.Context, questionID string) (QuestionBankQuestion, string, error)
+	GetQuestion(ctx context.Context, bankID, questionID string) (QuestionBankQuestion, error)
+
+	CreateQuestionVersion(ctx context.Context, tx pgx.Tx, questionID string, req CreateQuestionVersionRequest, maxScore string, version int) (QuestionVersion, error)
+	GetQuestionVersion(ctx context.Context, orgID, versionID string) (QuestionVersion, error)
+	GetLatestVersionNumber(ctx context.Context, tx pgx.Tx, questionID string) (int, error)
+	PublishQuestionVersion(ctx context.Context, tx pgx.Tx, versionID string) (QuestionVersion, error)
 }
 
 type sqlcRepository struct {
@@ -424,6 +439,7 @@ type ItemContentRow struct {
 	Choices             json.RawMessage
 	AnswerKey           json.RawMessage
 	MaxScore            string
+	QuestionType        string
 }
 
 func (r *sqlcRepository) GetAssessmentItemsWithContent(ctx context.Context, orgID, assessmentID string) ([]ItemContentRow, error) {
@@ -454,6 +470,7 @@ func (r *sqlcRepository) GetAssessmentItemsWithContent(ctx context.Context, orgI
 			Choices:             row.ChoicesJson,
 			AnswerKey:           row.AnswerKeyJson,
 			MaxScore:            numericString(row.MaxScore),
+			QuestionType:        row.QuestionType,
 		}
 	}
 	return items, nil
@@ -870,23 +887,25 @@ func (r *sqlcRepository) ListQuestions(ctx context.Context, orgID string, opts L
 	if err != nil {
 		return nil, fmt.Errorf("list questions: %w", err)
 	}
-	items := make([]QuestionPickerItem, len(rows))
-	for i, row := range rows {
-		qvID := ""
-		if row.QuestionVersionID.Valid {
-			qvID = row.QuestionVersionID.String()
+	items := make([]QuestionPickerItem, 0, len(rows))
+	for _, row := range rows {
+		// COALESCE gives a nil UUID for questions without a published version.
+		if !row.QuestionVersionID.Valid || row.QuestionVersionID.String() == "00000000-0000-0000-0000-000000000000" {
+			continue
 		}
+		qvID := row.QuestionVersionID.String()
 		prompt := ""
 		if s, ok := row.PromptText.(string); ok {
 			prompt = s
 		}
-		items[i] = QuestionPickerItem{
+		items = append(items, QuestionPickerItem{
 			ID:                    row.ID.String(),
 			QuestionBankID:        row.QuestionBankID.String(),
 			QuestionVersionID:     qvID,
 			QuestionVersionStatus: row.QuestionVersionStatus,
+			QuestionType:          row.QuestionType,
 			Prompt:                prompt,
-		}
+		})
 	}
 	return items, nil
 }
@@ -1466,4 +1485,315 @@ func (r *sqlcRepository) TransitionAssessmentsToClosed(ctx context.Context) (int
 		return 0, fmt.Errorf("transition assessments to closed: %w", err)
 	}
 	return n, nil
+}
+
+// ----- Question bank editor -----
+
+func questionBankFromRow(row assessmentsqlc.QuestionBank) QuestionBank {
+	return QuestionBank{
+		ID:             row.ID.String(),
+		OrganizationID: row.OrganizationID.String(),
+		Title:          row.Title,
+		Status:         row.Status,
+		CreatedAt:      row.CreatedAt.Time.UTC().Format(time.RFC3339),
+		UpdatedAt:      row.UpdatedAt.Time.UTC().Format(time.RFC3339),
+	}
+}
+
+func (r *sqlcRepository) CreateQuestionBank(ctx context.Context, tx pgx.Tx, orgID, title string) (QuestionBank, error) {
+	orgUUID, err := toUUID(orgID)
+	if err != nil {
+		return QuestionBank{}, fmt.Errorf("invalid organization id: %w", err)
+	}
+	row, err := r.queries.WithTx(tx).CreateQuestionBank(ctx, assessmentsqlc.CreateQuestionBankParams{
+		OrganizationID: orgUUID,
+		Title:          title,
+	})
+	if err != nil {
+		return QuestionBank{}, fmt.Errorf("create question bank: %w", err)
+	}
+	return questionBankFromRow(row), nil
+}
+
+func (r *sqlcRepository) ListQuestionBanksByOrganization(ctx context.Context, orgID string, opts ListQuestionBanksOptions) ([]QuestionBank, error) {
+	orgUUID, err := toUUID(orgID)
+	if err != nil {
+		return nil, fmt.Errorf("invalid organization id: %w", err)
+	}
+	rows, err := r.queries.ListQuestionBanksByOrganization(ctx, assessmentsqlc.ListQuestionBanksByOrganizationParams{
+		OrganizationID:  orgUUID,
+		IncludeArchived: opts.IncludeArchived,
+		PageOffset:      int32(opts.Offset),
+		PageLimit:       int32(opts.Limit),
+	})
+	if err != nil {
+		return nil, fmt.Errorf("list question banks: %w", err)
+	}
+	banks := make([]QuestionBank, len(rows))
+	for i, row := range rows {
+		banks[i] = questionBankFromRow(row)
+	}
+	return banks, nil
+}
+
+func (r *sqlcRepository) GetQuestionBank(ctx context.Context, orgID, bankID string) (QuestionBank, error) {
+	orgUUID, err := toUUID(orgID)
+	if err != nil {
+		return QuestionBank{}, fmt.Errorf("invalid organization id: %w", err)
+	}
+	id, err := toUUID(bankID)
+	if err != nil {
+		return QuestionBank{}, fmt.Errorf("invalid bank id: %w", err)
+	}
+	row, err := r.queries.GetQuestionBank(ctx, assessmentsqlc.GetQuestionBankParams{
+		ID:             id,
+		OrganizationID: orgUUID,
+	})
+	if errors.Is(err, pgx.ErrNoRows) {
+		return QuestionBank{}, ErrNotFound
+	}
+	if err != nil {
+		return QuestionBank{}, fmt.Errorf("get question bank: %w", err)
+	}
+	return questionBankFromRow(row), nil
+}
+
+func (r *sqlcRepository) CreateQuestion(ctx context.Context, tx pgx.Tx, bankID string) (QuestionBankQuestion, error) {
+	bankUUID, err := toUUID(bankID)
+	if err != nil {
+		return QuestionBankQuestion{}, fmt.Errorf("invalid bank id: %w", err)
+	}
+	row, err := r.queries.WithTx(tx).CreateQuestion(ctx, bankUUID)
+	if err != nil {
+		return QuestionBankQuestion{}, fmt.Errorf("create question: %w", err)
+	}
+	return QuestionBankQuestion{
+		ID:             row.ID.String(),
+		QuestionBankID: row.QuestionBankID.String(),
+		Status:         row.Status,
+		CreatedAt:      row.CreatedAt.Time.UTC().Format(time.RFC3339),
+		UpdatedAt:      row.UpdatedAt.Time.UTC().Format(time.RFC3339),
+	}, nil
+}
+
+func (r *sqlcRepository) ListQuestionsInBank(ctx context.Context, bankID string, opts ListQuestionBanksOptions) ([]QuestionBankQuestion, error) {
+	bankUUID, err := toUUID(bankID)
+	if err != nil {
+		return nil, fmt.Errorf("invalid bank id: %w", err)
+	}
+	rows, err := r.queries.ListQuestionsInBank(ctx, assessmentsqlc.ListQuestionsInBankParams{
+		BankID:          bankUUID,
+		IncludeArchived: opts.IncludeArchived,
+		PageOffset:      int32(opts.Offset),
+		PageLimit:       int32(opts.Limit),
+	})
+	if err != nil {
+		return nil, fmt.Errorf("list questions in bank: %w", err)
+	}
+	items := make([]QuestionBankQuestion, len(rows))
+	for i, row := range rows {
+		item := QuestionBankQuestion{
+			ID:             row.ID.String(),
+			QuestionBankID: row.QuestionBankID.String(),
+			Status:         row.Status,
+			CreatedAt:      row.CreatedAt.Time.UTC().Format(time.RFC3339),
+			UpdatedAt:      row.UpdatedAt.Time.UTC().Format(time.RFC3339),
+		}
+		if row.LatestVersionID.Valid {
+			s := row.LatestVersionID.String()
+			item.LatestVersionID = &s
+		}
+		if row.LatestVersionStatus != "" {
+			s := row.LatestVersionStatus
+			item.LatestVersionStatus = &s
+		}
+		if row.LatestVersion > 0 {
+			n := int(row.LatestVersion)
+			item.LatestVersion = &n
+		}
+		if row.QuestionType != "" {
+			s := row.QuestionType
+			item.QuestionType = &s
+		}
+		items[i] = item
+	}
+	return items, nil
+}
+
+func (r *sqlcRepository) GetQuestionWithBank(ctx context.Context, questionID string) (QuestionBankQuestion, string, error) {
+	id, err := toUUID(questionID)
+	if err != nil {
+		return QuestionBankQuestion{}, "", fmt.Errorf("invalid question id: %w", err)
+	}
+	row, err := r.queries.GetQuestionWithBank(ctx, id)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return QuestionBankQuestion{}, "", ErrNotFound
+	}
+	if err != nil {
+		return QuestionBankQuestion{}, "", fmt.Errorf("get question with bank: %w", err)
+	}
+	bankID := row.QuestionBankID.String()
+	orgID := row.OrganizationID.String()
+	return QuestionBankQuestion{
+		ID:             row.ID.String(),
+		QuestionBankID: bankID,
+		Status:         row.Status,
+		CreatedAt:      row.CreatedAt.Time.UTC().Format(time.RFC3339),
+		UpdatedAt:      row.UpdatedAt.Time.UTC().Format(time.RFC3339),
+	}, orgID, nil
+}
+
+func (r *sqlcRepository) GetQuestion(ctx context.Context, bankID, questionID string) (QuestionBankQuestion, error) {
+	bankUUID, err := toUUID(bankID)
+	if err != nil {
+		return QuestionBankQuestion{}, fmt.Errorf("invalid bank id: %w", err)
+	}
+	id, err := toUUID(questionID)
+	if err != nil {
+		return QuestionBankQuestion{}, fmt.Errorf("invalid question id: %w", err)
+	}
+	row, err := r.queries.GetQuestion(ctx, assessmentsqlc.GetQuestionParams{
+		BankID: bankUUID,
+		ID:     id,
+	})
+	if errors.Is(err, pgx.ErrNoRows) {
+		return QuestionBankQuestion{}, ErrNotFound
+	}
+	if err != nil {
+		return QuestionBankQuestion{}, fmt.Errorf("get question: %w", err)
+	}
+	return QuestionBankQuestion{
+		ID:             row.ID.String(),
+		QuestionBankID: row.QuestionBankID.String(),
+		Status:         row.Status,
+		CreatedAt:      row.CreatedAt.Time.UTC().Format(time.RFC3339),
+		UpdatedAt:      row.UpdatedAt.Time.UTC().Format(time.RFC3339),
+	}, nil
+}
+
+func (r *sqlcRepository) CreateQuestionVersion(ctx context.Context, tx pgx.Tx, questionID string, req CreateQuestionVersionRequest, maxScore string, version int) (QuestionVersion, error) {
+	qUUID, err := toUUID(questionID)
+	if err != nil {
+		return QuestionVersion{}, fmt.Errorf("invalid question id: %w", err)
+	}
+	maxScoreNum, err := toNumeric(maxScore)
+	if err != nil {
+		return QuestionVersion{}, fmt.Errorf("invalid max score: %w", err)
+	}
+	prompt := []byte(req.Prompt)
+	if len(prompt) == 0 {
+		prompt = []byte("{}")
+	}
+	var choices []byte
+	if len(req.Choices) > 0 {
+		choices = []byte(req.Choices)
+	}
+	var answerKey []byte
+	if len(req.AnswerKey) > 0 {
+		answerKey = []byte(req.AnswerKey)
+	}
+	status := "DRAFT"
+	if req.Publish {
+		status = "PUBLISHED"
+	}
+	row, err := r.queries.WithTx(tx).CreateQuestionVersion(ctx, assessmentsqlc.CreateQuestionVersionParams{
+		QuestionID:    qUUID,
+		Version:       int32(version),
+		PromptJson:    prompt,
+		ChoicesJson:   choices,
+		AnswerKeyJson: answerKey,
+		MaxScore:      maxScoreNum,
+		Status:        status,
+		QuestionType:  req.QuestionType,
+	})
+	if err != nil {
+		return QuestionVersion{}, fmt.Errorf("create question version: %w", err)
+	}
+	return questionVersionFromRow(row.ID, row.QuestionID, row.Version, row.QuestionType, row.PromptJson, row.ChoicesJson, row.AnswerKeyJson, row.MaxScore, row.Status, row.CreatedAt), nil
+}
+
+func (r *sqlcRepository) GetQuestionVersion(ctx context.Context, orgID, versionID string) (QuestionVersion, error) {
+	orgUUID, err := toUUID(orgID)
+	if err != nil {
+		return QuestionVersion{}, fmt.Errorf("invalid organization id: %w", err)
+	}
+	id, err := toUUID(versionID)
+	if err != nil {
+		return QuestionVersion{}, fmt.Errorf("invalid version id: %w", err)
+	}
+	row, err := r.queries.GetQuestionVersion(ctx, assessmentsqlc.GetQuestionVersionParams{
+		VersionID:      id,
+		OrganizationID: orgUUID,
+	})
+	if errors.Is(err, pgx.ErrNoRows) {
+		return QuestionVersion{}, ErrNotFound
+	}
+	if err != nil {
+		return QuestionVersion{}, fmt.Errorf("get question version: %w", err)
+	}
+	return questionVersionFromRow(row.ID, row.QuestionID, row.Version, row.QuestionType, row.PromptJson, row.ChoicesJson, row.AnswerKeyJson, row.MaxScore, row.Status, row.CreatedAt), nil
+}
+
+func (r *sqlcRepository) GetLatestVersionNumber(ctx context.Context, tx pgx.Tx, questionID string) (int, error) {
+	qUUID, err := toUUID(questionID)
+	if err != nil {
+		return 0, fmt.Errorf("invalid question id: %w", err)
+	}
+	n, err := r.queries.WithTx(tx).GetLatestVersionNumber(ctx, qUUID)
+	if err != nil {
+		return 0, fmt.Errorf("get latest version number: %w", err)
+	}
+	return int(n), nil
+}
+
+func (r *sqlcRepository) PublishQuestionVersion(ctx context.Context, tx pgx.Tx, versionID string) (QuestionVersion, error) {
+	id, err := toUUID(versionID)
+	if err != nil {
+		return QuestionVersion{}, fmt.Errorf("invalid version id: %w", err)
+	}
+	row, err := r.queries.WithTx(tx).PublishQuestionVersion(ctx, id)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return QuestionVersion{}, ErrNotFound
+	}
+	if err != nil {
+		return QuestionVersion{}, fmt.Errorf("publish question version: %w", err)
+	}
+	return questionVersionFromRow(row.ID, row.QuestionID, row.Version, row.QuestionType, row.PromptJson, row.ChoicesJson, row.AnswerKeyJson, row.MaxScore, row.Status, row.CreatedAt), nil
+}
+
+func questionVersionFromRow(
+	id, questionID pgtype.UUID,
+	version int32,
+	questionType string,
+	prompt, choices, answerKey []byte,
+	maxScore pgtype.Numeric,
+	status string,
+	createdAt pgtype.Timestamptz,
+) QuestionVersion {
+	var promptJSON json.RawMessage
+	if len(prompt) > 0 {
+		promptJSON = prompt
+	} else {
+		promptJSON = json.RawMessage("{}")
+	}
+	var choicesJSON json.RawMessage
+	if len(choices) > 0 {
+		choicesJSON = choices
+	}
+	var answerKeyJSON json.RawMessage
+	if len(answerKey) > 0 {
+		answerKeyJSON = answerKey
+	}
+	return QuestionVersion{
+		ID:           id.String(),
+		QuestionID:   questionID.String(),
+		Version:      int(version),
+		QuestionType: questionType,
+		Prompt:       promptJSON,
+		Choices:      choicesJSON,
+		AnswerKey:    answerKeyJSON,
+		MaxScore:     numericString(maxScore),
+		Status:       status,
+		CreatedAt:    createdAt.Time.UTC().Format(time.RFC3339),
+	}
 }

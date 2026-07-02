@@ -864,6 +864,85 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/question-banks": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Teacher or admin only. Lists question banks for the actor's organization. */
+        get: operations["assessments.listQuestionBanks"];
+        put?: never;
+        /** @description Teacher or admin only. Creates a new question bank. Requires `X-CSRF-Token` header. */
+        post: operations["assessments.createQuestionBank"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/question-banks/{bank_id}/questions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                bank_id: string;
+            };
+            cookie?: never;
+        };
+        /** @description Teacher or admin only. Lists questions in a bank with the latest version summary. */
+        get: operations["assessments.listQuestionsInBank"];
+        put?: never;
+        /** @description Teacher or admin only. Creates a question in a bank with an initial version. Requires `X-CSRF-Token` header. */
+        post: operations["assessments.createQuestionInBank"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/question-banks/{bank_id}/questions/{question_id}/versions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                bank_id: string;
+                question_id: string;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Teacher or admin only. Creates a new version of a question. Requires `X-CSRF-Token` header. */
+        post: operations["assessments.createQuestionVersion"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/question-banks/{bank_id}/questions/{question_id}/versions/{version_id}/publish": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                bank_id: string;
+                question_id: string;
+                version_id: string;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Teacher or admin only. Publishes a DRAFT question version. Requires `X-CSRF-Token` header. */
+        post: operations["assessments.publishQuestionVersion"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/classes/{class_id}/teachers": {
         parameters: {
             query?: never;
@@ -1178,6 +1257,8 @@ export interface components {
             id: string;
             /** Format: uuid */
             question_version_id: string;
+            /** @enum {string} */
+            question_type: "multiple_choice" | "short_answer" | "essay";
             position: number;
             points: string;
             prompt: {
@@ -1194,6 +1275,7 @@ export interface components {
             answer?: {
                 answer_payload: {
                     selected_option?: string;
+                    text?: string;
                 } & {
                     [key: string]: unknown;
                 };
@@ -1293,10 +1375,10 @@ export interface components {
                 status: "SUBMITTED" | "EXPIRED";
                 /** Format: date-time */
                 submitted_at?: string;
-                score?: string;
+                score?: string | null;
                 max_score?: string;
                 /** @enum {string} */
-                grading_status?: "GRADED";
+                grading_status?: "GRADED" | "PENDING_REVIEW" | "NOT_GRADED";
                 /** Format: date-time */
                 server_time: string;
                 items: components["schemas"]["AttemptResultItem"][];
@@ -1307,6 +1389,8 @@ export interface components {
             id: string;
             /** Format: uuid */
             question_version_id: string;
+            /** @enum {string} */
+            question_type: "multiple_choice" | "short_answer" | "essay";
             position: number;
             points: string;
             prompt: {
@@ -1330,7 +1414,10 @@ export interface components {
                 /** Format: date-time */
                 answered_at: string;
             };
-            is_correct: boolean;
+            /** @enum {string} */
+            grading_status: "GRADED" | "PENDING_REVIEW";
+            /** @description Omitted for items that are not auto-gradable (e.g. */
+            is_correct?: boolean | null;
         };
         PageInfo: {
             limit: number;
@@ -1853,7 +1940,97 @@ export interface components {
             question_version_id: string;
             /** @enum {string} */
             question_version_status: "DRAFT" | "PUBLISHED" | "ARCHIVED";
+            /** @enum {string} */
+            question_type: "multiple_choice" | "short_answer" | "essay";
             prompt: string;
+        };
+        QuestionBank: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            organization_id: string;
+            title: string;
+            /** @enum {string} */
+            status: "ACTIVE" | "ARCHIVED";
+            /** Format: date-time */
+            created_at: string;
+            /** Format: date-time */
+            updated_at: string;
+        };
+        CreateQuestionBankRequest: {
+            title: string;
+        };
+        QuestionBankQuestion: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            question_bank_id: string;
+            /** @enum {string} */
+            status: "ACTIVE" | "ARCHIVED";
+            /** Format: uuid */
+            latest_version_id?: string;
+            /** @enum {string} */
+            latest_version_status?: "DRAFT" | "PUBLISHED" | "ARCHIVED";
+            latest_version?: number;
+            /** @enum {string} */
+            question_type?: "multiple_choice" | "short_answer" | "essay";
+            /** Format: date-time */
+            created_at: string;
+            /** Format: date-time */
+            updated_at: string;
+        };
+        CreateQuestionRequest: {
+            /** @enum {string} */
+            question_type: "multiple_choice" | "short_answer" | "essay";
+            prompt: {
+                [key: string]: unknown;
+            };
+            choices?: unknown[];
+            answer_key?: {
+                [key: string]: unknown;
+            };
+            max_score?: string;
+        };
+        CreateQuestionResponse: {
+            question: components["schemas"]["QuestionBankQuestion"];
+            version?: components["schemas"]["QuestionVersion"];
+        };
+        QuestionVersion: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            question_id: string;
+            version: number;
+            /** @enum {string} */
+            question_type: "multiple_choice" | "short_answer" | "essay";
+            prompt: {
+                [key: string]: unknown;
+            };
+            choices?: unknown[];
+            answer_key?: {
+                [key: string]: unknown;
+            };
+            max_score: string;
+            /** @enum {string} */
+            status: "DRAFT" | "PUBLISHED" | "ARCHIVED";
+            /** Format: date-time */
+            created_at: string;
+        };
+        CreateQuestionVersionRequest: {
+            /** @enum {string} */
+            question_type: "multiple_choice" | "short_answer" | "essay";
+            prompt: {
+                [key: string]: unknown;
+            };
+            choices?: unknown[];
+            answer_key?: {
+                [key: string]: unknown;
+            };
+            max_score?: string;
+            publish?: boolean;
+        };
+        PublishQuestionVersionResult: {
+            version: components["schemas"]["QuestionVersion"];
         };
         PublicationSummary: {
             /** Format: uuid */
@@ -3754,6 +3931,189 @@ export interface operations {
             };
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["Forbidden"];
+        };
+    };
+    "assessments.listQuestionBanks": {
+        parameters: {
+            query?: {
+                q?: string;
+                include_archived?: boolean;
+                limit?: number;
+                offset?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Question bank list */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["QuestionBank"][];
+                    };
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+        };
+    };
+    "assessments.createQuestionBank": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateQuestionBankRequest"];
+            };
+        };
+        responses: {
+            /** @description Question bank created */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["QuestionBank"];
+                    };
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+        };
+    };
+    "assessments.listQuestionsInBank": {
+        parameters: {
+            query?: {
+                include_archived?: boolean;
+                limit?: number;
+                offset?: number;
+            };
+            header?: never;
+            path: {
+                bank_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Questions in bank */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["QuestionBankQuestion"][];
+                    };
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    "assessments.createQuestionInBank": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                bank_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateQuestionRequest"];
+            };
+        };
+        responses: {
+            /** @description Question and version created */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["CreateQuestionResponse"];
+                    };
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    "assessments.createQuestionVersion": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                bank_id: string;
+                question_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateQuestionVersionRequest"];
+            };
+        };
+        responses: {
+            /** @description Question version created */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["QuestionVersion"];
+                    };
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    "assessments.publishQuestionVersion": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                bank_id: string;
+                question_id: string;
+                version_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Question version published */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["PublishQuestionVersionResult"];
+                    };
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
         };
     };
     "academics.listClassTeachers": {

@@ -135,6 +135,7 @@ type QuestionPickerItem struct {
 	QuestionBankID        string `json:"question_bank_id"`
 	QuestionVersionID     string `json:"question_version_id"`
 	QuestionVersionStatus string `json:"question_version_status"`
+	QuestionType          string `json:"question_type"`
 	Prompt                string `json:"prompt"`
 }
 
@@ -189,6 +190,104 @@ type AssessmentPreview struct {
 	ClosesAt        *string          `json:"closes_at,omitempty"`
 	Settings        json.RawMessage  `json:"settings,omitempty"`
 	Sections        []PreviewSection `json:"sections"`
+}
+
+// QuestionType values for question versions and attempt items.
+const (
+	QuestionTypeMultipleChoice = "multiple_choice"
+	QuestionTypeShortAnswer    = "short_answer"
+	QuestionTypeEssay          = "essay"
+)
+
+// QuestionBank is the persistence shape for a question bank row.
+type QuestionBank struct {
+	ID             string `json:"id"`
+	OrganizationID string `json:"organization_id"`
+	Title          string `json:"title"`
+	Status         string `json:"status"`
+	CreatedAt      string `json:"created_at"`
+	UpdatedAt      string `json:"updated_at"`
+}
+
+// QuestionBankListItem is the public list view for GET /api/v1/question-banks.
+type QuestionBankListItem struct {
+	ID             string `json:"id"`
+	OrganizationID string `json:"organization_id"`
+	Title          string `json:"title"`
+	Status         string `json:"status"`
+	CreatedAt      string `json:"created_at"`
+	UpdatedAt      string `json:"updated_at"`
+}
+
+// CreateQuestionBankRequest is the payload for POST /api/v1/question-banks.
+type CreateQuestionBankRequest struct {
+	Title string `json:"title"`
+}
+
+// ListQuestionBanksOptions filters the question-bank list.
+type ListQuestionBanksOptions struct {
+	Query           string
+	IncludeArchived bool
+	Limit           int
+	Offset          int
+}
+
+// QuestionBankQuestion is a row in the bank-level question list.
+type QuestionBankQuestion struct {
+	ID                  string  `json:"id"`
+	QuestionBankID      string  `json:"question_bank_id"`
+	Status              string  `json:"status"`
+	LatestVersionID     *string `json:"latest_version_id,omitempty"`
+	LatestVersionStatus *string `json:"latest_version_status,omitempty"`
+	LatestVersion       *int    `json:"latest_version,omitempty"`
+	QuestionType        *string `json:"question_type,omitempty"`
+	CreatedAt           string  `json:"created_at"`
+	UpdatedAt           string  `json:"updated_at"`
+}
+
+// CreateQuestionRequest is the payload for POST /question-banks/{bank_id}/questions.
+// An empty initial version can be created together with the question.
+type CreateQuestionRequest struct {
+	QuestionType string          `json:"question_type"`
+	Prompt       json.RawMessage `json:"prompt"`
+	Choices      json.RawMessage `json:"choices,omitempty"`
+	AnswerKey    json.RawMessage `json:"answer_key,omitempty"`
+	MaxScore     string          `json:"max_score,omitempty"`
+}
+
+// CreateQuestionResponse is the public response for POST /question-banks/{bank_id}/questions.
+type CreateQuestionResponse struct {
+	Question QuestionBankQuestion `json:"question"`
+	Version  *QuestionVersion     `json:"version,omitempty"`
+}
+
+// CreateQuestionVersionRequest is the payload for POST /question-banks/{bank_id}/questions/{question_id}/versions.
+type CreateQuestionVersionRequest struct {
+	QuestionType string          `json:"question_type"`
+	Prompt       json.RawMessage `json:"prompt"`
+	Choices      json.RawMessage `json:"choices,omitempty"`
+	AnswerKey    json.RawMessage `json:"answer_key,omitempty"`
+	MaxScore     string          `json:"max_score,omitempty"`
+	Publish      bool            `json:"publish"`
+}
+
+// QuestionVersion is a question version with all editable fields.
+type QuestionVersion struct {
+	ID           string          `json:"id"`
+	QuestionID   string          `json:"question_id"`
+	Version      int             `json:"version"`
+	QuestionType string          `json:"question_type"`
+	Prompt       json.RawMessage `json:"prompt"`
+	Choices      json.RawMessage `json:"choices,omitempty"`
+	AnswerKey    json.RawMessage `json:"answer_key,omitempty"`
+	MaxScore     string          `json:"max_score"`
+	Status       string          `json:"status"`
+	CreatedAt    string          `json:"created_at"`
+}
+
+// PublishQuestionVersionResult is the data envelope for POST .../versions/{version_id}/publish.
+type PublishQuestionVersionResult struct {
+	Version QuestionVersion `json:"version"`
 }
 
 // ListOptions is the optional pagination/search input for list endpoints.

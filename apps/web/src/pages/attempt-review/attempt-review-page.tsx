@@ -61,6 +61,18 @@ function getSelectedOption(payload: unknown): string | undefined {
   return undefined;
 }
 
+function getTextAnswer(payload: unknown): string | undefined {
+  if (
+    typeof payload === 'object' &&
+    payload !== null &&
+    'text' in payload &&
+    typeof (payload as { text: unknown }).text === 'string'
+  ) {
+    return (payload as { text: string }).text;
+  }
+  return undefined;
+}
+
 function getCorrectOption(payload: unknown): string | undefined {
   if (
     typeof payload === 'object' &&
@@ -71,6 +83,32 @@ function getCorrectOption(payload: unknown): string | undefined {
     return (payload as { correct_option: string }).correct_option;
   }
   return undefined;
+}
+
+function getAcceptedAnswers(payload: unknown): string[] {
+  if (
+    typeof payload === 'object' &&
+    payload !== null &&
+    'accepted_answers' in payload &&
+    Array.isArray((payload as { accepted_answers: unknown }).accepted_answers)
+  ) {
+    return (payload as { accepted_answers: string[] }).accepted_answers.filter(
+      (s): s is string => typeof s === 'string'
+    );
+  }
+  return [];
+}
+
+function questionTypeLabel(t: string | undefined): string {
+  switch (t) {
+    case 'short_answer':
+      return 'Trả lời ngắn';
+    case 'essay':
+      return 'Tự luận';
+    case 'multiple_choice':
+    default:
+      return 'Trắc nghiệm';
+  }
 }
 
 export function AttemptReviewPage() {
@@ -128,7 +166,9 @@ export function AttemptReviewPage() {
   }
 
   const scoreText =
-    result.score !== undefined && result.max_score !== undefined
+    result.grading_status === 'PENDING_REVIEW'
+      ? `Chờ chấm / ${result.max_score ?? '—'}`
+      : result.score !== undefined && result.max_score !== undefined
       ? `${result.score} / ${result.max_score}`
       : '—';
 
@@ -183,20 +223,30 @@ function ReviewItemRow({ item }: { item: AttemptResultItem }) {
   const promptText = getPromptText(item.prompt);
   const choices = getChoices(item.correct_answer);
   const studentChoice = getSelectedOption(item.student_answer?.answer_payload);
+  const studentText = getTextAnswer(item.student_answer?.answer_payload);
   const correctChoice = getCorrectOption(item.correct_answer);
+  const acceptedAnswers = getAcceptedAnswers(item.correct_answer);
+  const isPending = item.grading_status === 'PENDING_REVIEW';
+  const isCorrect = item.is_correct === true;
+
+  let badgeClass = 'pending';
+  let badgeLabel = 'Chờ chấm';
+  if (!isPending) {
+    if (isCorrect) {
+      badgeClass = 'correct';
+      badgeLabel = 'Đúng';
+    } else {
+      badgeClass = 'incorrect';
+      badgeLabel = 'Sai';
+    }
+  }
 
   return (
-    <li
-      className={`review-item ${item.is_correct ? 'correct' : 'incorrect'}`}
-      role="listitem"
-    >
+    <li className={`review-item ${badgeClass}`} role="listitem">
       <div className="review-item-header">
         <span className="review-item-number">Câu {item.position}</span>
-        <span
-          className={`review-item-badge ${item.is_correct ? 'correct' : 'incorrect'}`}
-        >
-          {item.is_correct ? 'Đúng' : 'Sai'}
-        </span>
+        <span className="review-item-type">{questionTypeLabel(item.question_type)}</span>
+        <span className={`review-item-badge ${badgeClass}`}>{badgeLabel}</span>
         <span className="review-item-points">{item.points} điểm</span>
       </div>
 
@@ -224,14 +274,40 @@ function ReviewItemRow({ item }: { item: AttemptResultItem }) {
         </ul>
       )}
 
-      {choices.length === 0 && (
+      {item.question_type === 'short_answer' && (
+        <div className="review-short-answer">
+          <p className="review-answer">
+            <strong>Bạn trả lời:</strong> {studentText || '—'}
+          </p>
+          {acceptedAnswers.length > 0 && (
+            <p className="review-answer">
+              <strong>Đáp án:</strong> {acceptedAnswers.join(', ')}
+            </p>
+          )}
+        </div>
+      )}
+
+      {item.question_type === 'essay' && (
+        <div className="review-essay">
+          <p className="review-answer">
+            <strong>Bài làm của bạn:</strong>
+          </p>
+          <pre className="review-essay-text">{studentText || '—'}</pre>
+          {isPending && (
+            <p className="review-pending-note">
+              Bài tự luận sẽ được giáo viên chấm và cập nhật điểm sau.
+            </p>
+          )}
+        </div>
+      )}
+
+      {choices.length === 0 && item.question_type === 'multiple_choice' && (
         <p className="review-answer">
-          <strong>Đáp án đúng:</strong>{' '}
-          {correctChoice || '—'}
+          <strong>Đáp án đúng:</strong> {correctChoice || '—'}
         </p>
       )}
 
-      {studentChoice && choices.length === 0 && (
+      {studentChoice && choices.length === 0 && item.question_type === 'multiple_choice' && (
         <p className="review-answer">
           <strong>Bạn chọn:</strong> {studentChoice}
         </p>

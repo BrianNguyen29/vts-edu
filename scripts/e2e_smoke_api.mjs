@@ -950,11 +950,12 @@ async function assertStudentCannotAccessGradebook(token, assessmentID, classID) 
   console.log('  student gradebook endpoints correctly rejected:', r1.status);
 }
 
-async function saveAnswerForAttempt(token, attemptId, itemId, selectedOption) {
+async function saveAnswerForAttempt(token, attemptId, itemId, selectedOption, payloadOverride) {
+  const payload = payloadOverride ?? { selected_option: selectedOption };
   const r = await fetch(`${API_PREFIX}/attempts/${attemptId}/answers/${itemId}`, {
     method: 'PUT',
     headers: headers(token, true),
-    body: JSON.stringify({ answer_payload: { selected_option: selectedOption } }),
+    body: JSON.stringify({ answer_payload: payload }),
   });
   if (!r.ok) throw new Error(`save answer failed: ${r.status}`);
   const json = await r.json();
@@ -970,7 +971,9 @@ async function submitAttemptById(token, attemptId) {
   const json = await r.json();
   console.log('  submit status:', json.data.status);
   console.log('  score:', json.data.score, '/', json.data.max_score, '| grading:', json.data.grading_status);
-  if (json.data.grading_status !== 'GRADED') throw new Error(`unexpected grading_status: ${json.data.grading_status}`);
+  if (!['GRADED', 'PENDING_REVIEW', 'NOT_GRADED'].includes(json.data.grading_status)) {
+    throw new Error(`unexpected grading_status: ${json.data.grading_status}`);
+  }
   return json.data;
 }
 
@@ -1102,6 +1105,179 @@ async function assertResourcesFlow(teacherToken, studentToken, orgID) {
     throw new Error(`downloaded payload mismatch: got ${JSON.stringify(downloaded)}`);
   }
   console.log('  resources: create, upload, publish, student list, download — ok');
+}
+
+async function assertNonMcqFlow(teacherToken, studentToken, classId, studentUserId) {
+  console.log('Checking non-MCQ question types...');
+
+  // 1. Create a question bank
+  const bankRes = await fetch(`${API_PREFIX}/question-banks`, {
+    method: 'POST',
+    headers: headers(teacherToken, true),
+    body: JSON.stringify({ title: `Bộ câu hỏi smoke ${Date.now()}` }),
+  });
+  if (bankRes.status !== 201) {
+    throw new Error(`expected 201 on create question bank, got ${bankRes.status}`);
+  }
+  const bankBody = await bankRes.json();
+  const bankId = bankBody.data.id;
+
+  // 2. Create a short_answer question
+  const saRes = await fetch(`${API_PREFIX}/question-banks/${bankId}/questions`, {
+    method: 'POST',
+    headers: headers(teacherToken, true),
+    body: JSON.stringify({
+      question_type: 'short_answer',
+      prompt: { text: '3 + 4 bằng mấy?' },
+      answer_key: { accepted_answers: ['7', 'bảy'] },
+      max_score: '1.00',
+    }),
+  });
+  if (saRes.status !== 201) {
+    const errBody = await saRes.text();
+    throw new Error(`expected 201 on create short_answer, got ${saRes.status}: ${errBody}`);
+  }
+  const saBody = await saRes.json();
+  if (saBody.data.version?.question_type !== 'short_answer') {
+    throw new Error(`expected short_answer version, got ${JSON.stringify(saBody.data.version)}`);
+  }
+
+  // 3. Create an essay question
+  const essayRes = await fetch(`${API_PREFIX}/question-banks/${bankId}/questions`, {
+    method: 'POST',
+    headers: headers(teacherToken, true),
+    body: JSON.stringify({
+      question_type: 'essay',
+      prompt: { text: 'Trình bày cách giải phương trình bậc nhất.' },
+      max_score: '2.00',
+    }),
+  });
+  if (essayRes.status !== 201) {
+    throw new Error(`expected 201 on create essay, got ${essayRes.status}`);
+  }
+
+  // 4. Verify list questions in bank
+  const listRes = await fetch(`${API_PREFIX}/question-banks/${bankId}/questions?limit=10`, {
+    headers: headers(teacherToken),
+  });
+  if (listRes.status !== 200) {
+    throw new Error(`expected 200 on list questions, got ${listRes.status}`);
+  }
+  const listBody = await listRes.json();
+  if (listBody.data.length !== 2) {
+    throw new Error(`expected 2 questions in bank, got ${listBody.data.length}`);
+  }
+
+  // 5. Verify picker exposes question_type
+  const pickerRes = await fetch(`${API_PREFIX}/questions?limit=10`, { headers: headers(teacherToken) });
+  if (pickerRes.status !== 200) {
+    const errBody = await pickerRes.text();
+    throw new Error(`expected 200 on picker, got ${pickerRes.status}: ${errBody}`);
+  }
+  const pickerBody = await pickerRes.json();
+  const allPicked = pickerBody.data;
+  const hasShortAnswer = allPicked.some((q) => q.question_type === 'short_answer');
+  const hasEssay = allPicked.some((q) => q.question_type === 'essay');
+  if (!hasShortAnswer || !hasEssay) {
+    throw new Error(`expected picker to expose short_answer and essay question types, got ${allPicked.map((q) => q.question_type).join(',')}`);
+  }
+
+  // 6. Validation: MCQ missing choices should reject
+  const badMCQ = await fetch(`${API_PREFIX}/question-banks/${bankId}/questions`, {
+    method: 'POST',
+    headers: headers(teacherToken, true),
+    body: JSON.stringify({
+      question_type: 'multiple_choice',
+      prompt: { text: 'Câu trắc nghiệm thiếu choices' },
+      answer_key: { correct_option: 'A' },
+    }),
+  });
+  if (badMCQ.status !== 400) {
+    throw new Error(`expected 400 on MCQ missing choices, got ${badMCQ.status}`);
+  }
+
+  // 7. Validation: short_answer missing accepted_answers should reject
+  const badSA = await fetch(`${API_PREFIX}/question-banks/${bankId}/questions`, {
+    method: 'POST',
+    headers: headers(teacherToken, true),
+    body: JSON.stringify({
+      question_type: 'short_answer',
+      prompt: { text: 'Câu trả lời ngắn thiếu đáp án' },
+      answer_key: {},
+    }),
+  });
+  if (badSA.status !== 400) {
+    throw new Error(`expected 400 on short_answer missing accepted_answers, got ${badSA.status}`);
+  }
+
+  // 8. Build a small assessment with the new types and submit
+  const draft = await createAssessmentForClass(teacherToken, classId, 'Đề thi non-MCQ smoke', 30);
+  if (!draft?.id) {
+    throw new Error('expected assessment id from createAssessmentForClass');
+  }
+  const section = await createSection(teacherToken, draft.id, 'Phần A', 1);
+  if (!section?.id) {
+    throw new Error('expected section id');
+  }
+  const saQ = allPicked.find((q) => q.question_type === 'short_answer');
+  const esQ = allPicked.find((q) => q.question_type === 'essay');
+  if (!saQ || !esQ) {
+    throw new Error('expected both types in picker');
+  }
+  await createItem(teacherToken, section.id, saQ.question_version_id, 1, '1.00');
+  await createItem(teacherToken, section.id, esQ.question_version_id, 2, '2.00');
+  const targetRes = await fetch(`${API_PREFIX}/assessments/${draft.id}/targets`, {
+    method: 'POST',
+    headers: headers(teacherToken, true),
+    body: JSON.stringify({ class_section_id: classId }),
+  });
+  if (targetRes.status !== 201) {
+    throw new Error(`expected 201 on target create, got ${targetRes.status}`);
+  }
+  const publish = await publishAssessment(teacherToken, draft.id);
+  if (!['OPEN', 'PUBLISHED', 'SCHEDULED'].includes(publish.status)) {
+    throw new Error(`expected published assessment, got ${publish.status}`);
+  }
+
+  // 9. Student starts attempt and submits
+  const started = await startAttempt(studentToken, draft.id);
+  if (started.status !== 'IN_PROGRESS') {
+    throw new Error(`expected IN_PROGRESS, got ${started.status}`);
+  }
+  for (const item of started.items) {
+    let payload;
+    if (item.question_type === 'short_answer') {
+      payload = { text: '7' };
+    } else if (item.question_type === 'essay') {
+      payload = { text: 'Trừ hai vế cho cùng một số để cô lập ẩn.' };
+    } else {
+      payload = { selected_option: 'A' };
+    }
+    await saveAnswerForAttempt(studentToken, started.id, item.id, 'A', payload);
+  }
+  const submitted = await submitAttemptById(studentToken, started.id);
+  if (submitted.grading_status !== 'PENDING_REVIEW') {
+    throw new Error(`expected PENDING_REVIEW (essay triggers it), got ${submitted.grading_status}`);
+  }
+  if (submitted.max_score !== '3.00') {
+    throw new Error(`expected max_score 3.00, got ${submitted.max_score}`);
+  }
+
+  // 10. Verify result review shows pending and per-item type
+  const result = await getAttemptResult(studentToken, started.id);
+  if (result.grading_status !== 'PENDING_REVIEW') {
+    throw new Error(`expected PENDING_REVIEW on result, got ${result.grading_status}`);
+  }
+  const hasPendingItem = result.items.some((it) => it.grading_status === 'PENDING_REVIEW');
+  if (!hasPendingItem) {
+    throw new Error('expected at least one PENDING_REVIEW item in result');
+  }
+  const essayItem = result.items.find((it) => it.question_type === 'essay');
+  if (!essayItem || essayItem.is_correct !== undefined) {
+    throw new Error('expected essay item with no is_correct');
+  }
+
+  console.log('  non-MCQ: bank, MCQ/SA/essay create+validate, picker, mixed-attempt PENDING_REVIEW — ok');
 }
 
 async function main() {
@@ -1640,6 +1816,13 @@ async function main() {
     teacherAfter.data.access_token,
     token,
     studentActor.organization_id,
+  );
+
+  await assertNonMcqFlow(
+    teacherAfter.data.access_token,
+    token,
+    newClass.id,
+    studentActor.id,
   );
 
   console.log('Checking login lockout...');

@@ -19,7 +19,19 @@ async function createAndPublishAssessment(page: Page) {
   await page.getByTestId('add-question-button').first().click();
   const pickerSelect = page.getByTestId('picker-question-select');
   await expect.poll(async () => await pickerSelect.locator('option').count()).toBeGreaterThan(1);
-  await pickerSelect.selectOption({ index: 1 });
+  // Pick a multiple_choice question (label prefix `[TN]`) so the student step
+  // can answer it via radio. After the non-MCQ foundation the picker may also
+  // expose short_answer/essay items which the radio-only answer loop cannot
+  // answer deterministically.
+  const mcqValue = await pickerSelect.evaluate((el) => {
+    const select = el as HTMLSelectElement;
+    const opt = Array.from(select.options).find((o) => /^\[TN\]/.test(o.textContent ?? ''));
+    return opt?.value ?? '';
+  });
+  if (!mcqValue) {
+    throw new Error('No multiple_choice question available in the picker; cannot run legacy critical flow.');
+  }
+  await pickerSelect.selectOption(mcqValue);
   await page.getByTestId('picker-add-button').click();
 
   const targetSelect = page.getByTestId('target-class-select');

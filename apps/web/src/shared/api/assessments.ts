@@ -308,4 +308,117 @@ export async function duplicateItem(
   );
 }
 
+// ---- Question banks ----
+
+export type QuestionBank = components['schemas']['QuestionBank'];
+export type CreateQuestionBankRequest =
+  components['schemas']['CreateQuestionBankRequest'];
+export type QuestionBankQuestion = components['schemas']['QuestionBankQuestion'];
+export type CreateQuestionRequest = components['schemas']['CreateQuestionRequest'];
+export type CreateQuestionResponse =
+  components['schemas']['CreateQuestionResponse'];
+export type QuestionVersion = components['schemas']['QuestionVersion'];
+export type CreateQuestionVersionRequest =
+  components['schemas']['CreateQuestionVersionRequest'];
+export type PublishQuestionVersionResult =
+  components['schemas']['PublishQuestionVersionResult'];
+
+export async function listQuestionBanks(
+  opts: { q?: string; include_archived?: boolean; limit?: number; offset?: number } = {}
+): Promise<QuestionBank[]> {
+  const client = await getOpenAPIClient();
+  return unwrapData<QuestionBank[]>(
+    await client.GET('/question-banks', {
+      params: {
+        query: {
+          q: opts.q,
+          include_archived: opts.include_archived,
+          limit: opts.limit,
+          offset: opts.offset,
+        },
+      },
+    })
+  );
+}
+
+export async function createQuestionBank(
+  req: CreateQuestionBankRequest
+): Promise<QuestionBank> {
+  const client = await getOpenAPIClient();
+  return unwrapData<QuestionBank>(
+    await client.POST('/question-banks', { body: req })
+  );
+}
+
+export async function listQuestionsInBank(
+  bankId: string,
+  opts: { include_archived?: boolean; limit?: number; offset?: number } = {}
+): Promise<QuestionBankQuestion[]> {
+  const client = await getOpenAPIClient();
+  return unwrapData<QuestionBankQuestion[]>(
+    await client.GET('/question-banks/{bank_id}/questions', {
+      params: {
+        path: { bank_id: bankId },
+        query: {
+          include_archived: opts.include_archived,
+          limit: opts.limit,
+          offset: opts.offset,
+        },
+      },
+    })
+  );
+}
+
+export async function createQuestionInBank(
+  bankId: string,
+  req: CreateQuestionRequest
+): Promise<CreateQuestionResponse> {
+  const client = await getOpenAPIClient();
+  return unwrapData<CreateQuestionResponse>(
+    await client.POST('/question-banks/{bank_id}/questions', {
+      params: { path: { bank_id: bankId } },
+      body: req,
+    })
+  );
+}
+
+export async function createQuestionVersion(
+  bankId: string,
+  questionId: string,
+  req: CreateQuestionVersionRequest
+): Promise<QuestionVersion> {
+  const client = await getOpenAPIClient();
+  return unwrapData<QuestionVersion>(
+    await client.POST(
+      '/question-banks/{bank_id}/questions/{question_id}/versions',
+      {
+        params: { path: { bank_id: bankId, question_id: questionId } },
+        body: req,
+      }
+    )
+  );
+}
+
+export async function publishQuestionVersion(
+  bankId: string,
+  questionId: string,
+  versionId: string
+): Promise<PublishQuestionVersionResult> {
+  const client = await getOpenAPIClient();
+  return unwrapData<PublishQuestionVersionResult>(
+    await client.POST(
+      '/question-banks/{bank_id}/questions/{question_id}/versions/{version_id}/publish',
+      {
+        params: {
+          path: {
+            bank_id: bankId,
+            question_id: questionId,
+            version_id: versionId,
+          },
+        },
+      }
+    )
+  );
+}
+
 export { ApiResponseError };

@@ -105,6 +105,30 @@ func (f *fakeService) PreviewAssessment(ctx context.Context, actor auth.Actor, a
 	return assessments.AssessmentPreview{}, nil
 }
 
+func (f *fakeService) CreateQuestionBank(ctx context.Context, actor auth.Actor, req assessments.CreateQuestionBankRequest) (assessments.QuestionBank, error) {
+	return assessments.QuestionBank{}, nil
+}
+
+func (f *fakeService) ListQuestionBanks(ctx context.Context, actor auth.Actor, opts assessments.ListQuestionBanksOptions) ([]assessments.QuestionBank, error) {
+	return nil, nil
+}
+
+func (f *fakeService) CreateQuestion(ctx context.Context, actor auth.Actor, bankID string, req assessments.CreateQuestionRequest) (assessments.CreateQuestionResponse, error) {
+	return assessments.CreateQuestionResponse{}, nil
+}
+
+func (f *fakeService) ListQuestionsInBank(ctx context.Context, actor auth.Actor, bankID string, opts assessments.ListQuestionBanksOptions) ([]assessments.QuestionBankQuestion, error) {
+	return nil, nil
+}
+
+func (f *fakeService) CreateQuestionVersion(ctx context.Context, actor auth.Actor, bankID, questionID string, req assessments.CreateQuestionVersionRequest) (assessments.QuestionVersion, error) {
+	return assessments.QuestionVersion{}, nil
+}
+
+func (f *fakeService) PublishQuestionVersion(ctx context.Context, actor auth.Actor, bankID, questionID, versionID string) (assessments.PublishQuestionVersionResult, error) {
+	return assessments.PublishQuestionVersionResult{}, nil
+}
+
 func tokenWithRoles(roles []string) string {
 	issuer := auth.NewTokenIssuer("test-signing-key-minimum-32-bytes-long", "test-issuer", "test-audience", 15*time.Minute)
 	token, _, err := issuer.IssueAccessToken("user-id", "org-id", "session-id", roles, 1, false)

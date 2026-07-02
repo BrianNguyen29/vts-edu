@@ -1574,6 +1574,210 @@ paths:
           $ref: '#/components/responses/Unauthorized'
         '403':
           $ref: '#/components/responses/Forbidden'
+  /question-banks:
+    get:
+      operationId: assessments.listQuestionBanks
+      tags: [QuestionBanks]
+      description: Teacher or admin only. Lists question banks for the actor's organization.
+      parameters:
+        - name: q
+          in: query
+          schema: { type: string }
+        - name: include_archived
+          in: query
+          schema: { type: boolean }
+        - name: limit
+          in: query
+          schema: { type: integer, minimum: 1 }
+        - name: offset
+          in: query
+          schema: { type: integer, minimum: 0 }
+      responses:
+        '200':
+          description: Question bank list
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/QuestionBank'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+    post:
+      operationId: assessments.createQuestionBank
+      tags: [QuestionBanks]
+      description: Teacher or admin only. Creates a new question bank. Requires `X-CSRF-Token` header.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateQuestionBankRequest'
+      responses:
+        '201':
+          description: Question bank created
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data:
+                    $ref: '#/components/schemas/QuestionBank'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+  /question-banks/{bank_id}/questions:
+    parameters:
+      - name: bank_id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    get:
+      operationId: assessments.listQuestionsInBank
+      tags: [QuestionBanks]
+      description: Teacher or admin only. Lists questions in a bank with the latest version summary.
+      parameters:
+        - name: include_archived
+          in: query
+          schema: { type: boolean }
+        - name: limit
+          in: query
+          schema: { type: integer, minimum: 1 }
+        - name: offset
+          in: query
+          schema: { type: integer, minimum: 0 }
+      responses:
+        '200':
+          description: Questions in bank
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/QuestionBankQuestion'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    post:
+      operationId: assessments.createQuestionInBank
+      tags: [QuestionBanks]
+      description: Teacher or admin only. Creates a question in a bank with an initial version. Requires `X-CSRF-Token` header.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateQuestionRequest'
+      responses:
+        '201':
+          description: Question and version created
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data:
+                    $ref: '#/components/schemas/CreateQuestionResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /question-banks/{bank_id}/questions/{question_id}/versions:
+    parameters:
+      - name: bank_id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+      - name: question_id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    post:
+      operationId: assessments.createQuestionVersion
+      tags: [QuestionBanks]
+      description: Teacher or admin only. Creates a new version of a question. Requires `X-CSRF-Token` header.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateQuestionVersionRequest'
+      responses:
+        '201':
+          description: Question version created
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data:
+                    $ref: '#/components/schemas/QuestionVersion'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /question-banks/{bank_id}/questions/{question_id}/versions/{version_id}/publish:
+    parameters:
+      - name: bank_id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+      - name: question_id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+      - name: version_id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    post:
+      operationId: assessments.publishQuestionVersion
+      tags: [QuestionBanks]
+      description: Teacher or admin only. Publishes a DRAFT question version. Requires `X-CSRF-Token` header.
+      responses:
+        '200':
+          description: Question version published
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data:
+                    $ref: '#/components/schemas/PublishQuestionVersionResult'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
   /classes/{class_id}/teachers:
     get:
       operationId: academics.listClassTeachers
@@ -2134,10 +2338,11 @@ components:
                 $ref: '#/components/schemas/AttemptItem'
     AttemptItem:
       type: object
-      required: [id, question_version_id, position, points, prompt, choices]
+      required: [id, question_version_id, question_type, position, points, prompt, choices]
       properties:
         id: { type: string, format: uuid }
         question_version_id: { type: string, format: uuid }
+        question_type: { type: string, enum: [multiple_choice, short_answer, essay] }
         position: { type: integer, minimum: 1 }
         points: { type: string }
         prompt: { type: object, additionalProperties: true, properties: { text: { type: string } } }
@@ -2146,7 +2351,7 @@ components:
           type: object
           required: [answer_payload, revision, answered_at]
           properties:
-            answer_payload: { type: object, additionalProperties: true, properties: { selected_option: { type: string } } }
+            answer_payload: { type: object, additionalProperties: true, properties: { selected_option: { type: string }, text: { type: string } } }
             revision: { type: integer, minimum: 1 }
             answered_at: { type: string, format: date-time }
     SaveAnswerRequest:
@@ -2241,9 +2446,9 @@ components:
             assessment_id: { type: string, format: uuid }
             status: { type: string, enum: [SUBMITTED, EXPIRED] }
             submitted_at: { type: string, format: date-time }
-            score: { type: string }
+            score: { type: string, nullable: true }
             max_score: { type: string }
-            grading_status: { type: string, enum: [GRADED] }
+            grading_status: { type: string, enum: [GRADED, PENDING_REVIEW, NOT_GRADED] }
             server_time: { type: string, format: date-time }
             items:
               type: array
@@ -2251,10 +2456,11 @@ components:
                 $ref: '#/components/schemas/AttemptResultItem'
     AttemptResultItem:
       type: object
-      required: [id, question_version_id, position, points, prompt, choices, correct_answer, is_correct]
+      required: [id, question_version_id, question_type, position, points, prompt, choices, correct_answer, grading_status]
       properties:
         id: { type: string, format: uuid }
         question_version_id: { type: string, format: uuid }
+        question_type: { type: string, enum: [multiple_choice, short_answer, essay] }
         position: { type: integer, minimum: 1 }
         points: { type: string }
         prompt: { type: object, additionalProperties: true, properties: { text: { type: string } } }
@@ -2266,7 +2472,8 @@ components:
           properties:
             answer_payload: { type: object, additionalProperties: true }
             answered_at: { type: string, format: date-time }
-        is_correct: { type: boolean }
+        grading_status: { type: string, enum: [GRADED, PENDING_REVIEW] }
+        is_correct: { type: boolean, nullable: true, description: Omitted for items that are not auto-gradable (e.g., PENDING_REVIEW). }
     PageInfo:
       type: object
       required: [limit, offset, has_more]
@@ -2935,13 +3142,89 @@ components:
           items: { type: string, format: uuid }
     QuestionPickerItem:
       type: object
-      required: [id, question_bank_id, question_version_id, question_version_status, prompt]
+      required: [id, question_bank_id, question_version_id, question_version_status, question_type, prompt]
       properties:
         id: { type: string, format: uuid }
         question_bank_id: { type: string, format: uuid }
         question_version_id: { type: string, format: uuid }
         question_version_status: { type: string, enum: [DRAFT, PUBLISHED, ARCHIVED] }
+        question_type: { type: string, enum: [multiple_choice, short_answer, essay] }
         prompt: { type: string }
+    QuestionBank:
+      type: object
+      required: [id, organization_id, title, status, created_at, updated_at]
+      properties:
+        id: { type: string, format: uuid }
+        organization_id: { type: string, format: uuid }
+        title: { type: string }
+        status: { type: string, enum: [ACTIVE, ARCHIVED] }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+    CreateQuestionBankRequest:
+      type: object
+      required: [title]
+      properties:
+        title: { type: string, minLength: 1 }
+    QuestionBankQuestion:
+      type: object
+      required: [id, question_bank_id, status, created_at, updated_at]
+      properties:
+        id: { type: string, format: uuid }
+        question_bank_id: { type: string, format: uuid }
+        status: { type: string, enum: [ACTIVE, ARCHIVED] }
+        latest_version_id: { type: string, format: uuid }
+        latest_version_status: { type: string, enum: [DRAFT, PUBLISHED, ARCHIVED] }
+        latest_version: { type: integer, minimum: 1 }
+        question_type: { type: string, enum: [multiple_choice, short_answer, essay] }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+    CreateQuestionRequest:
+      type: object
+      required: [question_type, prompt]
+      properties:
+        question_type: { type: string, enum: [multiple_choice, short_answer, essay] }
+        prompt: { type: object, additionalProperties: true }
+        choices: { type: array, items: {} }
+        answer_key: { type: object, additionalProperties: true }
+        max_score: { type: string }
+    CreateQuestionResponse:
+      type: object
+      required: [question]
+      properties:
+        question:
+          $ref: '#/components/schemas/QuestionBankQuestion'
+        version:
+          $ref: '#/components/schemas/QuestionVersion'
+    QuestionVersion:
+      type: object
+      required: [id, question_id, version, question_type, prompt, max_score, status, created_at]
+      properties:
+        id: { type: string, format: uuid }
+        question_id: { type: string, format: uuid }
+        version: { type: integer, minimum: 1 }
+        question_type: { type: string, enum: [multiple_choice, short_answer, essay] }
+        prompt: { type: object, additionalProperties: true }
+        choices: { type: array, items: {} }
+        answer_key: { type: object, additionalProperties: true }
+        max_score: { type: string }
+        status: { type: string, enum: [DRAFT, PUBLISHED, ARCHIVED] }
+        created_at: { type: string, format: date-time }
+    CreateQuestionVersionRequest:
+      type: object
+      required: [question_type, prompt]
+      properties:
+        question_type: { type: string, enum: [multiple_choice, short_answer, essay] }
+        prompt: { type: object, additionalProperties: true }
+        choices: { type: array, items: {} }
+        answer_key: { type: object, additionalProperties: true }
+        max_score: { type: string }
+        publish: { type: boolean }
+    PublishQuestionVersionResult:
+      type: object
+      required: [version]
+      properties:
+        version:
+          $ref: '#/components/schemas/QuestionVersion'
     PublicationSummary:
       type: object
       required: [id, version, status, published_at]

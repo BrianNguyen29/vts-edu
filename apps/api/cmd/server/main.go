@@ -201,6 +201,13 @@ func main() {
 			r.Get("/assessments/{id}/attempts/export", gradebookHandler.ExportAssessmentAttemptsCSV)
 
 			r.Get("/questions", assessmentsHandler.ListQuestions)
+
+			r.Get("/question-banks", assessmentsHandler.ListQuestionBanks)
+			r.Post("/question-banks", assessmentsHandler.CreateQuestionBank)
+			r.Get("/question-banks/{bank_id}/questions", assessmentsHandler.ListQuestionsInBank)
+			r.Post("/question-banks/{bank_id}/questions", assessmentsHandler.CreateQuestionInBank)
+			r.Post("/question-banks/{bank_id}/questions/{question_id}/versions", assessmentsHandler.CreateQuestionVersion)
+			r.Post("/question-banks/{bank_id}/questions/{question_id}/versions/{version_id}/publish", assessmentsHandler.PublishQuestionVersion)
 		} else {
 			r.Get("/assessments", srv.listAssessmentsPlaceholderHandler)
 

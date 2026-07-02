@@ -37,6 +37,18 @@ function getChoiceFromPayload(payload: unknown): string | undefined {
   return undefined;
 }
 
+function getTextFromPayload(payload: unknown): string | undefined {
+  if (
+    typeof payload === 'object' &&
+    payload !== null &&
+    'text' in payload &&
+    typeof (payload as { text: unknown }).text === 'string'
+  ) {
+    return (payload as { text: string }).text;
+  }
+  return undefined;
+}
+
 function formatTimeRemaining(ms: number): string {
   const totalSeconds = Math.floor(ms / 1000);
   const minutes = Math.floor(totalSeconds / 60);
@@ -240,8 +252,12 @@ export function ExamPage() {
           const choice = item.answer
             ? getChoiceFromPayload(item.answer.answer_payload)
             : undefined;
-          if (choice) {
-            initialAnswers[item.id] = choice;
+          const text = item.answer
+            ? getTextFromPayload(item.answer.answer_payload)
+            : undefined;
+          const value = choice ?? text;
+          if (value) {
+            initialAnswers[item.id] = value;
           }
           if (item.answer) {
             initialStatuses[item.id] = {
@@ -259,8 +275,10 @@ export function ExamPage() {
           if (!shouldPreferDraft(draft, serverRevision)) return;
 
           const choice = getChoiceFromPayload(draft.payload);
-          if (choice) {
-            initialAnswers[item.id] = choice;
+          const text = getTextFromPayload(draft.payload);
+          const value = choice ?? text;
+          if (value) {
+            initialAnswers[item.id] = value;
           }
           if (draft.pending) {
             initialStatuses[item.id] = { type: 'local' };
@@ -322,13 +340,13 @@ export function ExamPage() {
 
   const isExpired = timeLeft === 0;
 
-  async function handleSelect(item: AttemptItem, choice: string) {
+  async function persistAnswer(item: AttemptItem, payload: Record<string, unknown>, displayValue: string) {
     if (!attemptId || snapshot?.status !== 'IN_PROGRESS' || isExpired) return;
 
     const currentAttemptId = attemptId;
     const storage = storageRef.current;
 
-    setAnswers((prev) => ({ ...prev, [item.id]: choice }));
+    setAnswers((prev) => ({ ...prev, [item.id]: displayValue }));
     setSaveStatuses((prev) => ({
       ...prev,
       [item.id]: { type: 'saving' },
@@ -337,16 +355,14 @@ export function ExamPage() {
     const draft: ExamDraft = {
       attempt_id: currentAttemptId,
       item_id: item.id,
-      payload: { selected_option: choice },
+      payload,
       pending: true,
       updated_at: Date.now(),
     };
 
     try {
       await storage?.setDraft(draft);
-      const saved = await saveAnswer(currentAttemptId, item.id, {
-        selected_option: choice,
-      });
+      const saved = await saveAnswer(currentAttemptId, item.id, payload);
       await storage?.setDraft({
         ...draft,
         pending: false,
@@ -367,6 +383,14 @@ export function ExamPage() {
           : { type: 'local' },
       }));
     }
+  }
+
+  function handleSelect(item: AttemptItem, choice: string) {
+    void persistAnswer(item, { selected_option: choice }, choice);
+  }
+
+  function handleTextChange(item: AttemptItem, text: string) {
+    void persistAnswer(item, { text }, text);
   }
 
   async function handleSubmit() {
@@ -515,7 +539,11 @@ export function ExamPage() {
         {snapshot.items.map((item) => {
           const promptText = getPromptText(item.prompt);
           const choices = getChoices(item.choices);
-          const hasContent = promptText.length > 0 && choices.length > 0;
+          const isMCQ = item.question_type === 'multiple_choice' || !item.question_type;
+          const isShortAnswer = item.question_type === 'short_answer';
+          const isEssay = item.question_type === 'essay';
+          const hasContent = promptText.length > 0 && (isMCQ ? choices.length > 0 : true);
+          const textValue = answers[item.id] ?? '';
 
           return (
             <fieldset key={item.id} className="exam-question" data-testid="exam-question">
@@ -523,22 +551,56 @@ export function ExamPage() {
               {hasContent ? (
                 <>
                   <p className="exam-question-prompt">{promptText}</p>
-                  <div className="exam-options">
-                    {choices.map((choice) => (
-                      <label key={choice.id} className="exam-option">
-                        <input
-                          type="radio"
-                          name={`answer-${item.id}`}
-                          value={choice.id}
-                          checked={answers[item.id] === choice.id}
-                          onChange={() => handleSelect(item, choice.id)}
-                          disabled={submitting || isExpired}
-                        />
-                        <span className="exam-option-label">{choice.id}.</span>{' '}
-                        {choice.label}
+                  {isMCQ && (
+                    <div className="exam-options">
+                      {choices.map((choice) => (
+                        <label key={choice.id} className="exam-option">
+                          <input
+                            type="radio"
+                            name={`answer-${item.id}`}
+                            value={choice.id}
+                            checked={answers[item.id] === choice.id}
+                            onChange={() => handleSelect(item, choice.id)}
+                            disabled={submitting || isExpired}
+                          />
+                          <span className="exam-option-label">{choice.id}.</span>{' '}
+                          {choice.label}
+                        </label>
+                      ))}
+                    </div>
+                  )}
+                  {isShortAnswer && (
+                    <div className="exam-short-answer">
+                      <label htmlFor={`text-${item.id}`} className="exam-short-answer-label">
+                        Câu trả lời của bạn:
                       </label>
-                    ))}
-                  </div>
+                      <input
+                        id={`text-${item.id}`}
+                        type="text"
+                        className="exam-short-answer-input"
+                        value={textValue}
+                        onChange={(e) => handleTextChange(item, e.target.value)}
+                        disabled={submitting || isExpired}
+                        data-testid="exam-short-answer"
+                      />
+                    </div>
+                  )}
+                  {isEssay && (
+                    <div className="exam-essay">
+                      <label htmlFor={`text-${item.id}`} className="exam-essay-label">
+                        Bài làm của bạn (sẽ được giáo viên chấm):
+                      </label>
+                      <textarea
+                        id={`text-${item.id}`}
+                        className="exam-essay-textarea"
+                        rows={6}
+                        value={textValue}
+                        onChange={(e) => handleTextChange(item, e.target.value)}
+                        disabled={submitting || isExpired}
+                        data-testid="exam-essay"
+                      />
+                    </div>
+                  )}
                 </>
               ) : (
                 <div className="exam-unsupported" role="alert">
