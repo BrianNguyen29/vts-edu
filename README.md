@@ -52,6 +52,9 @@ Current functional MVP state:
 - Teacher workspace: assigned classes, assessment list, attempt results, gradebook grid, CSV export.
 - Admin workspace: org settings, user CRUD/roles/reset-password, audit log list/export, CSV user import, academic terms/subjects/courses/classes CRUD, bulk teacher assignment/enrollment.
 - Student dashboard: assigned assessments, attempt history, result review, exam runner.
-- DevOps/quality: `pnpm check`, `pnpm e2e:smoke`, `pnpm e2e:browser` (Playwright), in-process scheduler for assessment open/close transitions.
+- DevOps/quality: `pnpm check`, `pnpm e2e:smoke`, `pnpm e2e:browser` (Playwright, with optional `firefox`/`webkit` matrix via `PLAYWRIGHT_BROWSERS=1` + `pnpm e2e:browser:all`), in-process scheduler for assessment open/close transitions.
+- Resources/files: org + class-scoped file materials (class-scope, multi-file, inline preview, per-file upload progress) with `LocalProvider` (default) and `SupabaseProvider` (production) storage adapters; bearer-auth download with sanitized `Content-Disposition`, `X-Content-Type-Options: nosniff`, content-type allowlist.
+- Notifications: best-effort inbox (`attempt.graded` / `assessment.published` / `resource.published`) consumed by grading, assessments, and resources via a one-way `Notifier` seam; `NotificationBell` in app shell, 30s polling, accessible dropdown.
+- Frontend polish: bundle split (lazy-loaded routes + dashboard panels), cross-browser matrix (chromium default + opt-in firefox/webkit with WebKit host-dep probe), PWA Level 0 installability (manifest only, no service worker), accessibility baseline (focus-visible, ARIA, keyboard flows, `request_id` in error states), apiClient cleanup v1 (gradebook CSV exports migrated to typed `openapi-fetch`).
 
-Next backlog (not started): generated OpenAPI client, attempt history pagination, exam IndexedDB offline resilience, resources/files, accessibility audit, Huma/River (deferred with triggers).
+Next backlog (not started): Huma migration (awaiting backend feasibility spike go/no-go), River background-job runtime, exam heartbeat/deadline refresh, TipTap/KaTeX rich editor, load + concurrency tests, full WCAG 2.1 AA audit, dark mode, full installable PWA / push / background sync, auth-provider apiClient migration.
