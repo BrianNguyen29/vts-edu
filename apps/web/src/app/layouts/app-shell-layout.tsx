@@ -1,5 +1,6 @@
 import { Link, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '@/app/providers/auth-provider';
+import { NotificationBell } from '@/shared/components/notification-bell';
 
 function isActive(currentPath: string, targetPath: string, exact = false): boolean {
   if (exact) return currentPath === targetPath;
@@ -89,6 +90,7 @@ export function AppShellLayout() {
           </nav>
         )}
         <div className="app-shell-user">
+          {!isRestricted && <NotificationBell />}
           <span className="user-name" aria-label={`Người dùng ${displayName}`}>
             {displayName}
           </span>

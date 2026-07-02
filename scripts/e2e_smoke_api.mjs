@@ -1581,6 +1581,181 @@ async function assertNonMcqFlow(teacherToken, studentToken, adminToken, classId,
   console.log('  non-MCQ + manual grading: bank, MCQ/SA/essay, picker, attempt, grade, audit, gradebook — ok');
 }
 
+async function assertNotificationFlow(
+  teacherToken,
+  studentToken,
+  studentId,
+  classId,
+  orgId,
+) {
+  console.log('Checking notification inbox + best-effort events...');
+
+  // 1. Baseline: student has zero unread.
+  const baseCountRes = await fetch(`${API_PREFIX}/me/notifications/unread-count`, {
+    headers: headers(studentToken),
+  });
+  if (baseCountRes.status !== 200) {
+    throw new Error(`expected 200 on unread-count, got ${baseCountRes.status}`);
+  }
+  const baseCount = (await baseCountRes.json()).data?.count;
+  if (typeof baseCount !== 'number') {
+    throw new Error(`expected numeric unread count, got ${JSON.stringify(baseCount)}`);
+  }
+  // Do not require exact 0 — smoke runs may produce other notifications.
+  // We only assert that the endpoint works.
+
+  // 2. Teacher publishes a small assessment targeted at the student's class.
+  const draft = await createAssessmentForClass(
+    teacherToken,
+    classId,
+    `Đề thi notify smoke ${Date.now()}`,
+    10,
+  );
+  const section = await createSection(teacherToken, draft.id, 'Phần notify', 1);
+  // Build a tiny question bank + multiple_choice question so we don't rely on
+  // the demo seed for the picker.
+  const bankRes = await fetch(`${API_PREFIX}/question-banks`, {
+    method: 'POST',
+    headers: headers(teacherToken, true),
+    body: JSON.stringify({ title: `Bộ câu hỏi notify smoke ${Date.now()}` }),
+  });
+  if (bankRes.status !== 201) {
+    throw new Error(`expected 201 on notify bank, got ${bankRes.status}`);
+  }
+  const bankId = (await bankRes.json()).data.id;
+  const qRes = await fetch(`${API_PREFIX}/question-banks/${bankId}/questions`, {
+    method: 'POST',
+    headers: headers(teacherToken, true),
+    body: JSON.stringify({
+      question_type: 'multiple_choice',
+      prompt: { text: 'Thông báo smoke 1+1' },
+      choices: [
+        { key: 'A', text: '1' },
+        { key: 'B', text: '2' },
+        { key: 'C', text: '3' },
+        { key: 'D', text: '4' },
+      ],
+      answer_key: { correct_option: 'B' },
+      max_score: '1.00',
+    }),
+  });
+  if (qRes.status !== 201) {
+    throw new Error(`expected 201 on notify question, got ${qRes.status}`);
+  }
+  const qBody = (await qRes.json()).data;
+  if (!qBody?.question?.id || !qBody?.version?.id) {
+    throw new Error(`expected question id and version id, got ${JSON.stringify(qBody)}`);
+  }
+  // Publish the initial version so the picker / item add allow it.
+  const publishVerRes = await fetch(
+    `${API_PREFIX}/question-banks/${bankId}/questions/${qBody.question.id}/versions/${qBody.version.id}/publish`,
+    { method: 'POST', headers: headers(teacherToken, true) }
+  );
+  if (publishVerRes.status !== 200 && publishVerRes.status !== 201) {
+    throw new Error(`expected 200/201 on question version publish, got ${publishVerRes.status}`);
+  }
+  await createItem(teacherToken, section.id, qBody.version.id, 1, '1.00');
+  const targetRes = await fetch(`${API_PREFIX}/assessments/${draft.id}/targets`, {
+    method: 'POST',
+    headers: headers(teacherToken, true),
+    body: JSON.stringify({ class_section_id: classId }),
+  });
+  if (targetRes.status !== 201) {
+    throw new Error(`expected 201 on target create, got ${targetRes.status}`);
+  }
+  await publishAssessment(teacherToken, draft.id);
+
+  // 3. Student inbox should now contain an assessment.published row.
+  //    Best-effort event, retry briefly to absorb DB commit ordering.
+  let inboxBody = [];
+  for (let attempt = 0; attempt < 6; attempt++) {
+    const listRes = await fetch(`${API_PREFIX}/me/notifications?limit=20`, {
+      headers: headers(studentToken),
+    });
+    if (listRes.status !== 200) {
+      throw new Error(`expected 200 on list, got ${listRes.status}`);
+    }
+    const envList = (await listRes.json()).data || [];
+    inboxBody = envList.map((e) => e.data || e);
+    if (inboxBody.some((n) => n.event_type === 'assessment.published')) break;
+    await new Promise((r) => setTimeout(r, 200));
+  }
+  const assessmentPub = inboxBody.find((n) => n.event_type === 'assessment.published');
+  if (!assessmentPub) {
+    throw new Error(
+      `expected assessment.published notification in student inbox, got ${JSON.stringify(inboxBody.map((n) => n.event_type))}`
+    );
+  }
+  if (assessmentPub.recipient_user_id !== studentId) {
+    throw new Error('notification recipient_user_id mismatch');
+  }
+  if (!assessmentPub.metadata?.assessment_id) {
+    throw new Error('expected notification metadata.assessment_id');
+  }
+  if (assessmentPub.is_read !== false) {
+    throw new Error('new notification should be unread');
+  }
+
+  // 4. Unread count should have ticked up.
+  const upCountRes = await fetch(`${API_PREFIX}/me/notifications/unread-count`, {
+    headers: headers(studentToken),
+  });
+  const upCount = (await upCountRes.json()).data?.count;
+  if (typeof upCount !== 'number' || upCount <= baseCount) {
+    throw new Error(
+      `expected unread count to grow, base=${baseCount} after=${upCount}`
+    );
+  }
+
+  // 5. Mark-read: 200 + is_read=true, idempotent.
+  const markRes = await fetch(
+    `${API_PREFIX}/me/notifications/${assessmentPub.id}/read`,
+    { method: 'POST', headers: headers(studentToken, true) }
+  );
+  if (markRes.status !== 200) {
+    throw new Error(`expected 200 on mark-read, got ${markRes.status}`);
+  }
+  const markBody = (await markRes.json()).data;
+  if (!markBody?.is_read) {
+    throw new Error('expected notification to be read after mark-read');
+  }
+  const reMarkRes = await fetch(
+    `${API_PREFIX}/me/notifications/${assessmentPub.id}/read`,
+    { method: 'POST', headers: headers(studentToken, true) }
+  );
+  if (reMarkRes.status !== 200) {
+    throw new Error(`expected 200 on re-mark-read, got ${reMarkRes.status}`);
+  }
+
+  // 6. Unread count drops by at least 1.
+  const downCountRes = await fetch(`${API_PREFIX}/me/notifications/unread-count`, {
+    headers: headers(studentToken),
+  });
+  const downCount = (await downCountRes.json()).data?.count;
+  if (downCount > upCount - 1) {
+    throw new Error(
+      `expected unread count to drop after mark-read, was=${upCount} now=${downCount}`
+    );
+  }
+
+  // 7. Ownership: another student (otherStudentAccessToken) cannot mark-read this
+  //    student's notification. We assert by attempting with the assessment owner's
+  //    teacher token, who should be 403/404 since recipient_user_id is the student.
+  const teacherMarkRes = await fetch(
+    `${API_PREFIX}/me/notifications/${assessmentPub.id}/read`,
+    { method: 'POST', headers: headers(teacherToken, true) }
+  );
+  if (teacherMarkRes.status !== 404 && teacherMarkRes.status !== 403) {
+    throw new Error(
+      `expected 403/404 on cross-user mark-read, got ${teacherMarkRes.status}`
+    );
+  }
+
+  console.log(
+    '  notifications: list, unread-count, assessment.published, mark-read, ownership — ok'
+  );
+}
+
 async function main() {
   console.log('Waiting for API...');
   await ready();
@@ -2153,6 +2328,14 @@ async function main() {
     adminAfter.data.access_token,
     newClass.id,
     studentActor.id,
+  );
+
+  await assertNotificationFlow(
+    teacherAfter.data.access_token,
+    token,
+    studentActor.id,
+    newClass.id,
+    studentActor.organization_id,
   );
 
   console.log('Checking login lockout...');

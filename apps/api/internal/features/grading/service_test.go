@@ -26,6 +26,14 @@ func (f *fakeRepo) ListReviewQueue(ctx context.Context, orgID, assessmentID stri
 }
 
 func (f *fakeRepo) GetAttemptForGrading(ctx context.Context, orgID, attemptID string) (*AttemptGradingContext, error) {
+	if f.getAttempt == nil {
+		return &AttemptGradingContext{
+			AttemptID:     attemptID,
+			AssessmentID:  "asm",
+			StudentUserID: "stu",
+			Status:        "SUBMITTED",
+		}, nil
+	}
 	return f.getAttempt(ctx, orgID, attemptID)
 }
 

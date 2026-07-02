@@ -64,3 +64,10 @@ export const gradingKeys = {
   attemptReview: (attemptId: string) =>
     [...gradingKeys.all, 'attempt-review', attemptId] as const,
 };
+
+export const notificationKeys = {
+  all: ['notifications'] as const,
+  list: (opts: { limit?: number; before?: string } = {}) =>
+    [...notificationKeys.all, 'list', opts.limit ?? '', opts.before ?? ''] as const,
+  unreadCount: () => [...notificationKeys.all, 'unread-count'] as const,
+};

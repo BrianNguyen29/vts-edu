@@ -39,10 +39,35 @@ type UploadInput struct {
 }
 
 type service struct {
-	repo    Repository
-	storage storage.Provider
-	access  ClassAccessChecker
-	maxSize int64
+	repo               Repository
+	storage            storage.Provider
+	access             ClassAccessChecker
+	maxSize            int64
+	notifier           Notifier
+	recipientsResolver ClassRecipientsResolver
+}
+
+// Notifier is the small seam the resources package uses to fire
+// `resource.published` events. It is satisfied by the notifications
+// package; nil is a valid value and the service degrades to a no-op
+// when nil.
+type Notifier interface {
+	NotifyMany(ctx context.Context, orgID, eventType, title, body string, recipientIDs []string, metadata map[string]any)
+}
+
+// ClassRecipientsResolver expands a class id to its currently
+// enrolled student user ids. The notifications package supplies it;
+// nil disables the notification path.
+type ClassRecipientsResolver interface {
+	ListClassStudentUserIDs(ctx context.Context, orgID, classID string) ([]string, error)
+}
+
+// SetNotifier wires a notifier + a class recipients resolver into
+// the service. Either may be nil to disable the corresponding
+// capability.
+func (s *service) SetNotifier(n Notifier, r ClassRecipientsResolver) {
+	s.notifier = n
+	s.recipientsResolver = r
 }
 
 // NewService creates a resources service.
@@ -158,7 +183,42 @@ func (s *service) PublishResource(ctx context.Context, actor auth.Actor, id stri
 			return Resource{}, ErrUnauthorized
 		}
 	}
-	return s.repo.UpdateResourceStatus(ctx, actor.OrgID, id, StatusPublished)
+	updated, err := s.repo.UpdateResourceStatus(ctx, actor.OrgID, id, StatusPublished)
+	if err != nil {
+		return Resource{}, err
+	}
+	s.notifyResourcePublished(ctx, actor.OrgID, &updated)
+	return updated, nil
+}
+
+// notifyResourcePublished fires `resource.published` for class-scoped
+// resources (enrolled students). Org-scoped resources do not yet have
+// a recipient list helper, so they are skipped — explicitly noted as a
+// documented limitation.
+func (s *service) notifyResourcePublished(ctx context.Context, orgID string, r *Resource) {
+	if s.notifier == nil || r == nil {
+		return
+	}
+	if r.ContextType != ContextTypeClass {
+		return
+	}
+	if s.recipientsResolver == nil {
+		return
+	}
+	ids, err := s.recipientsResolver.ListClassStudentUserIDs(ctx, orgID, r.ContextID)
+	if err != nil || len(ids) == 0 {
+		return
+	}
+	s.notifier.NotifyMany(
+		ctx, orgID, "resource.published",
+		"Tài liệu mới đã được xuất bản",
+		"Một tài liệu học tập mới vừa được chia sẻ với lớp của bạn.",
+		ids,
+		map[string]any{
+			"resource_id": r.ID,
+			"context_id":  r.ContextID,
+		},
+	)
 }
 
 func (s *service) ArchiveResource(ctx context.Context, actor auth.Actor, id string) error {

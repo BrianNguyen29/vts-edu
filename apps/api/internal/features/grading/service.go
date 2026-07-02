@@ -23,6 +23,14 @@ type AuditLogger interface {
 	InsertAuditLog(ctx context.Context, tx pgx.Tx, p AuditLogEntry) error
 }
 
+// Notifier is the small seam the grading feature uses to fire
+// `attempt.graded` events at the student. It is satisfied by the
+// notifications package; nil is a valid value and the service
+// degrades to a no-op (no event) when nil.
+type Notifier interface {
+	Notify(ctx context.Context, orgID, recipientID, eventType, title, body string, metadata map[string]any)
+}
+
 // AuditLogEntry is the in-package shape of an audit row.
 type AuditLogEntry struct {
 	OrganizationID string
@@ -43,14 +51,21 @@ type Service interface {
 }
 
 type service struct {
-	repo  Repository
-	tm    TransactionManager
-	audit AuditLogger
+	repo     Repository
+	tm       TransactionManager
+	audit    AuditLogger
+	notifier Notifier
 }
 
 // NewService constructs the grading service.
 func NewService(repo Repository, tm TransactionManager, audit AuditLogger) Service {
 	return &service{repo: repo, tm: tm, audit: audit}
+}
+
+// SetNotifier wires a notifier into the service. nil is allowed and
+// disables the notifier path.
+func (s *service) SetNotifier(n Notifier) {
+	s.notifier = n
 }
 
 // ListReviewQueue returns the attempts for an assessment that have at least
@@ -218,6 +233,20 @@ func (s *service) GradeItem(ctx context.Context, actor auth.Actor, attemptID, it
 		}
 	}
 
+	// Fire an `attempt.graded` notification when the attempt just
+	// transitioned to GRADED. Best-effort; never affects the response.
+	att, _ := s.repo.GetAttemptForGrading(ctx, actor.OrgID, attemptID)
+	if att != nil {
+		s.notifyAttemptGraded(
+			ctx,
+			actor.OrgID,
+			attemptID,
+			att.StudentUserID,
+			att.AssessmentID,
+			recomp.GradingStatus,
+		)
+	}
+
 	return &GradeItemResponse{
 		ItemGrade: GradingItemGrade{
 			ID:           grade.ID,
@@ -232,6 +261,31 @@ func (s *service) GradeItem(ctx context.Context, actor auth.Actor, attemptID, it
 		StillPending:  pending,
 		TotalNonMcq:   nonMcq,
 	}, nil
+}
+
+// notifyAttemptGraded fires an `attempt.graded` event at the
+// recipient student when the attempt was just promoted to GRADED.
+// Best-effort: failures are swallowed by the notifier.
+func (s *service) notifyAttemptGraded(
+	ctx context.Context,
+	orgID, attemptID, studentID, assessmentID, status string,
+) {
+	if s.notifier == nil || studentID == "" {
+		return
+	}
+	if status != "GRADED" {
+		// Only notify when the attempt has fully crossed into GRADED.
+		return
+	}
+	s.notifier.Notify(
+		ctx, orgID, studentID, "attempt.graded",
+		"Bài thi đã được chấm",
+		"Điểm của bạn đã được công bố.",
+		map[string]any{
+			"attempt_id":    attemptID,
+			"assessment_id": assessmentID,
+		},
+	)
 }
 
 func isManuallyGradable(questionType string) bool {

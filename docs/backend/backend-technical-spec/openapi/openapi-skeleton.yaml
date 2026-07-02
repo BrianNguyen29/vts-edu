@@ -125,6 +125,73 @@ paths:
           $ref: '#/components/responses/Unauthorized'
         '403':
           $ref: '#/components/responses/Forbidden'
+  /me/notifications:
+    get:
+      operationId: notifications.list
+      tags: [Notifications]
+      description: |
+        Returns the caller's notification inbox, newest first.
+        - Cursor pagination via the `before` query parameter
+          (RFC 3339 timestamp of the last item the client already has).
+        - `limit` is clamped to 1..100, default 20.
+      parameters:
+        - name: limit
+          in: query
+          required: false
+          schema: { type: integer, minimum: 1, maximum: 100, default: 20 }
+        - name: before
+          in: query
+          required: false
+          schema: { type: string, format: date-time }
+      responses:
+        '200':
+          description: Inbox (may be empty)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NotificationList'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+  /me/notifications/unread-count:
+    get:
+      operationId: notifications.unreadCount
+      tags: [Notifications]
+      description: Returns the caller's current unread notification count.
+      responses:
+        '200':
+          description: Unread count
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NotificationUnreadCount'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+  /me/notifications/{id}/read:
+    post:
+      operationId: notifications.markRead
+      tags: [Notifications]
+      description: |
+        Idempotently marks a single notification as read for the
+        current caller. Notifications already in the read state are
+        left unchanged.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: Updated notification
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Notification'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
   /me/assessments:
     get:
       operationId: attempts.listAssignedAssessments
@@ -3626,6 +3693,39 @@ components:
             code: { type: string }
             message: { type: string }
             request_id: { type: string }
+    Notification:
+      type: object
+      required: [id, organization_id, recipient_user_id, event_type, title, body, metadata, is_read, created_at]
+      properties:
+        id: { type: string, format: uuid }
+        organization_id: { type: string, format: uuid }
+        recipient_user_id: { type: string, format: uuid }
+        event_type: { type: string, enum: [attempt.graded, assessment.published, resource.published] }
+        title: { type: string }
+        body: { type: string }
+        metadata:
+          type: object
+          additionalProperties: { type: [string, number, boolean, "null"] }
+        is_read: { type: boolean }
+        read_at: { type: string, format: date-time, nullable: true }
+        created_at: { type: string, format: date-time }
+    NotificationList:
+      type: object
+      required: [data]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/Notification'
+    NotificationUnreadCount:
+      type: object
+      required: [data]
+      properties:
+        data:
+          type: object
+          required: [count]
+          properties:
+            count: { type: integer, minimum: 0 }
   responses:
     Unauthorized:
       description: Authentication required or invalid

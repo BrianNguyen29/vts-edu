@@ -16,6 +16,7 @@ import (
 	"github.com/BrianNguyen29/vts-edu/apps/api/internal/features/auth"
 	"github.com/BrianNguyen29/vts-edu/apps/api/internal/features/gradebook"
 	"github.com/BrianNguyen29/vts-edu/apps/api/internal/features/grading"
+	"github.com/BrianNguyen29/vts-edu/apps/api/internal/features/notifications"
 	"github.com/BrianNguyen29/vts-edu/apps/api/internal/features/resources"
 	"github.com/BrianNguyen29/vts-edu/apps/api/internal/platform/csrf"
 	"github.com/BrianNguyen29/vts-edu/apps/api/internal/platform/db"
@@ -73,6 +74,7 @@ func main() {
 	var academicsHandler *academics.Handler
 	var gradebookHandler *gradebook.Handler
 	var gradingHandler *grading.Handler
+	var notificationsHandler *notifications.Handler
 	var resourcesHandler *resources.Handler
 	var sched *scheduler.Scheduler
 	if !cfg.DatabaseSkip {
@@ -121,6 +123,37 @@ func main() {
 		resourcesAccess := resources.NewAcademicAccessAdapter(academicsRepo)
 		resourcesSvc := resources.NewServiceWithAccess(resourcesRepo, storageProvider, cfg.MaxUploadSize, resourcesAccess)
 		resourcesHandler = resources.NewHandler(resourcesSvc, authIssuer)
+
+		// Notification inbox + notifier seam. The notifications
+		// service doubles as the Notifier interface used by grading,
+		// assessments, and resources. Per-feature *Service access
+		// stays minimal: a thin adapter is provided where the
+		// existing service expects a smaller interface.
+		notificationsRepo := notifications.NewRepository(pool.Pool)
+		notificationsSvc := notifications.NewService(notificationsRepo)
+		notificationsHandler = notifications.NewHandler(notificationsSvc, authIssuer)
+
+		gradingNotifier := &notifications.NotifierAdapter{Svc: notificationsSvc}
+		gradingSvcTyped, ok := gradingSvc.(interface {
+			SetNotifier(grading.Notifier)
+		})
+		if ok {
+			gradingSvcTyped.SetNotifier(gradingNotifier)
+		}
+		assessmentsNotifier := &notifications.NotifierAdapter{Svc: notificationsSvc}
+		assessmentsSvcTyped, ok := assessmentsSvc.(interface {
+			SetNotifier(assessments.Notifier, assessments.RecipientsResolver)
+		})
+		if ok {
+			assessmentsSvcTyped.SetNotifier(assessmentsNotifier, notificationsRepo)
+		}
+		resourcesNotifier := &notifications.NotifierAdapter{Svc: notificationsSvc}
+		resourcesSvcTyped, ok := resourcesSvc.(interface {
+			SetNotifier(resources.Notifier, resources.ClassRecipientsResolver)
+		})
+		if ok {
+			resourcesSvcTyped.SetNotifier(resourcesNotifier, notificationsRepo)
+		}
 	}
 
 	if sched != nil {
@@ -324,6 +357,13 @@ func main() {
 			r.Post("/resources", srv.academicsPlaceholderHandler)
 			r.Post("/resources/{id}/publish", srv.academicsPlaceholderHandler)
 			r.Delete("/resources/{id}", srv.academicsPlaceholderHandler)
+		}
+
+		// Notification inbox endpoints.
+		if notificationsHandler != nil {
+			r.Get("/me/notifications", notificationsHandler.List)
+			r.Get("/me/notifications/unread-count", notificationsHandler.UnreadCount)
+			r.Post("/me/notifications/{id}/read", notificationsHandler.MarkRead)
 		}
 	})
 

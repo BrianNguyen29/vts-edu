@@ -364,6 +364,19 @@ type MembershipRole struct {
 	CreatedAt    pgtype.Timestamptz `json:"created_at"`
 }
 
+type Notification struct {
+	ID              pgtype.UUID        `json:"id"`
+	OrganizationID  pgtype.UUID        `json:"organization_id"`
+	RecipientUserID pgtype.UUID        `json:"recipient_user_id"`
+	EventType       string             `json:"event_type"`
+	Title           string             `json:"title"`
+	Body            string             `json:"body"`
+	MetadataJson    []byte             `json:"metadata_json"`
+	IsRead          bool               `json:"is_read"`
+	ReadAt          pgtype.Timestamptz `json:"read_at"`
+	CreatedAt       pgtype.Timestamptz `json:"created_at"`
+}
+
 type Organization struct {
 	ID        pgtype.UUID        `json:"id"`
 	Code      string             `json:"code"`

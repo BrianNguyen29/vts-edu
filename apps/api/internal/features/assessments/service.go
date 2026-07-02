@@ -62,8 +62,34 @@ type Service interface {
 }
 
 type service struct {
-	repo Repository
-	tm   TransactionManager
+	repo               Repository
+	tm                 TransactionManager
+	notifier           Notifier
+	recipientsResolver RecipientsResolver
+}
+
+// Notifier is the small seam the assessments package uses to fire
+// `assessment.published` events at the target class students. It is
+// satisfied by the notifications package; nil is a valid value and
+// the service degrades to a no-op (no event) when nil.
+type Notifier interface {
+	NotifyMany(ctx context.Context, orgID, eventType, title, body string, recipientIDs []string, metadata map[string]any)
+	Notify(ctx context.Context, orgID, recipientID, eventType, title, body string, metadata map[string]any)
+}
+
+// RecipientsResolver is the small seam the assessments package uses
+// to expand an assessment to the user ids that should receive a
+// `assessment.published` notification. The notifications package
+// supplies it; nil disables the notification path.
+type RecipientsResolver interface {
+	ListAssessmentTargetStudentUserIDs(ctx context.Context, orgID, assessmentID string) ([]string, error)
+}
+
+// SetNotifier wires a notifier + a recipients resolver into the
+// service. Either may be nil to disable the corresponding capability.
+func (s *service) SetNotifier(n Notifier, r RecipientsResolver) {
+	s.notifier = n
+	s.recipientsResolver = r
 }
 
 // NewService creates the concrete assessments service.
@@ -691,7 +717,40 @@ func (s *service) PublishAssessment(ctx context.Context, actor auth.Actor, asses
 	if err != nil {
 		return PublishResult{}, mapRepoError(err)
 	}
+
+	// Best-effort: notify the target class students that a new
+	// assessment has been published. The notification call does not
+	// affect the response.
+	s.notifyAssessmentPublished(ctx, actor.OrgID, assessmentID, result.Revision)
 	return result, nil
+}
+
+func (s *service) notifyAssessmentPublished(
+	ctx context.Context,
+	orgID, assessmentID string,
+	revision int,
+) {
+	if s.notifier == nil || s.recipientsResolver == nil {
+		return
+	}
+	ids, err := s.recipientsResolver.ListAssessmentTargetStudentUserIDs(ctx, orgID, assessmentID)
+	if err != nil {
+		// Swallow — notification path is best-effort.
+		return
+	}
+	if len(ids) == 0 {
+		return
+	}
+	s.notifier.NotifyMany(
+		ctx, orgID, "assessment.published",
+		"Đề thi mới đã được mở",
+		"Đề thi mới đã được xuất bản và sẵn sàng cho bạn làm bài.",
+		ids,
+		map[string]any{
+			"assessment_id": assessmentID,
+			"revision":      revision,
+		},
+	)
 }
 
 func (s *service) DuplicateSection(ctx context.Context, actor auth.Actor, assessmentID, sectionID string) (SectionDetail, error) {
